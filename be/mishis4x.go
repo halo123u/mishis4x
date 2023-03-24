@@ -44,15 +44,15 @@ func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO user (username, status, password)
 		VALUES (?, ?, ?);
 		`
+
 	stmt, dberr := h.db.Query(q, nu.Username, nu.Status, hashedPassword)
 
 	if dberr != nil {
 		http.Error(w, dberr.Error(), http.StatusBadGateway)
+	} else {
+		defer stmt.Close()
+		fmt.Printf("New user: %+v", nu)
 	}
-
-	defer stmt.Close()
-
-	fmt.Printf("New user: %+v", nu)
 
 }
 

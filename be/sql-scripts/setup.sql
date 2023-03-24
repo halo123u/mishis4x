@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS record;
 DROP TABLE IF EXISTS user;
 CREATE TABLE user (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(255) NOT NULL,
+    username VARCHAR(255) UNIQUE NOT NULL,
     status VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL
 );
@@ -18,14 +18,15 @@ CREATE TABLE record (
     last_logged_in TIMESTAMP NOT NULL,
     FOREIGN KEY (user_id) REFERENCES user(id)
 );
-INSERT INTO record (user_id, matches, games_lost, last_logged_in)
-VALUES (1, 10, 2, '2022-03-16 10:00:00');
+INSERT INTO record (user_id, last_logged_in)
+VALUES (1, '2022-03-16 10:00:00');
+-- maybe move winner id into foreigh key table
 CREATE TABLE game_match (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     color VARCHAR(255) NOT NULL,
-    -- winner_id INT NOT NULL,
+    winner_id INT NOT NULL,
     start_time TIMESTAMP NOT NULL,
-    -- completed BOOLEAN
+    -- completed BOOLEAN,
     FOREIGN KEY (winner_id) REFERENCES user(id)
 );
 INSERT INTO game_match (color, winner_id, start_time)
