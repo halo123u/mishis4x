@@ -17,10 +17,12 @@ type DB struct {
 type NewUser struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Status   string `json:"status"`
 }
 
 func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
 	var nu NewUser
+	nu.Status = "active"
 
 	decoder := json.NewDecoder(r.Body)
 	err := decoder.Decode(&nu)
@@ -28,6 +30,17 @@ func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
+	q := `
+		INSERT INTO user (username, status, password)
+		VALUES (?, ?, ?);
+		`
+	stmt, dberr := h.db.Query(q, nu.Username, nu.Status, nu.Password)
+
+	if dberr != nil {
+		http.Error(w, dberr.Error(), http.StatusBadGateway)
+	}
+
+	defer stmt.Close()
 
 	fmt.Printf("New user: %+v", nu)
 
