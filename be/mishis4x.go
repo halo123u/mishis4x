@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 
+	"golang.org/x/crypto/bcrypt"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -25,16 +27,24 @@ func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
 	nu.Status = "active"
 
 	decoder := json.NewDecoder(r.Body)
+
 	err := decoder.Decode(&nu)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
+
+	hashedPassword, cErr := bcrypt.GenerateFromPassword([]byte(nu.Password), bcrypt.DefaultCost)
+
+	if cErr != nil {
+		http.Error(w, cErr.Error(), http.StatusBadRequest)
+	}
+
 	q := `
 		INSERT INTO user (username, status, password)
 		VALUES (?, ?, ?);
 		`
-	stmt, dberr := h.db.Query(q, nu.Username, nu.Status, nu.Password)
+	stmt, dberr := h.db.Query(q, nu.Username, nu.Status, hashedPassword)
 
 	if dberr != nil {
 		http.Error(w, dberr.Error(), http.StatusBadGateway)
