@@ -48,9 +48,26 @@ func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
 	stmt, dberr := h.db.Query(q, nu.Username, nu.Status, hashedPassword)
 
 	if dberr != nil {
-		http.Error(w, dberr.Error(), http.StatusBadGateway)
+		http.Error(w, dberr.Error(), http.StatusBadRequest)
 	} else {
 		defer stmt.Close()
+		w.WriteHeader(http.StatusCreated)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		resp := map[string]interface{}{
+			"username": nu.Username,
+			"status":   nu.Status,
+		}
+
+		jsonData, jsonErr := json.Marshal(resp)
+
+		if jsonErr != nil {
+			http.Error(w, jsonErr.Error(), http.StatusBadRequest)
+		}
+
+		w.Write(jsonData)
+
 		fmt.Printf("New user: %+v", nu)
 	}
 
