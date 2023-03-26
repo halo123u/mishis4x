@@ -1,29 +1,10 @@
-import { useContext } from "react";
-import { Route, Routes, Outlet, Navigate, useLocation } from "react-router-dom";
-import { AuthProvider, AuthContext } from "./AuthContext";
+import { Route, Routes, Outlet } from "react-router-dom";
+import { AuthProvider } from "./AuthContext";
 import Login from "./components/Login";
 import Signup from "./components/Signup";
 import Lobbies from "./components/Lobbies";
-
-function Layout() {
-  return (
-    <div>
-      <nav>This will be a nav</nav>
-      <Outlet />
-    </div>
-  );
-}
-
-function RequireAuth({ children }) {
-  const { user } = useContext(AuthContext);
-  const location = useLocation();
-
-  if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-
-  return children;
-}
+import RequireAuth from "./components/RequireAuth";
+import Layout from "./components/Layout";
 
 function App() {
   return (
