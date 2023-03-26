@@ -12,6 +12,40 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+type Lobby struct {
+	Id          int
+	Name        string
+	CreatedById int
+	PlayerIds   []int
+	Winner      int
+	Status      string
+}
+
+type LM struct {
+	lobbies []Lobby
+}
+
+var gameId = 0
+
+func (lm *LM) Add(l Lobby) []Lobby {
+	lm.lobbies = append(lm.lobbies, l)
+	return lm.lobbies
+}
+
+func (lm *LM) List() []Lobby {
+	return lm.lobbies
+}
+
+func (lm *LM) Remove(lobby_id int) []Lobby {
+	for i, lobby := range lm.lobbies {
+		if lobby.Id == lobby_id {
+			return append(lm.lobbies[:i], lm.lobbies[i+1:]...)
+		}
+	}
+
+	return lm.lobbies
+}
+
 type DB struct {
 	db *sql.DB
 }
@@ -130,11 +164,56 @@ func (h *DB) UserLogin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type CreateBody struct {
+	Name   string `json:"name"`
+	UserId int    `json:"user_id"`
+}
+
+func (lm *LM) CreateLobby(w http.ResponseWriter, r *http.Request) {
+	var cb CreateBody
+
+	newLobby := Lobby{}
+
+	decoder := json.NewDecoder(r.Body)
+
+	err := decoder.Decode(&cb)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	newLobby.Id = gameId
+
+	newLobby.Name = cb.Name
+	newLobby.CreatedById = cb.UserId
+	newLobby.Status = "Active"
+	newLobby.Winner = -1
+	newLobby.PlayerIds = []int{newLobby.CreatedById}
+
+	lm.lobbies = append(lm.lobbies, newLobby)
+
+	gameId++
+
+	w.WriteHeader(http.StatusCreated)
+	w.Header().Set("Content-Type", "application/json")
+
+	resp, err := json.Marshal(lm.lobbies)
+
+	w.Write(resp)
+
+	fmt.Println("JSON output:", string(resp))
+
+}
+
 func main() {
 	db, err := sql.Open("mysql", "user1:password@/mishis4x")
 
 	if err != nil {
 		panic(err)
+	}
+
+	lm := LM{
+		lobbies: make([]Lobby, 0),
 	}
 
 	d := DB{
@@ -144,6 +223,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/user/create", d.UserCreate)
 	mux.HandleFunc("/user/login", d.UserLogin)
+	mux.HandleFunc("/lobbies/create", lm.CreateLobby)
 
 	db.SetMaxOpenConns(10)
 
