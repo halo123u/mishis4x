@@ -16,25 +16,25 @@ type DB struct {
 	db *sql.DB
 }
 
-type NewUser struct {
+type User struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Status   string `json:"status"`
 }
 
 func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
-	var nu NewUser
-	nu.Status = "active"
+	var u User
+	u.Status = "active"
 
 	decoder := json.NewDecoder(r.Body)
 
-	err := decoder.Decode(&nu)
+	err := decoder.Decode(&u)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	hashedPassword, cErr := bcrypt.GenerateFromPassword([]byte(nu.Password), bcrypt.DefaultCost)
+	hashedPassword, cErr := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 
 	if cErr != nil {
 		http.Error(w, cErr.Error(), http.StatusBadRequest)
@@ -45,7 +45,7 @@ func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
 		VALUES (?, ?, ?);
 		`
 
-	stmt, dberr := h.db.Query(q, nu.Username, nu.Status, hashedPassword)
+	stmt, dberr := h.db.Query(q, u.Username, u.Status, string(hashedPassword))
 
 	if dberr != nil {
 		http.Error(w, dberr.Error(), http.StatusBadRequest)
@@ -56,8 +56,8 @@ func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		resp := map[string]interface{}{
-			"username": nu.Username,
-			"status":   nu.Status,
+			"username": u.Username,
+			"status":   u.Status,
 		}
 
 		jsonData, jsonErr := json.Marshal(resp)
@@ -68,9 +68,50 @@ func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
 
 		w.Write(jsonData)
 
-		fmt.Printf("New user: %+v", nu)
+		fmt.Printf("New user: %+v", u)
+	}
+}
+
+type LoginBody struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func (h *DB) UserLogin(w http.ResponseWriter, r *http.Request) {
+	var b LoginBody
+
+	decoder := json.NewDecoder(r.Body)
+
+	err := decoder.Decode(&b)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
+	q := `
+		SELECT password, status, id FROM user
+		WHERE username = (?);
+	`
+
+	var hashedPassword string
+	var status string
+	var id string
+	errDb := h.db.QueryRow(q, b.Username).Scan(&hashedPassword, &status, &id)
+
+	if errDb != nil {
+		http.Error(w, errDb.Error(), http.StatusBadRequest)
+	} else {
+
+		err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(b.Password))
+
+		if err != nil {
+			// handle invalid password
+			fmt.Println("USER is unauthorized")
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+		} else {
+			fmt.Println("USER authenticated")
+		}
+	}
 }
 
 func main() {
@@ -86,12 +127,13 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/user/create", d.UserCreate)
+	mux.HandleFunc("/user/login", d.UserLogin)
 
 	db.SetMaxOpenConns(10)
 
 	port := 8091
 
-	fmt.Printf("Running server on port: %d", port)
+	fmt.Printf("Running server on port: %d\n", port)
 
 	log.Fatal(http.ListenAndServe(":8091", mux))
 }
