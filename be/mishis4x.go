@@ -109,6 +109,22 @@ func (h *DB) UserLogin(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("USER is unauthorized")
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 		} else {
+
+			w.WriteHeader(http.StatusCreated)
+			w.Header().Set("Content-Type", "application/json")
+
+			resp := map[string]interface{}{
+				"username": b.Username,
+				"status":   status,
+			}
+			jsonData, jsonErr := json.Marshal(resp)
+
+			if jsonErr != nil {
+				http.Error(w, jsonErr.Error(), http.StatusBadRequest)
+			}
+
+			w.Write(jsonData)
+
 			fmt.Println("USER authenticated")
 		}
 	}

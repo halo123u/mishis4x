@@ -1,29 +1,33 @@
-import { useState } from "react"
-import CreateUserForm from "./components/CreateUserForm"
+import { Route, Routes, Outlet } from "react-router-dom";
+import { AuthProvider } from "./AuthContext";
+import Login from "./components/Login";
+import Signup from "./components/Signup";
+import Lobbies from "./components/Lobbies";
+import RequireAuth from "./components/RequireAuth";
+import Layout from "./components/Layout";
 
 function App() {
-    const [user, setUser] = useState(null)
-
-    const createUser = (username, password) => {
-        fetch('/api/user/create', {
-            method: 'POST',
-            headers: {
-                "Content-type": "application/json"
-            },
-            body: JSON.stringify({
-                username,
-                password
-            })
-        }).then((res) => res.json()).then(res => {
-            setUser(res)
-        }).catch(err => console.log(err))
-    }
-
-    return (<div className="App">
-        <h1>Hello world</h1>
-        {user ? <div>Hello {user.username}</div> : <CreateUserForm createUser={createUser} />} 
-    </div>)
+  return (
+    <div className="App">
+      <AuthProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route exact path="/" element={<div>Home</div>} />
+            <Route exact path="/login" element={<Login />} />
+            <Route exact path="/sign-up" element={<Signup />} />
+            <Route
+              path="/protected"
+              element={
+                <RequireAuth>
+                  <Lobbies />
+                </RequireAuth>
+              }
+            />
+          </Route>
+        </Routes>
+      </AuthProvider>
+    </div>
+  );
 }
 
-
-export default App
+export default App;
