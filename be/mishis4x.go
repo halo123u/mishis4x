@@ -150,6 +150,7 @@ func (h *DB) UserLogin(w http.ResponseWriter, r *http.Request) {
 			resp := map[string]interface{}{
 				"username": b.Username,
 				"status":   status,
+				"user_id":  id,
 			}
 			jsonData, jsonErr := json.Marshal(resp)
 

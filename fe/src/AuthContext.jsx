@@ -21,7 +21,7 @@ export function AuthProvider({ children }) {
       .then((res) => res.json())
       .then((res) => {
         setUser(res);
-        navigate("/protected");
+        navigate("/lobbies");
       })
       .catch((err) => console.log(err));
   }

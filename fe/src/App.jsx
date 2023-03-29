@@ -3,6 +3,7 @@ import { AuthProvider } from "./AuthContext";
 import Login from "./components/Login";
 import Signup from "./components/Signup";
 import Lobbies from "./components/Lobbies";
+import CreateLobby from "./components/CreateLobby";
 import RequireAuth from "./components/RequireAuth";
 import Layout from "./components/Layout";
 
@@ -16,10 +17,18 @@ function App() {
             <Route exact path="/login" element={<Login />} />
             <Route exact path="/sign-up" element={<Signup />} />
             <Route
-              path="/protected"
+              path="/lobbies"
               element={
                 <RequireAuth>
                   <Lobbies />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/lobbies/create"
+              element={
+                <RequireAuth>
+                  <CreateLobby />
                 </RequireAuth>
               }
             />
