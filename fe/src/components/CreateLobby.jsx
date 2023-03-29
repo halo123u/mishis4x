@@ -1,8 +1,10 @@
 import { useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../AuthContext";
 
 const CreateLobby = () => {
   const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -19,6 +21,7 @@ const CreateLobby = () => {
       .then((res) => res.json())
       .then((response) => {
         console.log(response);
+        navigate("/lobbies");
       })
       .catch((err) => {
         console.log(err);

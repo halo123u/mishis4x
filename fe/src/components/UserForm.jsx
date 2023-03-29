@@ -11,7 +11,7 @@ const UserForm = (props) => {
       <label htmlFor="password">Password</label>
       <input type="password" name="password" id="password" />
 
-      <button type="submit">Create User</button>
+      <button type="submit">{props.buttonText}</button>
     </form>
   );
 };

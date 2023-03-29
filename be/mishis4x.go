@@ -200,10 +200,28 @@ func (lm *LM) CreateLobby(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := json.Marshal(lm.lobbies)
 
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
 	w.Write(resp)
 
 	fmt.Println("JSON output:", string(resp))
 
+}
+
+func (lm *LM) ListLobbies(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	resp, err := json.Marshal(lm.lobbies)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	w.Write(resp)
+
+	fmt.Println("JSON output:", string(resp))
 }
 
 func main() {
@@ -224,6 +242,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/user/create", d.UserCreate)
 	mux.HandleFunc("/user/login", d.UserLogin)
+	mux.HandleFunc("/lobbies", lm.ListLobbies)
 	mux.HandleFunc("/lobbies/create", lm.CreateLobby)
 
 	db.SetMaxOpenConns(10)
