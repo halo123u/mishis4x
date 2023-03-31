@@ -58,3 +58,29 @@ func (d *Data) CreateUser(newUser UserInput) (User, error) {
 
 	return u, nil
 }
+
+func (d *Data) LoginUser(i UserInput) (User, bool, error) {
+
+	q := `
+		SELECT username, password, status, id 
+		FROM user
+		WHERE username = (?);
+	`
+
+	var savedPassword string
+	u := User{}
+
+	err := d.DB.QueryRow(q, i.Username).Scan(&u.Username, &savedPassword, &u.Status, &u.ID)
+
+	if err != nil {
+		return User{}, false, err
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(savedPassword), []byte(i.Password))
+
+	if err != nil {
+		return User{}, false, nil
+	}
+
+	return u, true, nil
+}
