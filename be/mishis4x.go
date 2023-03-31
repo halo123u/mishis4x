@@ -7,47 +7,15 @@ import (
 	"log"
 	"net/http"
 
+	"example.com/mishis4x/lobbymodule"
 	"golang.org/x/crypto/bcrypt"
 
 	_ "github.com/go-sql-driver/mysql"
 )
 
-type Lobby struct {
-	Id          int
-	Name        string
-	CreatedById int
-	PlayerIds   []int
-	Winner      int
-	Status      string
-}
-
-type LM struct {
-	lobbies []Lobby
-}
-
-var gameId = 0
-
-func (lm *LM) Add(l Lobby) []Lobby {
-	lm.lobbies = append(lm.lobbies, l)
-	return lm.lobbies
-}
-
-func (lm *LM) List() []Lobby {
-	return lm.lobbies
-}
-
-func (lm *LM) Remove(lobby_id int) []Lobby {
-	for i, lobby := range lm.lobbies {
-		if lobby.Id == lobby_id {
-			return append(lm.lobbies[:i], lm.lobbies[i+1:]...)
-		}
-	}
-
-	return lm.lobbies
-}
-
-type DB struct {
+type Data struct {
 	db *sql.DB
+	l  *lobbymodule.Lobby
 }
 
 type User struct {
@@ -56,7 +24,7 @@ type User struct {
 	Status   string `json:"status"`
 }
 
-func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
+func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	var u User
 	u.Status = "active"
 
@@ -79,7 +47,7 @@ func (h *DB) UserCreate(w http.ResponseWriter, r *http.Request) {
 		VALUES (?, ?, ?);
 		`
 
-	stmt, dberr := h.db.Query(q, u.Username, u.Status, string(hashedPassword))
+	stmt, dberr := d.db.Query(q, u.Username, u.Status, string(hashedPassword))
 
 	if dberr != nil {
 		http.Error(w, dberr.Error(), http.StatusBadRequest)
@@ -111,7 +79,7 @@ type LoginBody struct {
 	Password string `json:"password"`
 }
 
-func (h *DB) UserLogin(w http.ResponseWriter, r *http.Request) {
+func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 	var b LoginBody
 
 	decoder := json.NewDecoder(r.Body)
@@ -130,7 +98,7 @@ func (h *DB) UserLogin(w http.ResponseWriter, r *http.Request) {
 	var hashedPassword string
 	var status string
 	var id string
-	errDb := h.db.QueryRow(q, b.Username).Scan(&hashedPassword, &status, &id)
+	errDb := d.db.QueryRow(q, b.Username).Scan(&hashedPassword, &status, &id)
 
 	if errDb != nil {
 		http.Error(w, errDb.Error(), http.StatusBadRequest)
@@ -150,6 +118,7 @@ func (h *DB) UserLogin(w http.ResponseWriter, r *http.Request) {
 			resp := map[string]interface{}{
 				"username": b.Username,
 				"status":   status,
+				"user_id":  id,
 			}
 			jsonData, jsonErr := json.Marshal(resp)
 
@@ -164,45 +133,47 @@ func (h *DB) UserLogin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type CreateBody struct {
-	Name   string `json:"name"`
-	UserId int    `json:"user_id"`
-}
-
-func (lm *LM) CreateLobby(w http.ResponseWriter, r *http.Request) {
-	var cb CreateBody
-
-	newLobby := Lobby{}
+func (d *Data) CreateLobby(w http.ResponseWriter, r *http.Request) {
+	i := &lobbymodule.NewGameInput{}
 
 	decoder := json.NewDecoder(r.Body)
 
-	err := decoder.Decode(&cb)
+	err := decoder.Decode(&i)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	newLobby.Id = gameId
-
-	newLobby.Name = cb.Name
-	newLobby.CreatedById = cb.UserId
-	newLobby.Status = "Active"
-	newLobby.Winner = -1
-	newLobby.PlayerIds = []int{newLobby.CreatedById}
-
-	lm.lobbies = append(lm.lobbies, newLobby)
-
-	gameId++
+	d.l.AddGame(i)
 
 	w.WriteHeader(http.StatusCreated)
 	w.Header().Set("Content-Type", "application/json")
 
-	resp, err := json.Marshal(lm.lobbies)
+	resp, err := json.Marshal(d.l.ListGames())
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
 
 	w.Write(resp)
 
 	fmt.Println("JSON output:", string(resp))
 
+}
+
+func (d *Data) ListLobbies(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+
+	resp, err := json.Marshal(d.l.Games)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	w.Write(resp)
+
+	fmt.Println("JSON output:", string(resp))
 }
 
 func main() {
@@ -212,18 +183,19 @@ func main() {
 		panic(err)
 	}
 
-	lm := LM{
-		lobbies: make([]Lobby, 0),
-	}
-
-	d := DB{
+	d := Data{
 		db: db,
+		l: &lobbymodule.Lobby{
+			Games:  []*lobbymodule.Game{},
+			GameID: 1,
+		},
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/user/create", d.UserCreate)
 	mux.HandleFunc("/user/login", d.UserLogin)
-	mux.HandleFunc("/lobbies/create", lm.CreateLobby)
+	mux.HandleFunc("/lobbies", d.ListLobbies)
+	mux.HandleFunc("/lobbies/create", d.CreateLobby)
 
 	db.SetMaxOpenConns(10)
 
