@@ -26,7 +26,7 @@ const Signup = () => {
   }
   return (
     <div>
-      <h1>Sign up!</h1>
+      <h1>Sign up to play mishis4x!</h1>
       <UserForm submit={createUser} buttonText="create account" />
     </div>
   )

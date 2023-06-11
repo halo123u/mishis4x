@@ -3,10 +3,12 @@ import Navigation from './Navigation'
 
 const Layout = () => {
   return (
-    <main>
+    <>
       <Navigation />
-      <Outlet />
-    </main>
+      <main>
+        <Outlet />
+      </main>
+    </>
   )
 }
 
