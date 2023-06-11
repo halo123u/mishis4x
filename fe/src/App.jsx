@@ -13,7 +13,7 @@ function App() {
       <AuthProvider>
         <Routes>
           <Route element={<Layout />}>
-            <Route exact path="/" element={<div>Home</div>} />
+            <Route exact path="/" element={<RequireAuth><div>Home</div></RequireAuth>} />
             <Route exact path="/login" element={<Login />} />
             <Route exact path="/sign-up" element={<Signup />} />
             <Route
