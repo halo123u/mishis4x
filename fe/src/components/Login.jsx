@@ -1,11 +1,11 @@
-import { useContext } from "react";
+import { useContext } from 'react'
 
-import { Link } from "react-router-dom";
-import { AuthContext } from "../AuthContext";
-import UserForm from "./UserForm";
+import { Link } from 'react-router-dom'
+import { AuthContext } from '../AuthContext'
+import UserForm from './UserForm'
 
 const Login = () => {
-  const { login } = useContext(AuthContext);
+  const { login } = useContext(AuthContext)
   return (
     <div>
       <h1>Login</h1>
@@ -14,7 +14,7 @@ const Login = () => {
         <Link to={`/sign-up`}>Create account</Link>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Login;
+export default Login

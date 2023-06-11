@@ -1,8 +1,8 @@
 const UserForm = (props) => {
   const handleSubmit = (event) => {
-    event.preventDefault();
-    props.submit(event.target.username.value, event.target.password.value);
-  };
+    event.preventDefault()
+    props.submit(event.target.username.value, event.target.password.value)
+  }
 
   return (
     <form onSubmit={handleSubmit}>
@@ -13,7 +13,7 @@ const UserForm = (props) => {
 
       <button type="submit">{props.buttonText}</button>
     </form>
-  );
-};
+  )
+}
 
-export default UserForm;
+export default UserForm

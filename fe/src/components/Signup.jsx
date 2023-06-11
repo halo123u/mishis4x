@@ -1,16 +1,16 @@
-import { useContext } from "react";
-import { useNavigate } from "react-router-dom";
-import UserForm from "./UserForm";
-import { AuthContext } from "../AuthContext";
+import { useContext } from 'react'
+import { useNavigate } from 'react-router-dom'
+import UserForm from './UserForm'
+import { AuthContext } from '../AuthContext'
 
 const Signup = () => {
-  const { updateUser } = useContext(AuthContext);
-  const navigate = useNavigate();
+  const { updateUser } = useContext(AuthContext)
+  const navigate = useNavigate()
   const createUser = (username, password) => {
-    fetch("/api/user/create", {
-      method: "POST",
+    fetch('/api/user/create', {
+      method: 'POST',
       headers: {
-        "Content-type": "application/json",
+        'Content-type': 'application/json',
       },
       body: JSON.stringify({
         username,
@@ -19,17 +19,17 @@ const Signup = () => {
     })
       .then((res) => res.json())
       .then((res) => {
-        updateUser(res);
-        navigate("/lobbies");
+        updateUser(res)
+        navigate('/lobbies')
       })
-      .catch((err) => console.log(err));
-  };
+      .catch((err) => console.log(err))
+  }
   return (
     <div>
       <h1>Sign up!</h1>
       <UserForm submit={createUser} buttonText="create account" />
     </div>
-  );
-};
+  )
+}
 
-export default Signup;
+export default Signup
