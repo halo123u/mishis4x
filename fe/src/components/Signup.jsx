@@ -20,7 +20,7 @@ const Signup = () => {
       .then((res) => res.json())
       .then((res) => {
         updateUser(res);
-        navigate("/protected");
+        navigate("/lobbies");
       })
       .catch((err) => console.log(err));
   };

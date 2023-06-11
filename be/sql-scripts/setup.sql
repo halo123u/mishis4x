@@ -9,9 +9,9 @@ CREATE TABLE user (
     password VARCHAR(255) NOT NULL
 );
 INSERT INTO user (username, status, password)
-VALUES ('john_doe', 'active', 'mysecretpassword');
+VALUES ('john_doe', 'active', 'test');
 INSERT INTO user (username, status, password)
-VALUES ('jane_doe', 'active', 'mysecretpassword2');
+VALUES ('jane_doe', 'active', 'test');
 CREATE TABLE record (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
