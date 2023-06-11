@@ -18,6 +18,23 @@ const Lobbies = () => {
     console.log('joining match')
   }
 
+  let rows = <tr><td colSpan={3}>No lobbies available</td></tr>
+
+  if (lobbies && lobbies.length > 0) {
+    rows = lobbies.map((lobby) => (
+      <tr key={lobby.Id}>
+        <td>{lobby.Name}</td>
+        <td>{`${lobby.PlayerIds.length}/2`}</td>
+        <td>
+          {lobby.PlayerIds.length < 2 && (
+            <button type="button" className='secondary' onClick={joinMatch}>
+              Join match
+            </button>
+          )}
+        </td>
+      </tr>
+    ))
+  }
   return (
     <div>
       <h1>Find or Create Lobby</h1>
@@ -31,20 +48,7 @@ const Lobbies = () => {
           </tr>
         </thead>
         <tbody>
-          {lobbies &&
-            lobbies.map((lobby) => (
-              <tr key={lobby.Id}>
-                <td>{lobby.Name}</td>
-                <td>{`${lobby.PlayerIds.length}/2`}</td>
-                <td>
-                  {lobby.PlayerIds.length < 2 && (
-                    <button type="button" onClick={joinMatch}>
-                      Join match
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+         {rows}
         </tbody>
       </table>
 

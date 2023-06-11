@@ -29,14 +29,16 @@ const CreateLobby = () => {
   }
 
   return (
-    <div>
-      <form onSubmit={handleSubmit}>
+    <>
+    <h1>Enter lobby details</h1>
+      <form onSubmit={handleSubmit} className='stack'>
+        <div className='stack sm'>
         <label htmlFor="name">name</label>
         <input type="text" id="name" />
-
+        </div>
         <button type="submit">Submit</button>
       </form>
-    </div>
+    </>
   )
 }
 
