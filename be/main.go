@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"example.com/mishis4x/lobbymodule"
 	"golang.org/x/crypto/bcrypt"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/joho/godotenv"
 )
 
 type Data struct {
@@ -177,7 +179,14 @@ func (d *Data) ListLobbies(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	db, err := sql.Open("mysql", "user1:password@/mishis4x")
+	envPath := "./infra/envs/local/.env"
+	err := godotenv.Load(envPath)
+
+	if err != nil {
+		log.Fatalf("error loading .env file: %v", err)
+	}
+
+	db, err := sql.Open("mysql", os.Getenv("DB_URL"))
 
 	if err != nil {
 		panic(err)
@@ -203,5 +212,5 @@ func main() {
 
 	fmt.Printf("Running server on port: %d\n", port)
 
-	log.Fatal(http.ListenAndServe(":8091", mux))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), mux))
 }
