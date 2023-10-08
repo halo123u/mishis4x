@@ -1,2 +1,3 @@
 __debug_bin
-sql-scripts/local.session.sql
+/db/misc
+infra/local.env

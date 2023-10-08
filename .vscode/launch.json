@@ -5,11 +5,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Launch Backend Go Server",
+      "name": "Launch Go Backend",
       "type": "go",
       "request": "launch",
-      "mode": "auto",
-      "program": "${workspaceFolder}/be/mishis4x.go"
+      "mode": "debug"
+,
+      "program": "${fileDirname}/../be"
     }
   ]
 }
