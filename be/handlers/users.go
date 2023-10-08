@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"example.com/mishis4x/api"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -64,13 +65,8 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type LoginBody struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
 func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
-	var b LoginBody
+	var b api.LoginBody
 
 	decoder := json.NewDecoder(r.Body)
 
