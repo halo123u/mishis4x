@@ -5,12 +5,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Launch Go Backend",
+      "name": "Launch Go Backend Server",
       "type": "go",
       "request": "launch",
-      "mode": "debug"
+      "mode": "auto"
 ,
-      "program": "${fileDirname}/../be"
+"program": "${workspaceFolder}/be/main.go"
     }
   ]
 }
