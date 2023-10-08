@@ -1,4 +1,4 @@
-package lobbymodule
+package matchmaking
 
 type Game struct {
 	Id          int
