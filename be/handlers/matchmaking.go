@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"example.com/mishis4x/matchmaking"
+	"example.com/mishis4x/api"
 )
 
 func (d *Data) CreateLobby(w http.ResponseWriter, r *http.Request) {
-	i := &matchmaking.NewGameInput{}
+	i := &api.NewGameInput{}
 
 	decoder := json.NewDecoder(r.Body)
 
@@ -33,7 +33,6 @@ func (d *Data) CreateLobby(w http.ResponseWriter, r *http.Request) {
 	w.Write(resp)
 
 	fmt.Println("JSON output:", string(resp))
-
 }
 
 func (d *Data) ListLobbies(w http.ResponseWriter, r *http.Request) {

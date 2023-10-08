@@ -1,5 +1,7 @@
 package matchmaking
 
+import "example.com/mishis4x/api"
+
 type Game struct {
 	Id          int
 	Name        string
@@ -21,12 +23,7 @@ func (l *Lobby) ListGames() []*Game {
 
 // Todo: will move this to get it from a token/cookie? basically make it safer
 
-type NewGameInput struct {
-	Name   string `json:"name"`
-	UserId int    `json:"user_id"`
-}
-
-func (l *Lobby) AddGame(i *NewGameInput) error {
+func (l *Lobby) AddGame(i *api.NewGameInput) error {
 
 	newGame := &Game{
 		Status:      "Active",
