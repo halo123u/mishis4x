@@ -22,17 +22,16 @@ var httpCMD = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		envPath := "./infra/envs/local/.env"
 		err := godotenv.Load(envPath)
-
 		if err != nil {
 			log.Fatalf("error loading .env file: %v", err)
 		}
 
 		db, err := sql.Open("mysql", os.Getenv("DB_URL"))
-
 		if err != nil {
 			panic(err)
 		}
-		db.SetMaxOpenConns(10)
+
+		db.SetMaxOpenConns(5)
 		port := 8091
 
 		h := handlers.Data{

@@ -21,6 +21,6 @@ func (d *Data) InitializeHttpServer(port int) {
 	mux.HandleFunc("/user/login", d.UserLogin)
 	mux.HandleFunc("/lobbies", d.ListLobbies)
 	mux.HandleFunc("/lobbies/create", d.CreateLobby)
-	fmt.Printf("Running server on port: %d\n", port)
+	log.Printf("Running server on port: %d\n", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), mux))
 }
