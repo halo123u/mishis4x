@@ -34,7 +34,7 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := `
-		INSERT INTO user (username, status, password)
+		INSERT INTO users (username, status, password)
 		VALUES (?, ?, ?);
 		`
 
@@ -77,7 +77,7 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := `
-		SELECT password, status, id FROM user
+		SELECT password, status, id FROM users
 		WHERE username = (?);
 	`
 
