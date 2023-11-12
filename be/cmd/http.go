@@ -7,6 +7,7 @@ import (
 
 	"example.com/mishis4x/handlers"
 	"example.com/mishis4x/matchmaking"
+	persist "example.com/mishis4x/persist"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -35,7 +36,9 @@ var httpCMD = &cobra.Command{
 		port := 8091
 
 		h := handlers.Data{
-			DB: db,
+			P: persist.Persist{
+				DB: db,
+			},
 			Lobby: &matchmaking.Lobby{
 				Games:  []*matchmaking.Game{},
 				GameID: 1,

@@ -1,16 +1,16 @@
 package handlers
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 
 	"example.com/mishis4x/matchmaking"
+	"example.com/mishis4x/persist"
 )
 
 type Data struct {
-	DB    *sql.DB
+	P     persist.Persist
 	Lobby *matchmaking.Lobby
 }
 

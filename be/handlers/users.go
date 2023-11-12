@@ -3,9 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"example.com/mishis4x/api"
+	"example.com/mishis4x/persist"
+	"github.com/gorilla/sessions"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -14,6 +17,8 @@ type User struct {
 	Password string `json:"password"`
 	Status   string `json:"status"`
 }
+
+var store = sessions.NewCookieStore([]byte("secret"))
 
 func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	var u User
@@ -27,94 +32,97 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	hashedPassword, cErr := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
-
-	if cErr != nil {
-		http.Error(w, cErr.Error(), http.StatusBadRequest)
-	}
-
-	q := `
-		INSERT INTO users (username, status, password)
-		VALUES (?, ?, ?);
-		`
-
-	stmt, dberr := d.DB.Query(q, u.Username, u.Status, string(hashedPassword))
-
-	if dberr != nil {
-		http.Error(w, dberr.Error(), http.StatusBadRequest)
-	} else {
-		defer stmt.Close()
-		w.WriteHeader(http.StatusCreated)
-
-		w.Header().Set("Content-Type", "application/json")
-
-		resp := map[string]interface{}{
-			"username": u.Username,
-			"status":   u.Status,
-		}
-
-		jsonData, jsonErr := json.Marshal(resp)
-
-		if jsonErr != nil {
-			http.Error(w, jsonErr.Error(), http.StatusBadRequest)
-		}
-
-		w.Write(jsonData)
-
-		fmt.Printf("New user: %+v", u)
-	}
-}
-
-func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
-	var b api.LoginBody
-
-	decoder := json.NewDecoder(r.Body)
-
-	err := decoder.Decode(&b)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	q := `
-		SELECT password, status, id FROM users
-		WHERE username = (?);
-	`
+	id, err := d.P.CreateUser(persist.User{
+		Username: u.Username,
+		Password: string(hashedPassword),
+		Status:   u.Status,
+	})
 
-	var hashedPassword string
-	var status string
-	var id string
-	errDb := d.DB.QueryRow(q, b.Username).Scan(&hashedPassword, &status, &id)
-
-	if errDb != nil {
-		http.Error(w, errDb.Error(), http.StatusBadRequest)
-	} else {
-
-		err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(b.Password))
-
-		if err != nil {
-			// handle invalid password
-			fmt.Println("USER is unauthorized")
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-		} else {
-
-			w.WriteHeader(http.StatusCreated)
-			w.Header().Set("Content-Type", "application/json")
-
-			resp := map[string]interface{}{
-				"username": b.Username,
-				"status":   status,
-				"user_id":  id,
-			}
-			jsonData, jsonErr := json.Marshal(resp)
-
-			if jsonErr != nil {
-				http.Error(w, jsonErr.Error(), http.StatusBadRequest)
-			}
-
-			w.Write(jsonData)
-
-			fmt.Println("USER authenticated")
-		}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
+
+	user, err := d.P.GetUserByID(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	w.Header().Set("Content-Type", "application/json")
+
+	resp := api.User{
+		ID:       user.ID,
+		Username: user.Username,
+		Status:   user.Status,
+	}
+
+	jsonData, jsonErr := json.Marshal(resp)
+
+	if jsonErr != nil {
+		http.Error(w, jsonErr.Error(), http.StatusBadRequest)
+	}
+
+	w.Write(jsonData)
+
+	session, err := store.Get(r, "session")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	session.Values["user"] = u.Username
+	session.Values["authenticated"] = true
+	// saves cookie
+	session.Save(r, w)
+
+	log.Printf("New user: %+v", u)
+
+}
+
+func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
+	var b api.UserLogin
+
+	decoder := json.NewDecoder(r.Body)
+
+	err := decoder.Decode(&b)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	u, err := d.P.GetUserByUsername(b.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(b.Password))
+
+	if err != nil {
+		// handle invalid password
+		fmt.Println("USER is unauthorized")
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	w.Header().Set("Content-Type", "application/json")
+
+	resp := api.User{
+		Username: u.Username,
+		Status:   u.Status,
+		ID:       u.ID,
+	}
+	jsonData, jsonErr := json.Marshal(resp)
+
+	if jsonErr != nil {
+		http.Error(w, jsonErr.Error(), http.StatusBadRequest)
+	}
+
+	w.Write(jsonData)
+
+	log.Printf("USER authenticated")
+
 }
