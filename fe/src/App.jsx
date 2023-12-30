@@ -17,9 +17,7 @@ function App() {
               exact
               path="/"
               element={
-                <RequireAuth>
                   <div>Home</div>
-                </RequireAuth>
               }
             />
             <Route exact path="/login" element={<Login />} />
@@ -27,17 +25,13 @@ function App() {
             <Route
               path="/lobbies"
               element={
-                <RequireAuth>
                   <Lobbies />
-                </RequireAuth>
               }
             />
             <Route
               path="/lobbies/create"
               element={
-                <RequireAuth>
                   <CreateLobby />
-                </RequireAuth>
               }
             />
           </Route>

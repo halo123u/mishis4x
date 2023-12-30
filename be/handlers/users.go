@@ -8,7 +8,6 @@ import (
 
 	"example.com/mishis4x/api"
 	"example.com/mishis4x/persist"
-	"github.com/gorilla/sessions"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -17,8 +16,6 @@ type User struct {
 	Password string `json:"password"`
 	Status   string `json:"status"`
 }
-
-var store = sessions.NewCookieStore([]byte("secret"))
 
 func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	var u User
@@ -70,7 +67,7 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 
 	w.Write(jsonData)
 
-	session, err := store.Get(r, "session")
+	session, err := d.Sessions.Get(r, "session")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
@@ -81,7 +78,6 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	session.Save(r, w)
 
 	log.Printf("New user: %+v", u)
-
 }
 
 func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
@@ -106,15 +102,44 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("USER is unauthorized")
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 	}
+	log.Printf("USER authenticated")
+	session, err := d.Sessions.Get(r, "session")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
 
-	w.WriteHeader(http.StatusCreated)
+	session.Values["userID"] = u.ID
+	session.Values["authenticated"] = true
+	err = session.Save(r, w)
+	if err != nil {
+		fmt.Println("Error saving session")
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+}
+
+func (d *Data) GetUserData(w http.ResponseWriter, r *http.Request) {
+	session, err := d.Sessions.Get(r, "session")
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	userID := session.Values["userID"]
+
+	user, err := d.P.GetUserByID(userID.(int))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 
 	resp := api.User{
-		Username: u.Username,
-		Status:   u.Status,
-		ID:       u.ID,
+		ID:       user.ID,
+		Username: user.Username,
+		Status:   user.Status,
 	}
+
 	jsonData, jsonErr := json.Marshal(resp)
 
 	if jsonErr != nil {
@@ -122,7 +147,4 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(jsonData)
-
-	log.Printf("USER authenticated")
-
 }

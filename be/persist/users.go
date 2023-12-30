@@ -52,7 +52,7 @@ func (p *Persist) GetUserByID(id int) (User, error) {
 
 func (p *Persist) GetUserByUsername(username string) (User, error) {
 	q := `
-		SELECT username, status, password
+		SELECT username, status, password, id
 		FROM users
 		WHERE username = ?;
 	`
@@ -66,7 +66,7 @@ func (p *Persist) GetUserByUsername(username string) (User, error) {
 	var u User
 
 	for stmt.Next() {
-		err := stmt.Scan(&u.Username, &u.Status, &u.Password)
+		err := stmt.Scan(&u.Username, &u.Status, &u.Password, &u.ID)
 		if err != nil {
 			return User{}, err
 		}
