@@ -31,7 +31,7 @@ const navigation = () => {
       <div className='flex-space'/>
       {
         globalData && 
-        <ul className='row'>
+        <ul>
          <li> Hello,{globalData.username}</li>
         <li><button  className='button secondary' onClick={handleLogout}>Log out</button></li>
         </ul>
