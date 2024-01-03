@@ -1,16 +1,23 @@
 import React from 'react'
 import { useContext } from 'react'
-import { AuthContext } from '../AuthContext'
+import { GlobalDataContext } from '../GlobalDataContext'
 
 const navigation = () => {  
-  const { user } = useContext(AuthContext)
+  const { globalData } = useContext(GlobalDataContext)
 
  return( <header>
-    <nav>
+    <nav className='row'>
       <a href="/">
         <img src="https://placehold.co/600x200" alt="Company logo" id="logo" />
       </a>
-      <ul>{ !!user ? <li>{user.username}</li> : null }</ul>
+      <div className='flex-space'/>
+      {
+        globalData && 
+        <ul className='row'>
+         <li> Hello,{globalData.username}</li>
+        <li><button  className='button secondary'>Log out</button></li>
+        </ul>
+      }
     </nav>
   </header>)
 }

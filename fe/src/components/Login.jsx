@@ -1,14 +1,42 @@
-import { useContext } from 'react'
-
-import { AuthContext } from '../AuthContext'
+import React from 'react'
+import { useNavigate } from 'react-router-dom'
 import UserForm from './UserForm'
 
 const Login = () => {
-  const { login } = useContext(AuthContext)
+  const navigate = useNavigate()
+
+  const handleLogin = (username, password) =>{
+    fetch('/api/user/login', {
+      method: 'POST',
+      headers: {
+        'Content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        username,
+        password,
+      }),
+    })
+      .then((res) => {
+        console.log(res)
+        if(res.status === 200){
+          navigate('/lobbies')
+        }
+
+        if (res.status === 401) {
+          console.log('unauthorized')
+        }
+
+        if (res.status === 500) {
+          console.log('server error')
+        }
+        
+      })
+      .catch((err) => console.log(err))
+  }
   return (
     <div>
       <h1>Welcome to Mishis4x</h1>
-      <UserForm submit={login} buttonText="login" />
+      <UserForm submit={handleLogin} buttonText="login" />
     </div>
   )
 }

@@ -1,10 +1,7 @@
-import { useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserForm from './UserForm'
-import { AuthContext } from '../AuthContext'
 
 const Signup = () => {
-  const { updateUser } = useContext(AuthContext)
   const navigate = useNavigate()
   const createUser = (username, password) => {
     fetch('/api/user/create', {
@@ -17,12 +14,21 @@ const Signup = () => {
         password,
       }),
     })
-      .then((res) => res.json())
       .then((res) => {
-        updateUser(res)
+
+      if(res.status === 200){
         navigate('/lobbies')
-      })
-      .catch((err) => console.log(err))
+      }
+
+      if (res.status === 401) {
+        console.log('unauthorized')
+        // TODO show error message
+      }
+
+      // Todo: add a catch all errors 
+    
+      
+    }).catch((err) => console.log(err))
   }
   return (
     <div>

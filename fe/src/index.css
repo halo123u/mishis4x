@@ -108,3 +108,21 @@ button.secondary:hover{
 .stack.sm {
   gap: var(--space-xs);
 }
+
+.row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.flex-space {
+  flex: 1;
+}
+
+
+nav ul{
+  text-decoration: none ;
+  list-style: none;
+}
