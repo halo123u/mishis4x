@@ -28,7 +28,8 @@ func (d *Data) InitializeHttpServer(port int) {
 	r.HandleFunc("/user/create", d.UserCreate)
 
 	// Protected routes
-	s.HandleFunc("/user/data", d.GetUserData)
+	s.HandleFunc("/logout", d.UserLogout)
+	s.HandleFunc("/data", d.GetGlobalData)
 	s.HandleFunc("/lobbies", d.ListLobbies)
 	s.HandleFunc("/lobbies/create", d.CreateLobby)
 	log.Printf("Running server on port: %d\n", port)
@@ -47,7 +48,7 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 
 		isAuthenticated := session.Values["authenticated"]
 		if isAuthenticated != nil && isAuthenticated == true {
-			fmt.Printf("User found %s", session.Values["user"])
+			fmt.Printf("User found %s", session.Values["globalData"])
 			next.ServeHTTP(w, r)
 		} else {
 			// TODO: add better error handling

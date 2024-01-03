@@ -1,9 +1,11 @@
-import React from 'react'
+import React, { useContext} from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserForm from './UserForm'
+import { GlobalDataContext } from '../GlobalDataContext'
 
 const Login = () => {
   const navigate = useNavigate()
+  const { refreshGlobalData } = useContext(GlobalDataContext)
 
   const handleLogin = (username, password) =>{
     fetch('/api/user/login', {
@@ -20,6 +22,7 @@ const Login = () => {
         console.log(res)
         if(res.status === 200){
           navigate('/lobbies')
+          refreshGlobalData()
         }
 
         if (res.status === 401) {

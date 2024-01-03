@@ -7,11 +7,12 @@ export function GlobalDataProvider({ children }) {
   const navigate = useNavigate()
   const location = useLocation()
 
-  useEffect(() => {
-    //TODO maybe a better way to do this
-    if (location.pathname !== '/login' && location.pathname !== '/sign-up') {
-    fetch('/api/user/data')
+  useEffect(() => refreshGlobalData(),[])
+
+  const refreshGlobalData = () => {
+    fetch('/api/data')
       .then((res) =>{
+        console.log(res)
         if(res.status === 200){
           console.log("getting data")
           return res.json()
@@ -32,24 +33,23 @@ export function GlobalDataProvider({ children }) {
         // when unathorized this is undefined
         // TODO maybe find a better way to do this
         if (!!res){
+          let path = location.pathname
+          if (path === '/login' || path === '/signup'){
+            path = '/lobbies'
+          }
+
           setGlobalData(res)
-          navigate(location.pathname )
+          navigate(path)
         }
       })
       .catch((err) => {
         console.log("error")
       console.log(err)})
     }
-  }, [])
 
-
-  function logout() {
-    console.log('logout')
-    setUser(null)
-  }
 
   return (
-    <GlobalDataContext.Provider value={{ globalData, setGlobalData }}>
+    <GlobalDataContext.Provider value={{ globalData, setGlobalData, refreshGlobalData }}>
       {children}
     </GlobalDataContext.Provider>
   )

@@ -117,34 +117,18 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (d *Data) GetUserData(w http.ResponseWriter, r *http.Request) {
+// TODO: maybe move to its own file ?
+func (d *Data) UserLogout(w http.ResponseWriter, r *http.Request) {
 	session, err := d.Sessions.Get(r, "session")
-
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	userID := session.Values["userID"]
-
-	user, err := d.P.GetUserByID(userID.(int))
+	session.Values["authenticated"] = false
+	session.Options.MaxAge = -1
+	err = session.Save(r, w)
 	if err != nil {
+		fmt.Println("Error saving session")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-
-	resp := api.User{
-		ID:       user.ID,
-		Username: user.Username,
-		Status:   user.Status,
-	}
-
-	jsonData, jsonErr := json.Marshal(resp)
-
-	if jsonErr != nil {
-		http.Error(w, jsonErr.Error(), http.StatusBadRequest)
-	}
-
-	w.Write(jsonData)
 }
