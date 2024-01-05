@@ -51,12 +51,12 @@ main {
   padding: 0px var(--space-md);
 }
 
-
 table {
   border-spacing: 0;
 }
 
-table td, table th {
+table td,
+table th {
   padding: var(--space-sm);
   margin: 0;
 }
@@ -70,21 +70,22 @@ table td {
   background-color: white;
 }
 
-table tbody tr td:not(:first-child),table thead tr th:not(:first-child) {
+table tbody tr td:not(:first-child),
+table thead tr th:not(:first-child) {
   border-left: 1px solid var(--rich-black);
 }
 
 button {
   background-color: var(--rich-black);
   border-style: none;
-  border-radius: .20rem;
+  border-radius: 0.2rem;
   padding: var(--space-xs);
   cursor: pointer;
 }
 
 button:hover {
   background-color: var(--primary-color);
-  transition: all .3s;
+  transition: all 0.3s;
   color: var(--gray);
 }
 
@@ -93,10 +94,9 @@ button.secondary {
   color: white;
 }
 
-button.secondary:hover{
+button.secondary:hover {
   background-color: var(--gray);
 }
-
 
 .stack {
   display: flex;
@@ -121,18 +121,16 @@ button.secondary:hover{
   flex: 1;
 }
 
-
 nav a {
   text-decoration: none;
   display: flex;
   justify-content: center;
-
 }
 
-nav ul{
+nav ul {
   display: inline-flex;
   gap: var(--space-sm);
-  text-decoration: none ;
+  text-decoration: none;
   list-style: none;
   margin: 0;
   padding: 0;
