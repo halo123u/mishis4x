@@ -3,9 +3,11 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"example.com/mishis4x/api"
+	"example.com/mishis4x/persist"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,94 +29,106 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	hashedPassword, cErr := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
-
-	if cErr != nil {
-		http.Error(w, cErr.Error(), http.StatusBadRequest)
-	}
-
-	q := `
-		INSERT INTO users (username, status, password)
-		VALUES (?, ?, ?);
-		`
-
-	stmt, dberr := d.DB.Query(q, u.Username, u.Status, string(hashedPassword))
-
-	if dberr != nil {
-		http.Error(w, dberr.Error(), http.StatusBadRequest)
-	} else {
-		defer stmt.Close()
-		w.WriteHeader(http.StatusCreated)
-
-		w.Header().Set("Content-Type", "application/json")
-
-		resp := map[string]interface{}{
-			"username": u.Username,
-			"status":   u.Status,
-		}
-
-		jsonData, jsonErr := json.Marshal(resp)
-
-		if jsonErr != nil {
-			http.Error(w, jsonErr.Error(), http.StatusBadRequest)
-		}
-
-		w.Write(jsonData)
-
-		fmt.Printf("New user: %+v", u)
-	}
-}
-
-func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
-	var b api.LoginBody
-
-	decoder := json.NewDecoder(r.Body)
-
-	err := decoder.Decode(&b)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	q := `
-		SELECT password, status, id FROM users
-		WHERE username = (?);
-	`
+	id, err := d.P.CreateUser(persist.User{
+		Username: u.Username,
+		Password: string(hashedPassword),
+		Status:   u.Status,
+	})
 
-	var hashedPassword string
-	var status string
-	var id string
-	errDb := d.DB.QueryRow(q, b.Username).Scan(&hashedPassword, &status, &id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
 
-	if errDb != nil {
-		http.Error(w, errDb.Error(), http.StatusBadRequest)
-	} else {
+	user, err := d.P.GetUserByID(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
 
-		err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(b.Password))
+	w.WriteHeader(http.StatusCreated)
+	w.Header().Set("Content-Type", "application/json")
 
-		if err != nil {
-			// handle invalid password
-			fmt.Println("USER is unauthorized")
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-		} else {
+	resp := api.User{
+		ID:       user.ID,
+		Username: user.Username,
+		Status:   user.Status,
+	}
 
-			w.WriteHeader(http.StatusCreated)
-			w.Header().Set("Content-Type", "application/json")
+	jsonData, jsonErr := json.Marshal(resp)
 
-			resp := map[string]interface{}{
-				"username": b.Username,
-				"status":   status,
-				"user_id":  id,
-			}
-			jsonData, jsonErr := json.Marshal(resp)
+	if jsonErr != nil {
+		http.Error(w, jsonErr.Error(), http.StatusBadRequest)
+	}
 
-			if jsonErr != nil {
-				http.Error(w, jsonErr.Error(), http.StatusBadRequest)
-			}
+	w.Write(jsonData)
 
-			w.Write(jsonData)
+	session, err := d.Sessions.Get(r, "session")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
 
-			fmt.Println("USER authenticated")
-		}
+	session.Values["user"] = u.Username
+	session.Values["authenticated"] = true
+	// saves cookie
+	session.Save(r, w)
+
+	log.Printf("New user: %+v", u)
+}
+
+func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
+	var b api.UserLogin
+
+	decoder := json.NewDecoder(r.Body)
+
+	err := decoder.Decode(&b)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	u, err := d.P.GetUserByUsername(b.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(b.Password))
+
+	if err != nil {
+		// handle invalid password
+		fmt.Println("USER is unauthorized")
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+	}
+	log.Printf("USER authenticated")
+	session, err := d.Sessions.Get(r, "session")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	session.Values["userID"] = u.ID
+	session.Values["authenticated"] = true
+	err = session.Save(r, w)
+	if err != nil {
+		fmt.Println("Error saving session")
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+}
+
+// TODO: maybe move to its own file ?
+func (d *Data) UserLogout(w http.ResponseWriter, r *http.Request) {
+	session, err := d.Sessions.Get(r, "session")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	session.Values["authenticated"] = false
+	session.Options.MaxAge = -1
+	err = session.Save(r, w)
+	if err != nil {
+		fmt.Println("Error saving session")
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 }

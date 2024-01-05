@@ -1,9 +1,9 @@
 import { useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AuthContext } from '../AuthContext'
+import { GlobalDataContext } from '../GlobalDataContext'
 
 const CreateLobby = () => {
-  const { user } = useContext(AuthContext)
+  const { GlobalData } = useContext(AuthContext)
   const navigate = useNavigate()
 
   const handleSubmit = (event) => {
@@ -15,7 +15,7 @@ const CreateLobby = () => {
       },
       body: JSON.stringify({
         name: event.target.name.value,
-        user_id: parseInt(user.user_id),
+        user_id: parseInt(GlobalData.user_id),
       }),
     })
       .then((res) => res.json())
