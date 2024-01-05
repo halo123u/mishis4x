@@ -24,10 +24,12 @@ func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 
-	resp := api.User{
+	resp := api.GlobalData{
+		User: api.User{
 		ID:       user.ID,
 		Username: user.Username,
 		Status:   user.Status,
+		},
 	}
 
 	jsonData, jsonErr := json.Marshal(resp)
