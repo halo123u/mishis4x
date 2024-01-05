@@ -48,7 +48,7 @@ const navigation = () => {
             <li> Hello,{globalData.user.username}</li>
             <li>
               <button className="button secondary" onClick={handleLogout}>
-                Log out
+                Logout
               </button>
             </li>
           </ul>
