@@ -45,37 +45,17 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	user, err := d.P.GetUserByID(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	}
-
-	w.WriteHeader(http.StatusCreated)
-	w.Header().Set("Content-Type", "application/json")
-
-	resp := api.User{
-		ID:       user.ID,
-		Username: user.Username,
-		Status:   user.Status,
-	}
-
-	jsonData, jsonErr := json.Marshal(resp)
-
-	if jsonErr != nil {
-		http.Error(w, jsonErr.Error(), http.StatusBadRequest)
-	}
-
-	w.Write(jsonData)
-
 	session, err := d.Sessions.Get(r, "session")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	session.Values["user"] = u.Username
+	session.Values["userID"] = id
 	session.Values["authenticated"] = true
 	// saves cookie
 	session.Save(r, w)
+
+	w.WriteHeader(http.StatusCreated)
 
 	log.Printf("New user: %+v", u)
 }

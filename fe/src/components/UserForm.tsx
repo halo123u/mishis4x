@@ -1,5 +1,4 @@
 import { FC, FormEvent } from 'react';
-import { Link } from 'react-router-dom';
 
 type UserFormPropsT = {
   submit: (username: string, password: string) => void;
@@ -28,9 +27,6 @@ const UserForm: FC<UserFormPropsT> = (props) => {
       </div>
 
       <button type="submit">{props.buttonText}</button>
-      <div>
-        <Link to={`/sign-up`}>Create account</Link>
-      </div>
     </form>
   );
 };
