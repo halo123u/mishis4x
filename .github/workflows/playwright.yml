@@ -13,13 +13,10 @@ jobs:
       mysql:
         image: mysql:8.2
         env:
-          MYSQL_ROOT_PASSWORD: root
+          MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: mishis4x
         ports:
           - 3306:3306
-
-    env:
-      DB_URL: mysql://root:root@localhost:3306/mishis4x
 
     steps:
       - uses: actions/checkout@v4
@@ -32,16 +29,21 @@ jobs:
         with:
           go-version: 1.21
       - name: setup go app
+        env:
+          DB_URL: ${{ vars.DB_URL }}
         run: |
           cd be
-          go run main.go migrations --direction up --seed true
-          go run main.go http
+          mysql --version
+          echo $DB_URL
+          go run main.go migrations --direction up --seed true --env test
+          go run main.go http &
           cd ..
 
       - name: setup node app
         run: |
           cd fe
           npm ci
+          npm run dev &
           npx playwright install --with-deps
           npx playwright test
 
