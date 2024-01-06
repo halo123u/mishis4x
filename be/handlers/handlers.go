@@ -19,7 +19,7 @@ type Data struct {
 }
 
 func (d *Data) InitializeHttpServer(port int) {
-
+	log.Printf("Running http server on port: %d\n", port)
 	r := mux.NewRouter()
 	s := r.PathPrefix("/").Subrouter()
 	s.Use(d.AuthMiddleware)
@@ -32,7 +32,7 @@ func (d *Data) InitializeHttpServer(port int) {
 	s.HandleFunc("/data", d.GetGlobalData)
 	s.HandleFunc("/lobbies", d.ListLobbies)
 	s.HandleFunc("/lobbies/create", d.CreateLobby)
-	log.Printf("Running server on port: %d\n", port)
+	
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), r))
 
 }

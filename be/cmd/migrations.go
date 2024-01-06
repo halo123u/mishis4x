@@ -1,20 +1,15 @@
 package cmd
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
-	"os"
 
 	"example.com/mishis4x/persist"
-	"github.com/go-sql-driver/mysql"
-	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
 var direction string
 var seed bool
-var env string
 
 func init() {
 	migrationsCMD.Flags().StringVarP(&direction, "direction", "d", "", "Direction of migrations (up or down)")
@@ -29,41 +24,10 @@ var migrationsCMD = &cobra.Command{
 	Long:  `Run migrations`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Running migrations")
-
-		if env == "local" {
-			envPath := "./infra/envs/local/.env"
-			err := godotenv.Load(envPath)
-			if err != nil {
-				log.Fatalf("error loading .env file: %v", err)
-			}
-		}	
-
-		dbUsername := os.Getenv("DB_USERNAME")
-		dbPassword := os.Getenv("DB_PASSWORD")
-		dbName := os.Getenv("DB_NAME")
-		dbHost := os.Getenv("DB_HOST")
-
-		fmt.Println(env)
-		fmt.Println(dbUsername)
-		fmt.Println(dbPassword)
-		fmt.Println(dbName)
-		fmt.Println(dbHost)
-
-		cfg := mysql.Config{
-			User:                 dbUsername,
-			Passwd:               dbPassword,
-			Net:                  "tcp",
-			Addr:                 dbHost,
-			DBName:               dbName,
-			AllowNativePasswords: true,
-		}
-
-		fmt.Println(cfg.FormatDSN())
 		
-		db, err := sql.Open("mysql", cfg.FormatDSN())
+		db, err := persist.NewDB(env)
 		if err != nil {
-			log.Fatalf("failed to connect to %s",cfg.FormatDSN())
-			panic(err)
+			log.Panicf("error connecting to db: %v", err)
 		}
 
 		if direction != "" {

@@ -39,7 +39,7 @@ jobs:
           echo $DB_HOST
           mysql --version
           go run main.go migrations --direction up --seed true --env test
-          go run main.go http &
+          go run main.go http --env test &
           cd ..
 
       - name: setup node app

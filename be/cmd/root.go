@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 )
+var env string
 
 var rootCMD = &cobra.Command{
 	Use:   "be",
