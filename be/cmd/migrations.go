@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"example.com/mishis4x/persist"
+	"github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -29,17 +30,30 @@ var migrationsCMD = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Running migrations")
 
-		if env != "local" {
+		if env == "local" {
 			envPath := "./infra/envs/local/.env"
 			err := godotenv.Load(envPath)
 			if err != nil {
 				log.Fatalf("error loading .env file: %v", err)
 			}
-		}
+		}	
 
-		fmt.Println(os.Getenv("DB_URL"))
-		db, err := sql.Open("mysql", os.Getenv("DB_URL"))
+		dbUsername := os.Getenv("DB_USERNAME")
+		dbPassword := os.Getenv("DB_PASSWORD")
+		dbName := os.Getenv("DB_NAME")
+		dbHost := os.Getenv("DB_HOST")
+
+		cfg := mysql.Config{
+			User:                 dbUsername,
+			Passwd:               dbPassword,
+			Net:                  "tcp",
+			Addr:                 dbHost,
+			DBName:               dbName,
+		}
+		
+		db, err := sql.Open("mysql", cfg.FormatDSN())
 		if err != nil {
+			log.Fatalf("failed to connect to %s",cfg.FormatDSN())
 			panic(err)
 		}
 
@@ -50,8 +64,5 @@ var migrationsCMD = &cobra.Command{
 			persist.SeedDB(db)
 		}
 
-		if err != nil {
-			panic(err)
-		}
 	},
 }
