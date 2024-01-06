@@ -1,10 +1,9 @@
 import { useContext, FC } from 'react';
-import { useNavigate } from 'react-router-dom';
 import UserForm from './UserForm.tsx';
+import { Link } from 'react-router-dom';
 import { GlobalDataContext } from '../GlobalDataContext';
 
 const Login: FC = () => {
-  const navigate = useNavigate();
   const context = useContext(GlobalDataContext);
 
   if (!context) {
@@ -27,7 +26,6 @@ const Login: FC = () => {
       .then((res) => {
         console.log(res);
         if (res.status === 200) {
-          navigate('/');
           refreshGlobalData();
         }
 
@@ -44,7 +42,11 @@ const Login: FC = () => {
   return (
     <div>
       <h1>Welcome to Mishis4x</h1>
-      <UserForm submit={handleLogin} buttonText="login" />
+      <div className="stack">
+        <UserForm submit={handleLogin} buttonText="login" />
+
+        <Link to={`/sign-up`}>Create account</Link>
+      </div>
     </div>
   );
 };

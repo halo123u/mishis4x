@@ -1,5 +1,4 @@
 import { useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
 import UserForm from './UserForm';
 import { GlobalDataContext } from '../GlobalDataContext';
 
@@ -11,7 +10,6 @@ const Signup = () => {
   }
 
   const { refreshGlobalData } = context;
-  const navigate = useNavigate();
   const createUser = (username: string, password: string) => {
     fetch('/api/user/create', {
       method: 'POST',
@@ -24,9 +22,8 @@ const Signup = () => {
       }),
     })
       .then((res) => {
-        if (res.status === 200) {
+        if (res.status === 201) {
           refreshGlobalData();
-          navigate('/');
         }
 
         if (res.status === 401) {

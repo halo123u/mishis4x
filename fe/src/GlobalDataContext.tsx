@@ -51,7 +51,7 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
         // TODO maybe find a better way to do this
         if (!!res) {
           let path = location.pathname;
-          if (path === '/login' || path === '/signup') {
+          if (path === '/login' || path === '/sign-up') {
             path = '/';
           }
 

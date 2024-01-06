@@ -48,6 +48,35 @@ func RunMigrations(db *sql.DB, direction string) {
 	log.Println("Migrations ran successfully")
 }
 
+func SeedDB(db *sql.DB) {
+	log.Println("Seeding database")
+	sqlFilesDir := "./persist/seeds"
+
+	fileNames := []string{}
+	err := filepath.Walk(sqlFilesDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			panic(err)
+		}
+
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".sql") {
+			fileNames = append(fileNames, path)
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	for _, fileName := range fileNames {
+		err := executeSQLFile(db, fileName)
+		if err != nil {
+			log.Printf("error executing %s: %v", fileName, err)
+		} else {
+			log.Printf("executed %s\n", fileName)
+		}
+	}
+}
+
 func executeSQLFile(db *sql.DB, filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
