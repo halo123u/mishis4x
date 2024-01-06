@@ -18,7 +18,7 @@ var env string
 
 func init() {
 	migrationsCMD.Flags().StringVarP(&direction, "direction", "d", "", "Direction of migrations (up or down)")
-	migrationsCMD.Flags().BoolVarP(&seed, "seed", "s", false, "Seed the database")
+	migrationsCMD.Flags().BoolVarP(&seed, "seed", "s" , false, "Seed the database")
 	migrationsCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to run migrations on")
 	rootCMD.AddCommand(migrationsCMD)
 }
@@ -43,13 +43,22 @@ var migrationsCMD = &cobra.Command{
 		dbName := os.Getenv("DB_NAME")
 		dbHost := os.Getenv("DB_HOST")
 
+		fmt.Println(env)
+		fmt.Println(dbUsername)
+		fmt.Println(dbPassword)
+		fmt.Println(dbName)
+		fmt.Println(dbHost)
+
 		cfg := mysql.Config{
 			User:                 dbUsername,
 			Passwd:               dbPassword,
 			Net:                  "tcp",
 			Addr:                 dbHost,
 			DBName:               dbName,
+			AllowNativePasswords: true,
 		}
+
+		fmt.Println(cfg.FormatDSN())
 		
 		db, err := sql.Open("mysql", cfg.FormatDSN())
 		if err != nil {
