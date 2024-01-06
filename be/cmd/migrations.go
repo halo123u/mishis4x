@@ -12,9 +12,11 @@ import (
 )
 
 var direction string
+var seed bool
 
 func init() {
-	migrationsCMD.Flags().StringVarP(&direction, "direction", "d", "up", "Direction of migrations (up or down)")
+	migrationsCMD.Flags().StringVarP(&direction, "direction", "d", "", "Direction of migrations (up or down)")
+	migrationsCMD.Flags().BoolVarP(&seed, "seed", "s", false, "Seed the database")
 	rootCMD.AddCommand(migrationsCMD)
 }
 
@@ -36,7 +38,13 @@ var migrationsCMD = &cobra.Command{
 		if err != nil {
 			panic(err)
 		}
-		persist.RunMigrations(db, direction)
+
+		if direction != "" {
+			persist.RunMigrations(db, direction)
+		}
+		if seed {
+			persist.SeedDB(db)
+		}
 
 		if err != nil {
 			panic(err)
