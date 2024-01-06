@@ -1,13 +1,10 @@
 package cmd
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
-	"os"
 
 	"example.com/mishis4x/persist"
-	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +13,8 @@ var seed bool
 
 func init() {
 	migrationsCMD.Flags().StringVarP(&direction, "direction", "d", "", "Direction of migrations (up or down)")
-	migrationsCMD.Flags().BoolVarP(&seed, "seed", "s", false, "Seed the database")
+	migrationsCMD.Flags().BoolVarP(&seed, "seed", "s" , false, "Seed the database")
+	migrationsCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to run migrations on")
 	rootCMD.AddCommand(migrationsCMD)
 }
 
@@ -26,17 +24,10 @@ var migrationsCMD = &cobra.Command{
 	Long:  `Run migrations`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Running migrations")
-
-		envPath := "./infra/envs/local/.env"
-		err := godotenv.Load(envPath)
-
+		
+		db, err := persist.NewDB(env)
 		if err != nil {
-			log.Fatalf("error loading .env file: %v", err)
-		}
-
-		db, err := sql.Open("mysql", os.Getenv("DB_URL"))
-		if err != nil {
-			panic(err)
+			log.Panicf("error connecting to db: %v", err)
 		}
 
 		if direction != "" {
@@ -46,8 +37,5 @@ var migrationsCMD = &cobra.Command{
 			persist.SeedDB(db)
 		}
 
-		if err != nil {
-			panic(err)
-		}
 	},
 }

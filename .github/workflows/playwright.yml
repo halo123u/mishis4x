@@ -1,0 +1,58 @@
+name: Playwright Tests
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.2
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: mishis4x
+        ports:
+          - 3306:3306
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      - name: setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.21
+      - name: setup go app
+        env:
+          DB_HOST: localhost
+          DB_NAME: mishis4x
+          DB_USERNAME: root
+          DB_PASSWORD: password
+        run: |
+          cd be
+          echo $DB_HOST
+          mysql --version
+          go run main.go migrations --direction up --seed true --env test
+          go run main.go http --env test &
+          cd ..
+
+      - name: setup node app
+        run: |
+          cd fe
+          npm ci
+          npm run dev &
+          npx playwright install --with-deps
+          npx playwright test
+
+      - uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-report
+          path: fe/playwright-report/
+          retention-days: 30

@@ -8,10 +8,9 @@
       "name": "Launch Go Backend Server",
       "type": "go",
       "request": "launch",
-      "args": ["http"],
-      "mode": "auto"
-,
-"program": "${workspaceFolder}/be/main.go"
+      "args": ["http", "--env", "local"],
+      "mode": "auto",
+      "program": "${workspaceFolder}/be/main.go"
     }
   ]
 }

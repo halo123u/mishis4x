@@ -55,7 +55,8 @@ func SeedDB(db *sql.DB) {
 	fileNames := []string{}
 	err := filepath.Walk(sqlFilesDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			panic(err)
+			log.Panicf("failed reading file name: %s ",err)
+	
 		}
 
 		if !info.IsDir() && strings.HasSuffix(info.Name(), ".sql") {
@@ -64,7 +65,7 @@ func SeedDB(db *sql.DB) {
 		return nil
 	})
 	if err != nil {
-		panic(err)
+		log.Panicf("failed reading file names: %s ",err)
 	}
 
 	for _, fileName := range fileNames {
@@ -80,17 +81,17 @@ func SeedDB(db *sql.DB) {
 func executeSQLFile(db *sql.DB, filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
-		panic(err)
+		log.Panicf("failed opening file: %s ",err)
 	}
 	sb := strings.Builder{}
 	_, err = io.Copy(&sb, file)
 	if err != nil {
-		panic(err)
+		log.Panicf("failed copying file: %s ",err)
 	}
 	sql := sb.String()
 	_, err = db.Exec(sql)
 	if err != nil {
-		panic(err)
+		log.Panicf("failed executing file: %s ",err)
 	}
 
 	return nil

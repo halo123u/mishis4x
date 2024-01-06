@@ -1,19 +1,17 @@
 package cmd
 
 import (
-	"database/sql"
 	"log"
-	"os"
 
 	"example.com/mishis4x/handlers"
 	"example.com/mishis4x/matchmaking"
 	persist "example.com/mishis4x/persist"
 	"github.com/gorilla/sessions"
-	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
 func init() {
+	httpCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to run migrations on")
 	rootCMD.AddCommand(httpCMD)
 }
 
@@ -22,15 +20,9 @@ var httpCMD = &cobra.Command{
 	Short: "Start the HTTP server",
 	Long:  `Start the HTTP server`,
 	Run: func(cmd *cobra.Command, args []string) {
-		envPath := "./infra/envs/local/.env"
-		err := godotenv.Load(envPath)
+		db, err := persist.NewDB(env)
 		if err != nil {
-			log.Fatalf("error loading .env file: %v", err)
-		}
-
-		db, err := sql.Open("mysql", os.Getenv("DB_URL"))
-		if err != nil {
-			panic(err)
+			log.Panicf("error connecting to db: %v", err)
 		}
 
 		db.SetMaxOpenConns(5)
