@@ -26,12 +26,14 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	err := decoder.Decode(&u)
 
 	if err != nil {
+		log.Printf("Error decoding user: %+v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 
 	if err != nil {
+		log.Printf("Error hashing password: %+v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
@@ -42,18 +44,24 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
+		log.Printf("Error creating user: %+v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	session, err := d.Sessions.Get(r, "session")
 	if err != nil {
+		log.Printf("Error getting session: %+v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	session.Values["userID"] = id
 	session.Values["authenticated"] = true
 	// saves cookie
-	session.Save(r, w)
+	err = session.Save(r, w)
+	if err != nil {
+		log.Println("Error saving session on create")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 
 	w.WriteHeader(http.StatusCreated)
 
@@ -67,24 +75,26 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 
 	err := decoder.Decode(&b)
 	if err != nil {
+		log.Printf("Error decoding user: %+v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	u, err := d.P.GetUserByUsername(b.Username)
 	if err != nil {
+		log.Printf("Error getting user: %+v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(b.Password))
 
 	if err != nil {
-		// handle invalid password
-		fmt.Println("USER is unauthorized")
+		log.Printf("Error comparing password: %+v", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 	}
 	log.Printf("USER authenticated")
 	session, err := d.Sessions.Get(r, "session")
 	if err != nil {
+		log.Printf("Error getting session: %+v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
@@ -92,7 +102,7 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 	session.Values["authenticated"] = true
 	err = session.Save(r, w)
 	if err != nil {
-		fmt.Println("Error saving session")
+		log.Printf("Error saving session on login: %+v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 }
