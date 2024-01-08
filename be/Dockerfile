@@ -1,0 +1,27 @@
+# Start from a base image with Go installed
+FROM golang:1.21 as builder
+
+# Set the current working directory inside the container
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the backend source code into the container
+COPY ./ .
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mishis4x .
+
+# Use a small base image to run the application
+FROM alpine:latest  
+WORKDIR /root/
+
+# Copy the compiled application from the builder stage
+COPY --from=builder /app/mishis4x .
+
+# Expose the port the app runs on
+EXPOSE 8091
+
+# Command to run the executable
+CMD ["./mishis4x", "http", "--env", "prod"]
