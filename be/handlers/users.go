@@ -34,7 +34,7 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Printf("Error hashing password: %+v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
 	id, err := d.P.CreateUser(persist.User{
@@ -45,13 +45,13 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Printf("Error creating user: %+v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
 	session, err := d.Sessions.Get(r, "session")
 	if err != nil {
 		log.Printf("Error getting session: %+v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
 	session.Values["userID"] = id
