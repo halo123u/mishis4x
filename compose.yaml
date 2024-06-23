@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: mishis4x
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  db-seeder:
+    build:
+      context: ./be
+      dockerfile: Dockerfile.seeder
+    depends_on:
+      db:
+        condition: service_healthy
+        restart: true
+    environment:
+      DB_HOST: db:3306
+      DB_USERNAME: root
+      DB_PASSWORD: root_password
+      DB_NAME: mishis4x
+    command:
+      [
+        "./mishis4x",
+        "migrations",
+        "--env",
+        "test",
+        "--direction",
+        "up",
+        "--seed",
+        "true",
+      ]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      db-seeder:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: db:3306
+      DB_USERNAME: root
+      DB_PASSWORD: root_password
+      DB_NAME: mishis4x
+    ports:
+      - "8091:8091"

@@ -21,17 +21,28 @@ type Data struct {
 func (d *Data) InitializeHttpServer(port int) {
 	log.Printf("Running http server on port: %d\n", port)
 	r := mux.NewRouter()
-	s := r.PathPrefix("/").Subrouter()
-	s.Use(d.AuthMiddleware)
+	api := r.PathPrefix("/api").Subrouter()
+	api.Use(d.AuthMiddleware)
 
-	r.HandleFunc("/user/login", d.UserLogin)
-	r.HandleFunc("/user/create", d.UserCreate)
+	
 
-	// Protected routes
-	s.HandleFunc("/logout", d.UserLogout)
-	s.HandleFunc("/data", d.GetGlobalData)
-	s.HandleFunc("/lobbies", d.ListLobbies)
-	s.HandleFunc("/lobbies/create", d.CreateLobby)
+	//API routes 
+	api.HandleFunc("/user/login", d.UserLogin).Methods("POST")
+	api.HandleFunc("/user/create", d.UserCreate).Methods("POST")
+
+	// // Protected routes
+	api.HandleFunc("/logout", d.UserLogout)
+	api.HandleFunc("/data", d.GetGlobalData)
+	api.HandleFunc("/lobbies", d.ListLobbies)
+	api.HandleFunc("/lobbies/create", d.CreateLobby)
+
+	r.PathPrefix(("/assets/")).Handler(http.StripPrefix("/assets/", http.FileServer(http.Dir("./dist/assets/"))))
+  
+	r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        http.ServeFile(w, r, "./dist/index.html")
+    })
+
+	
 	
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), r))
 
@@ -49,6 +60,9 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 		isAuthenticated := session.Values["authenticated"]
 		if isAuthenticated != nil && isAuthenticated == true {
 			fmt.Printf("User found %s", session.Values["globalData"])
+			next.ServeHTTP(w, r)
+		} else if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" {
+			fmt.Println("Login or create user")
 			next.ServeHTTP(w, r)
 		} else {
 			// TODO: add better error handling
