@@ -24,6 +24,7 @@ func (d *Data) InitializeHttpServer(port int) {
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(d.AuthMiddleware)
 
+
 	
 
 	//API routes 
@@ -36,8 +37,11 @@ func (d *Data) InitializeHttpServer(port int) {
 	api.HandleFunc("/lobbies", d.ListLobbies)
 	api.HandleFunc("/lobbies/create", d.CreateLobby)
 
+	// healthcheck
+	r.PathPrefix("/healthcheck").HandlerFunc(d.Healthcheck).Methods("GET")
+
 	r.PathPrefix(("/assets/")).Handler(http.StripPrefix("/assets/", http.FileServer(http.Dir("./dist/assets/"))))
-  
+	
 	r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         http.ServeFile(w, r, "./dist/index.html")
     })
