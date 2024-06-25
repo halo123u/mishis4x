@@ -25,7 +25,7 @@ RUN npm install
 
 COPY ./fe .
 
-CMD ["npm", "run", "build"]
+RUN npm run build
 
 
 # Use a small base image to run the application
