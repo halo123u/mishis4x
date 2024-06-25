@@ -15,9 +15,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mishis4x .
 
 
 # build dist folder for
-FROM node:latest as fe-builder
-
-WORKDIR /webapp
+FROM node:latest as fe
 
 COPY /fe/package*.json ./
 
@@ -34,7 +32,7 @@ WORKDIR /root/
 
 # Copy the compiled application from the builder stage
 COPY --from=builder /app/mishis4x .
-COPY --from=fe-builder /webapp/dist ./dist
+COPY --from=fe ./dist ./dist
 
 # Expose the port the app runs on
 EXPOSE 8091
