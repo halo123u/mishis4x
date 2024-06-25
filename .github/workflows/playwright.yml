@@ -8,16 +8,6 @@ jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mysql:8.2
-        env:
-          MYSQL_ROOT_PASSWORD: password
-          MYSQL_DATABASE: mishis4x
-        ports:
-          - 3306:3306
-
     steps:
       - uses: actions/checkout@v4
         with:
