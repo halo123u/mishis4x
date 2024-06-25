@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mishis4x .
 # build dist folder for
 FROM node:latest as fe-builder
 
-WORKDIR webapp
+WORKDIR /webapp
 
 COPY /fe/package*.json ./
 

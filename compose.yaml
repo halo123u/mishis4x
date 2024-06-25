@@ -41,7 +41,7 @@ services:
 
   app:
     build:
-      context: ./be
+      context: .
       dockerfile: Dockerfile
     depends_on:
       db:
