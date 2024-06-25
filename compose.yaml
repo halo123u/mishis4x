@@ -16,7 +16,7 @@ services:
 
   db-seeder:
     build:
-      context: ./be
+      context: https://github.com/halo123u/mishis4x.git
       dockerfile: Dockerfile.seeder
     depends_on:
       db:
@@ -41,7 +41,7 @@ services:
 
   app:
     build:
-      context: .
+      context: https://github.com/halo123u/mishis4x.git
       dockerfile: Dockerfile
     depends_on:
       db:
