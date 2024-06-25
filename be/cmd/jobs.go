@@ -38,7 +38,7 @@ func generateTypes() {
 	fmt.Println("Generating types")
 	converter := typescriptify.New().Add(api.GlobalData{})
 
-	err := converter.WithInterface(true).ConvertToFile("../fe/src/types.ts")
+	err := converter.WithInterface(true).ConvertToFile("types.ts")
 	if err != nil {
 		fmt.Println(err)
 	}

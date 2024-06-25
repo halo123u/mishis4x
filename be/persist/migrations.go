@@ -12,10 +12,11 @@ import (
 
 func RunMigrations(db *sql.DB, direction string) {
 	log.Printf("Running %s migrations", direction)
-	sqlFilesDir := "./persist/migrations/up"
+	// todo figure out how to make this dynamic based on env
+	sqlFilesDir := "./migrations/up"
 
 	if direction == "down" {
-		sqlFilesDir = "./persist/migrations/down"
+		sqlFilesDir = "./migrations/down"
 	}
 	fileNames := []string{}
 	err := filepath.Walk(sqlFilesDir, func(path string, info os.FileInfo, err error) error {
@@ -50,7 +51,7 @@ func RunMigrations(db *sql.DB, direction string) {
 
 func SeedDB(db *sql.DB) {
 	log.Println("Seeding database")
-	sqlFilesDir := "./persist/seeds"
+	sqlFilesDir := "./seeds"
 
 	fileNames := []string{}
 	err := filepath.Walk(sqlFilesDir, func(path string, info os.FileInfo, err error) error {

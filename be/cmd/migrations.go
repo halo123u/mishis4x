@@ -24,7 +24,7 @@ var migrationsCMD = &cobra.Command{
 	Long:  `Run migrations`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Running migrations")
-		
+
 		db, err := persist.NewDB(env)
 		if err != nil {
 			log.Panicf("error connecting to db: %v", err)

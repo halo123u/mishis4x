@@ -2,7 +2,7 @@ import { test, expect, Page } from "@playwright/test";
 import { nanoid } from "nanoid";
 
 test("login/logout", async ({ page }) => {
-  await page.goto("http://localhost:5173/");
+  await page.goto("http://localhost:8091/login");
 
   await submitForm(page, "test", "test");
 
@@ -14,7 +14,7 @@ test("login/logout", async ({ page }) => {
 });
 
 test("test create account", async ({ page }) => {
-  await page.goto("http://localhost:5173/");
+  await page.goto("http://localhost:8091/login");
 
   await page.click('a[href="/sign-up"]');
 

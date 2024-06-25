@@ -2,6 +2,7 @@ package persist
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 
@@ -28,6 +29,11 @@ func NewDB(env string) (*sql.DB, error) {
 	dbName := os.Getenv("DB_NAME")
 	dbHost := os.Getenv("DB_HOST")
 
+	fmt.Println("dbUsername: ", dbUsername)
+	fmt.Println("dbPassword: ", dbPassword,
+		"dbName: ", dbName,
+		"dbHost: ", dbHost)
+
 	cfg := mysql.Config{
 		User:                 dbUsername,
 		Passwd:               dbPassword,
@@ -41,6 +47,6 @@ func NewDB(env string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	
 	return db, nil
 }
