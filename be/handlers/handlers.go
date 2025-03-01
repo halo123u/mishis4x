@@ -31,11 +31,16 @@ func (d *Data) InitializeHttpServer(port int) {
 	api.HandleFunc("/user/login", d.UserLogin).Methods("POST")
 	api.HandleFunc("/user/create", d.UserCreate).Methods("POST")
 
-	// // Protected routes
+	// Protected routes
 	api.HandleFunc("/logout", d.UserLogout)
 	api.HandleFunc("/data", d.GetGlobalData)
+
+	// Matchmaking routes
 	api.HandleFunc("/lobbies", d.ListLobbies)
 	api.HandleFunc("/lobbies/create", d.CreateLobby)
+
+	// Todos
+	api.HandleFunc("/todos", d.CreateTodo).Methods("POST")
 
 	// healthcheck
 	r.PathPrefix("/healthcheck").HandlerFunc(d.Healthcheck).Methods("GET")
@@ -63,7 +68,7 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 
 		isAuthenticated := session.Values["authenticated"]
 		if isAuthenticated != nil && isAuthenticated == true {
-			fmt.Printf("User found %s", session.Values["globalData"])
+			fmt.Printf("User found %d", session.Values["userID"])
 			next.ServeHTTP(w, r)
 		} else if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" {
 			fmt.Println("Login or create user")
