@@ -1,5 +1,5 @@
 # Start from a base image with Go installed
-FROM golang:1.21 as builder
+FROM golang:1.26 as builder
 
 # Set the current working directory inside the container
 WORKDIR /app
@@ -15,7 +15,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mishis4x .
 
 
 # build dist folder for
-FROM node:latest as fe-builder
+FROM node:24-alpine as fe-builder
 
 WORKDIR webapp
 
