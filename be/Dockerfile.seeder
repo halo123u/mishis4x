@@ -5,9 +5,6 @@ FROM golang:1.21 as builder
 WORKDIR /app
 
 COPY go.mod go.sum ./
-COPY /db /app/db
-
-RUN ls /app
 RUN go mod download
 
 # Copy the backend source code into the container
@@ -17,10 +14,10 @@ COPY ./ .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mishis4x .
 
 # Use a small base image to run the application
-FROM alpine:latest  
+FROM alpine:latest
 WORKDIR /root/
 
 # Copy the compiled application from the builder stage
+# (migration + seed SQL is embedded in the binary via go:embed, see be/db/embed.go)
 COPY --from=builder /app/mishis4x .
-COPY --from=builder /app/db .
 

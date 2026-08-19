@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	dbassets "example.com/mishis4x/db"
 	"example.com/mishis4x/persist"
 	"github.com/spf13/cobra"
 )
@@ -31,10 +32,15 @@ var migrationsCMD = &cobra.Command{
 		}
 
 		if direction != "" {
-			persist.RunMigrations(db, direction)
+			persist.RunMigrations(db, direction, dbassets.Files)
 		}
 		if seed {
-			persist.SeedDB(db)
+			// Seed data is fake fixture data (e.g. a test user) - never run it
+			// against a real environment's database.
+			if env != "local" && env != "test" {
+				log.Fatalf("refusing to seed data for env %q: seeding is only allowed for local/test", env)
+			}
+			persist.SeedDB(db, dbassets.Files)
 		}
 
 	},
