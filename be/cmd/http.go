@@ -43,4 +43,9 @@ var httpCMD = &cobra.Command{
 		}
 		h.InitializeHttpServer(port)
 
+		if err := db.Close(); err != nil {
+			log.Error().Err(err).Msg("error closing db connection")
+		} else {
+			log.Info().Msg("db connection closed")
+		}
 	}}

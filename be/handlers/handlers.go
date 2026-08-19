@@ -1,9 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"example.com/mishis4x/matchmaking"
 	"example.com/mishis4x/persist"
@@ -11,6 +16,10 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/rs/zerolog/log"
 )
+
+// shutdownTimeout bounds how long we wait for in-flight requests to finish
+// once a shutdown signal is received before giving up and exiting anyway.
+const shutdownTimeout = 10 * time.Second
 
 type Data struct {
 	P        persist.Persist
@@ -44,8 +53,40 @@ func (d *Data) InitializeHttpServer(port int) {
 		http.ServeFile(w, r, "./dist/index.html")
 	})
 
-	log.Fatal().Err(http.ListenAndServe(fmt.Sprintf(":%d", port), r)).Msg("http server stopped")
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: r,
+	}
 
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+			return
+		}
+		serverErr <- nil
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			log.Fatal().Err(err).Msg("http server failed")
+		}
+	case sig := <-quit:
+		log.Info().Str("signal", sig.String()).Msg("shutdown signal received, draining in-flight requests")
+
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Error().Err(err).Msg("error during graceful shutdown, forcing exit")
+		} else {
+			log.Info().Msg("http server shut down gracefully")
+		}
+	}
 }
 
 // requestLoggingMiddleware logs every incoming request at debug level so it's
