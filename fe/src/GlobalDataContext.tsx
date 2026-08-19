@@ -15,7 +15,7 @@ export type GlobalDataContextT = {
 };
 
 export const GlobalDataContext = createContext<GlobalDataContextT | undefined>(
-  undefined
+  undefined,
 );
 
 export const GlobalDataProvider: FC<{ children: ReactNode }> = ({

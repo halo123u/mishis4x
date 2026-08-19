@@ -8,7 +8,7 @@ const navigation = () => {
 
   if (!context) {
     throw new Error(
-      'GlobalDataContext is not defined. Make sure to wrap this component in GlobalDataProvider'
+      'GlobalDataContext is not defined. Make sure to wrap this component in GlobalDataProvider',
     );
   }
 
