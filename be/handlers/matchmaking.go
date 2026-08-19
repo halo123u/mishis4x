@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"example.com/mishis4x/api"
+	"github.com/rs/zerolog/log"
 )
 
 func (d *Data) CreateLobby(w http.ResponseWriter, r *http.Request) {
@@ -34,10 +34,10 @@ func (d *Data) CreateLobby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := w.Write(resp); err != nil {
-		fmt.Println("error writing response:", err)
+		log.Error().Err(err).Msg("error writing response")
 	}
 
-	fmt.Println("JSON output:", string(resp))
+	log.Debug().RawJSON("games", resp).Msg("lobby created")
 }
 
 func (d *Data) ListLobbies(w http.ResponseWriter, r *http.Request) {
@@ -51,8 +51,8 @@ func (d *Data) ListLobbies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := w.Write(resp); err != nil {
-		fmt.Println("error writing response:", err)
+		log.Error().Err(err).Msg("error writing response")
 	}
 
-	fmt.Println("JSON output:", string(resp))
+	log.Debug().RawJSON("games", resp).Msg("lobbies listed")
 }

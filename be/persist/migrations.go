@@ -4,13 +4,14 @@ import (
 	"database/sql"
 	"embed"
 	"io/fs"
-	"log"
 	"slices"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 func RunMigrations(db *sql.DB, direction string, files embed.FS) {
-	log.Printf("Running %s migrations", direction)
+	log.Info().Str("direction", direction).Msg("running migrations")
 	sqlFilesDir := "migrations/up"
 
 	if direction == "down" {
@@ -38,23 +39,23 @@ func RunMigrations(db *sql.DB, direction string, files embed.FS) {
 	for _, fileName := range fileNames {
 		err := executeSQLFile(files, fileName, db)
 		if err != nil {
-			log.Printf("error executing %s: %v", fileName, err)
+			log.Error().Err(err).Str("file", fileName).Msg("error executing migration file")
 		} else {
-			log.Printf("executed %s\n", fileName)
+			log.Info().Str("file", fileName).Msg("executed migration file")
 		}
 	}
 
-	log.Println("Migrations ran successfully")
+	log.Info().Msg("migrations ran successfully")
 }
 
 func SeedDB(db *sql.DB, files embed.FS) {
-	log.Println("Seeding database")
+	log.Info().Msg("seeding database")
 	sqlFilesDir := "seeds"
 
 	fileNames := []string{}
 	err := fs.WalkDir(files, sqlFilesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			log.Panicf("failed reading file name: %s ", err)
+			log.Fatal().Err(err).Msg("failed reading seed file name")
 		}
 
 		if !d.IsDir() && strings.HasSuffix(d.Name(), ".sql") {
@@ -63,15 +64,15 @@ func SeedDB(db *sql.DB, files embed.FS) {
 		return nil
 	})
 	if err != nil {
-		log.Panicf("failed reading file names: %s ", err)
+		log.Fatal().Err(err).Msg("failed reading seed file names")
 	}
 
 	for _, fileName := range fileNames {
 		err := executeSQLFile(files, fileName, db)
 		if err != nil {
-			log.Printf("error executing %s: %v", fileName, err)
+			log.Error().Err(err).Str("file", fileName).Msg("error executing seed file")
 		} else {
-			log.Printf("executed %s\n", fileName)
+			log.Info().Str("file", fileName).Msg("executed seed file")
 		}
 	}
 }
@@ -79,12 +80,12 @@ func SeedDB(db *sql.DB, files embed.FS) {
 func executeSQLFile(files embed.FS, filePath string, db *sql.DB) error {
 	content, err := files.ReadFile(filePath)
 	if err != nil {
-		log.Panicf("failed reading file: %s ", err)
+		log.Fatal().Err(err).Str("file", filePath).Msg("failed reading sql file")
 	}
 
 	_, err = db.Exec(string(content))
 	if err != nil {
-		log.Panicf("failed executing file: %s ", err)
+		log.Fatal().Err(err).Str("file", filePath).Msg("failed executing sql file")
 	}
 
 	return nil

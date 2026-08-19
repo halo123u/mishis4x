@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 
 	"example.com/mishis4x/api"
+	"github.com/rs/zerolog/log"
 )
 
 func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +40,6 @@ func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := w.Write(jsonData); err != nil {
-		log.Printf("error writing response: %v", err)
+		log.Error().Err(err).Msg("error writing response")
 	}
 }

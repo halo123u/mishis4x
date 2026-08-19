@@ -1,11 +1,10 @@
 package cmd
 
 import (
-	"fmt"
-	"log"
-
 	dbassets "example.com/mishis4x/db"
+	"example.com/mishis4x/logger"
 	"example.com/mishis4x/persist"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -24,11 +23,12 @@ var migrationsCMD = &cobra.Command{
 	Short: "Run migrations",
 	Long:  `Run migrations`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Running migrations")
+		logger.Init(env)
+		log.Info().Str("direction", direction).Bool("seed", seed).Msg("running migrations")
 
 		db, err := persist.NewDB(env)
 		if err != nil {
-			log.Panicf("error connecting to db: %v", err)
+			log.Fatal().Err(err).Msg("error connecting to db")
 		}
 
 		if direction != "" {
@@ -38,7 +38,7 @@ var migrationsCMD = &cobra.Command{
 			// Seed data is fake fixture data (e.g. a test user) - never run it
 			// against a real environment's database.
 			if env != "local" && env != "test" {
-				log.Fatalf("refusing to seed data for env %q: seeding is only allowed for local/test", env)
+				log.Fatal().Str("env", env).Msg("refusing to seed data: seeding is only allowed for local/test")
 			}
 			persist.SeedDB(db, dbassets.Files)
 		}
