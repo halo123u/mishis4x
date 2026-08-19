@@ -64,6 +64,13 @@ runs with `--env local` (the default for every `be` subcommand). See
 environment variables instead — `NewDB` only reads a `.env` file for
 `local`.
 
+`SESSION_SECRET` (used by the `http` subcommand only, to sign the login
+session cookie) is required for every env, including local — the app
+refuses to start without it rather than falling back to a hardcoded key.
+The local `.env`/`.env.example` value is a placeholder that's explicitly
+rejected outside `local`/`test`; a real deployment needs its own, generated
+with `openssl rand -hex 32` and set as a real secret, never committed.
+
 ## Common tasks
 
 - Regenerate `fe/src/types.ts` from the Go API structs:
