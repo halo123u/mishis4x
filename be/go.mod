@@ -3,7 +3,6 @@ module example.com/mishis4x
 go 1.26
 
 require (
-	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/sessions v1.4.0

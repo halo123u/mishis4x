@@ -1,76 +1,76 @@
 package persist
 
 import (
-	"errors"
+	"database/sql"
+	"fmt"
+	"os"
 	"testing"
 
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/stretchr/testify/assert"
+	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
 )
 
-func newMockPersist(t *testing.T) (*Persist, sqlmock.Sqlmock) {
+// These are integration tests against a real MySQL instance (see
+// compose.yaml's `db` service) rather than a mocked driver - a mock only
+// proves the code calls Exec/Query with a string matching some regex, not
+// that the SQL is actually correct against the real engine. Skips (not
+// fails) if no test DB is reachable, so `go test ./...` still works without
+// one; CI runs these for real (see .github/workflows/test-be.yml).
+func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, mock, err := sqlmock.New()
+
+	host := os.Getenv("DB_HOST")
+	if host == "" {
+		host = "localhost:3306"
+	}
+	cfg := mysql.Config{
+		User:                 envOr("DB_USERNAME", "root"),
+		Passwd:               envOr("DB_PASSWORD", "root_password"),
+		Net:                  "tcp",
+		Addr:                 host,
+		DBName:               envOr("DB_NAME", "mishis4x"),
+		AllowNativePasswords: true,
+	}
+
+	db, err := sql.Open("mysql", cfg.FormatDSN())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	return &Persist{DB: db}, mock
+
+	if err := db.Ping(); err != nil {
+		t.Skipf("no test database reachable at %s, skipping integration test: %v", host, err)
+	}
+
+	return db
 }
 
-func TestCreateUser(t *testing.T) {
-	p, mock := newMockPersist(t)
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
 
-	mock.ExpectExec("INSERT INTO users").
-		WithArgs("bilbo", "active", "hashedpw").
-		WillReturnResult(sqlmock.NewResult(7, 1))
+func TestCreateAndFetchUser(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
 
-	id, err := p.CreateUser(User{Username: "bilbo", Status: "active", Password: "hashedpw"})
+	username := fmt.Sprintf("test-user-%d", os.Getpid())
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM users WHERE username = ?", username)
+	})
 
+	id, err := p.CreateUser(User{Username: username, Status: "active", Password: "hashedpw"})
 	require.NoError(t, err)
-	assert.Equal(t, 7, id)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
+	require.Greater(t, id, 0)
 
-func TestCreateUser_QueryError(t *testing.T) {
-	p, mock := newMockPersist(t)
-
-	mock.ExpectExec("INSERT INTO users").
-		WillReturnError(errors.New("duplicate entry"))
-
-	id, err := p.CreateUser(User{Username: "bilbo", Status: "active", Password: "hashedpw"})
-
-	require.Error(t, err)
-	assert.Equal(t, -1, id)
-}
-
-func TestGetUserByID(t *testing.T) {
-	p, mock := newMockPersist(t)
-
-	rows := sqlmock.NewRows([]string{"id", "username", "status", "password"}).
-		AddRow(1, "frodo", "active", "hashedpw")
-	mock.ExpectQuery("SELECT id, username, status, password").
-		WithArgs(1).
-		WillReturnRows(rows)
-
-	u, err := p.GetUserByID(1)
-
+	byID, err := p.GetUserByID(id)
 	require.NoError(t, err)
-	assert.Equal(t, User{ID: 1, Username: "frodo", Status: "active", Password: "hashedpw"}, u)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
+	require.Equal(t, username, byID.Username)
+	require.Equal(t, "active", byID.Status)
+	require.Equal(t, "hashedpw", byID.Password)
+	require.Equal(t, id, byID.ID)
 
-func TestGetUserByUsername(t *testing.T) {
-	p, mock := newMockPersist(t)
-
-	rows := sqlmock.NewRows([]string{"username", "status", "password", "id"}).
-		AddRow("frodo", "active", "hashedpw", 1)
-	mock.ExpectQuery("SELECT username, status, password, id").
-		WithArgs("frodo").
-		WillReturnRows(rows)
-
-	u, err := p.GetUserByUsername("frodo")
-
+	byUsername, err := p.GetUserByUsername(username)
 	require.NoError(t, err)
-	assert.Equal(t, User{ID: 1, Username: "frodo", Status: "active", Password: "hashedpw"}, u)
-	assert.NoError(t, mock.ExpectationsWereMet())
+	require.Equal(t, byID, byUsername)
 }
