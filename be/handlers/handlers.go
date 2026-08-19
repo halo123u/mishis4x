@@ -17,9 +17,24 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// shutdownTimeout bounds how long we wait for in-flight requests to finish
-// once a shutdown signal is received before giving up and exiting anyway.
-const shutdownTimeout = 10 * time.Second
+const (
+	// shutdownTimeout bounds how long we wait for in-flight requests to
+	// finish once a shutdown signal is received before giving up and
+	// exiting anyway.
+	shutdownTimeout = 10 * time.Second
+
+	// http.Server timeouts. None of these existed before, which meant a
+	// slow or hung client could hold a connection open indefinitely.
+	readHeaderTimeout = 5 * time.Second
+	readTimeout       = 10 * time.Second
+	writeTimeout      = 10 * time.Second
+	idleTimeout       = 120 * time.Second
+
+	// dbQueryTimeout bounds how long any single DB call triggered by a
+	// request is allowed to take, so a hung DB can't hang the request (and
+	// the client) forever.
+	dbQueryTimeout = 5 * time.Second
+)
 
 type Data struct {
 	P        persist.Persist
@@ -54,8 +69,12 @@ func (d *Data) InitializeHttpServer(port int) {
 	})
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: r,
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           r,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 
 	serverErr := make(chan error, 1)

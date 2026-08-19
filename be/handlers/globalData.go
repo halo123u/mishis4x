@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -17,7 +18,10 @@ func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 
 	userID := session.Values["userID"]
 
-	user, err := d.P.GetUserByID(userID.(int))
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	user, err := d.P.GetUserByID(ctx, userID.(int))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}

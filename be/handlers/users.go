@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -36,7 +37,10 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	id, err := d.P.CreateUser(persist.User{
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	id, err := d.P.CreateUser(ctx, persist.User{
 		Username: u.Username,
 		Password: string(hashedPassword),
 		Status:   u.Status,
@@ -79,7 +83,10 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	u, err := d.P.GetUserByUsername(b.Username)
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	u, err := d.P.GetUserByUsername(ctx, b.Username)
 	if err != nil {
 		log.Error().Err(err).Str("username", b.Username).Msg("error getting user")
 		http.Error(w, err.Error(), http.StatusBadRequest)

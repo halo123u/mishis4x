@@ -1,6 +1,10 @@
 package persist
 
-import "github.com/rs/zerolog/log"
+import (
+	"context"
+
+	"github.com/rs/zerolog/log"
+)
 
 type User struct {
 	ID       int
@@ -9,12 +13,12 @@ type User struct {
 	Status   string
 }
 
-func (p *Persist) CreateUser(u User) (int, error) {
+func (p *Persist) CreateUser(ctx context.Context, u User) (int, error) {
 	q := `
 		INSERT INTO users (username, status, password)
 		VALUES (?, ?, ?);
 	`
-	result, err := p.DB.Exec(q, u.Username, u.Status, u.Password)
+	result, err := p.DB.ExecContext(ctx, q, u.Username, u.Status, u.Password)
 	if err != nil {
 		return -1, err
 	}
@@ -27,13 +31,13 @@ func (p *Persist) CreateUser(u User) (int, error) {
 }
 
 // TODO combine both into a query function
-func (p *Persist) GetUserByID(id int) (User, error) {
+func (p *Persist) GetUserByID(ctx context.Context, id int) (User, error) {
 	q := `
 		SELECT id, username, status, password
 		FROM users
 		WHERE id = ?;
 	`
-	stmt, err := p.DB.Query(q, id)
+	stmt, err := p.DB.QueryContext(ctx, q, id)
 	if err != nil {
 		return User{}, err
 	}
@@ -56,13 +60,13 @@ func (p *Persist) GetUserByID(id int) (User, error) {
 	return u, nil
 }
 
-func (p *Persist) GetUserByUsername(username string) (User, error) {
+func (p *Persist) GetUserByUsername(ctx context.Context, username string) (User, error) {
 	q := `
 		SELECT username, status, password, id
 		FROM users
 		WHERE username = ?;
 	`
-	stmt, err := p.DB.Query(q, username)
+	stmt, err := p.DB.QueryContext(ctx, q, username)
 	if err != nil {
 		return User{}, err
 	}
