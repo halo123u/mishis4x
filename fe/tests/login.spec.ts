@@ -6,9 +6,9 @@ test("login/logout", async ({ page }) => {
 
   await submitForm(page, "test", "test");
 
-  await expect(page.getByText("Welcome to my cool website")).toBeVisible();
+  await expect(page.getByText("Welcome to mishis4x")).toBeVisible();
 
-  await page.getByRole("button", { name: "Logout" }).click();
+  await page.getByRole("button", { name: "Log out" }).click();
 
   await expect(page.getByText("Welcome to Mishis4x")).toBeVisible();
 });
@@ -18,7 +18,10 @@ test("test create account", async ({ page }) => {
 
   await page.click('a[href="/sign-up"]');
 
-  await submitForm(page, nanoid(), "test");
+  // Signup enforces an 8-char minimum password (see UserForm's
+  // passwordMinLength) - login intentionally does not, so the seeded
+  // "test"/"test" user above is unaffected.
+  await submitForm(page, nanoid(), "validpass123");
 });
 
 const submitForm = async (page: Page, username: string, password: string) => {
@@ -26,5 +29,5 @@ const submitForm = async (page: Page, username: string, password: string) => {
   await page.fill('input[name="password"]', password);
   await page.click('button[type="submit"]');
 
-  await expect(page.getByText("Welcome to my cool website")).toBeVisible();
+  await expect(page.getByText("Welcome to mishis4x")).toBeVisible();
 };
