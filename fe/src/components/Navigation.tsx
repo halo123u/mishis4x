@@ -3,7 +3,7 @@ import { useContext } from 'react';
 // import type { GlobalDataContextT } from '../GlobalDataContext';
 import { GlobalDataContext } from '../GlobalDataContext';
 
-const navigation = () => {
+const Navigation = () => {
   const context = useContext(GlobalDataContext);
 
   if (!context) {
@@ -58,4 +58,4 @@ const navigation = () => {
   );
 };
 
-export default navigation;
+export default Navigation;
