@@ -15,7 +15,7 @@ export type GlobalDataContextT = {
 };
 
 export const GlobalDataContext = createContext<GlobalDataContextT | undefined>(
-  undefined
+  undefined,
 );
 
 export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
@@ -24,8 +24,6 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
   const [globalData, setGlobalData] = useState<GlobalData | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
-
-  useEffect(() => refreshGlobalData(), []);
 
   const refreshGlobalData = () => {
     fetch('/api/data')
@@ -49,7 +47,7 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
       .then((res) => {
         // when unathorized this is undefined
         // TODO maybe find a better way to do this
-        if (!!res) {
+        if (res) {
           let path = location.pathname;
           if (path === '/login' || path === '/sign-up') {
             path = '/';
@@ -64,6 +62,12 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
         console.log(err);
       });
   };
+
+  // Intentionally run once on mount only (not on every navigation) - this
+  // does its own navigate() internally, so including refreshGlobalData in
+  // the deps would refire this effect after every redirect it triggers.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => refreshGlobalData(), []);
 
   return (
     <GlobalDataContext.Provider

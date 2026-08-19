@@ -8,16 +8,12 @@ import (
 	"github.com/tkrajina/typescriptify-golang-structs/typescriptify"
 )
 
-
 var jobName string
-
 
 func init() {
 	jobsCMD.Flags().StringVarP(&jobName, "job", "j", "", "Name of the job to run")
 	rootCMD.AddCommand(jobsCMD)
 }
-
-
 
 var jobsCMD = &cobra.Command{
 	Use:   "jobs",
@@ -25,7 +21,7 @@ var jobsCMD = &cobra.Command{
 	Long:  `Start the jobs server`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Running jobs")
-			fmt.Println(jobName)
+		fmt.Println(jobName)
 		switch jobName {
 		case "generate-types":
 			generateTypes()

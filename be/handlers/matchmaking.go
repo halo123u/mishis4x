@@ -19,7 +19,10 @@ func (d *Data) CreateLobby(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	d.Lobby.AddGame(i)
+	if err := d.Lobby.AddGame(i); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	w.Header().Set("Content-Type", "application/json")
@@ -30,7 +33,9 @@ func (d *Data) CreateLobby(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	w.Write(resp)
+	if _, err := w.Write(resp); err != nil {
+		fmt.Println("error writing response:", err)
+	}
 
 	fmt.Println("JSON output:", string(resp))
 }
@@ -45,7 +50,9 @@ func (d *Data) ListLobbies(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
-	w.Write(resp)
+	if _, err := w.Write(resp); err != nil {
+		fmt.Println("error writing response:", err)
+	}
 
 	fmt.Println("JSON output:", string(resp))
 }

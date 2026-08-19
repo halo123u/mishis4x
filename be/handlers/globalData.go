@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"example.com/mishis4x/api"
@@ -26,9 +27,9 @@ func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 
 	resp := api.GlobalData{
 		User: api.User{
-		ID:       user.ID,
-		Username: user.Username,
-		Status:   user.Status,
+			ID:       user.ID,
+			Username: user.Username,
+			Status:   user.Status,
 		},
 	}
 
@@ -38,5 +39,7 @@ func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, jsonErr.Error(), http.StatusBadRequest)
 	}
 
-	w.Write(jsonData)
+	if _, err := w.Write(jsonData); err != nil {
+		log.Printf("error writing response: %v", err)
+	}
 }

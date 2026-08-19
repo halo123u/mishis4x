@@ -14,7 +14,6 @@ type Persist struct {
 	DB *sql.DB
 }
 
-
 func NewDB(env string) (*sql.DB, error) {
 	if env == "local" {
 		envPath := "./infra/envs/local/.env"
@@ -22,7 +21,7 @@ func NewDB(env string) (*sql.DB, error) {
 		if err != nil {
 			log.Fatalf("error loading .env file: %v", err)
 		}
-	}	
+	}
 
 	dbUsername := os.Getenv("DB_USERNAME")
 	dbPassword := os.Getenv("DB_PASSWORD")
@@ -47,6 +46,6 @@ func NewDB(env string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return db, nil
 }

@@ -1,5 +1,7 @@
 package persist
 
+import "log"
+
 type User struct {
 	ID       int
 	Username string
@@ -36,7 +38,11 @@ func (p *Persist) GetUserByID(id int) (User, error) {
 		return User{}, err
 	}
 
-	defer stmt.Close()
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			log.Printf("error closing statement: %v", closeErr)
+		}
+	}()
 
 	var u User
 
@@ -61,7 +67,11 @@ func (p *Persist) GetUserByUsername(username string) (User, error) {
 		return User{}, err
 	}
 
-	defer stmt.Close()
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			log.Printf("error closing statement: %v", closeErr)
+		}
+	}()
 
 	var u User
 

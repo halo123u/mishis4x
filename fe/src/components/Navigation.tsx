@@ -3,12 +3,12 @@ import { useContext } from 'react';
 // import type { GlobalDataContextT } from '../GlobalDataContext';
 import { GlobalDataContext } from '../GlobalDataContext';
 
-const navigation = () => {
+const Navigation = () => {
   const context = useContext(GlobalDataContext);
 
   if (!context) {
     throw new Error(
-      'GlobalDataContext is not defined. Make sure to wrap this component in GlobalDataProvider'
+      'GlobalDataContext is not defined. Make sure to wrap this component in GlobalDataProvider',
     );
   }
 
@@ -58,4 +58,4 @@ const navigation = () => {
   );
 };
 
-export default navigation;
+export default Navigation;

@@ -1,0 +1,29 @@
+name: Lint (frontend)
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: fe/package-lock.json
+
+      - name: install dependencies
+        run: cd fe && npm ci
+
+      - name: eslint
+        run: cd fe && npm run lint
+
+      - name: typecheck
+        run: cd fe && npm run typecheck
+
+      - name: prettier --check
+        run: cd fe && npx prettier --check "src/**/*.{ts,tsx}"

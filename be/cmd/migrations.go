@@ -14,7 +14,7 @@ var seed bool
 
 func init() {
 	migrationsCMD.Flags().StringVarP(&direction, "direction", "d", "", "Direction of migrations (up or down)")
-	migrationsCMD.Flags().BoolVarP(&seed, "seed", "s" , false, "Seed the database")
+	migrationsCMD.Flags().BoolVarP(&seed, "seed", "s", false, "Seed the database")
 	migrationsCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to run migrations on")
 	rootCMD.AddCommand(migrationsCMD)
 }
