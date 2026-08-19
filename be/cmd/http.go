@@ -1,12 +1,12 @@
 package cmd
 
 import (
-	"log"
-
 	"example.com/mishis4x/handlers"
+	"example.com/mishis4x/logger"
 	"example.com/mishis4x/matchmaking"
 	persist "example.com/mishis4x/persist"
 	"github.com/gorilla/sessions"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -20,9 +20,11 @@ var httpCMD = &cobra.Command{
 	Short: "Start the HTTP server",
 	Long:  `Start the HTTP server`,
 	Run: func(cmd *cobra.Command, args []string) {
+		logger.Init(env)
+
 		db, err := persist.NewDB(env)
 		if err != nil {
-			log.Panicf("error connecting to db: %v", err)
+			log.Fatal().Err(err).Msg("error connecting to db")
 		}
 
 		db.SetMaxOpenConns(5)

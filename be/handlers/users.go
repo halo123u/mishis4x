@@ -2,12 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 
 	"example.com/mishis4x/api"
 	"example.com/mishis4x/persist"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,14 +25,14 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	err := decoder.Decode(&u)
 
 	if err != nil {
-		log.Printf("Error decoding user: %+v", err)
+		log.Error().Err(err).Msg("error decoding user")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 
 	if err != nil {
-		log.Printf("Error hashing password: %+v", err)
+		log.Error().Err(err).Msg("error hashing password")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
@@ -44,13 +43,13 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("Error creating user: %+v", err)
+		log.Error().Err(err).Msg("error creating user")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
 	session, err := d.Sessions.Get(r, "session")
 	if err != nil {
-		log.Printf("Error getting session: %+v", err)
+		log.Error().Err(err).Msg("error getting session")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
@@ -59,13 +58,14 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	// saves cookie
 	err = session.Save(r, w)
 	if err != nil {
-		log.Println("Error saving session on create")
+		log.Error().Err(err).Msg("error saving session on create")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
 	w.WriteHeader(http.StatusCreated)
 
-	log.Printf("New user: %+v", u)
+	// Deliberately not logging u (contains the plaintext password field).
+	log.Info().Str("username", u.Username).Int("userID", id).Msg("new user created")
 }
 
 func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
@@ -75,26 +75,26 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 
 	err := decoder.Decode(&b)
 	if err != nil {
-		log.Printf("Error decoding user: %+v", err)
+		log.Error().Err(err).Msg("error decoding user")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	u, err := d.P.GetUserByUsername(b.Username)
 	if err != nil {
-		log.Printf("Error getting user: %+v", err)
+		log.Error().Err(err).Str("username", b.Username).Msg("error getting user")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(b.Password))
 
 	if err != nil {
-		log.Printf("Error comparing password: %+v", err)
+		log.Warn().Str("username", b.Username).Msg("login failed: password mismatch")
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 	}
-	log.Printf("USER authenticated")
+	log.Info().Str("username", u.Username).Msg("user authenticated")
 	session, err := d.Sessions.Get(r, "session")
 	if err != nil {
-		log.Printf("Error getting session: %+v", err)
+		log.Error().Err(err).Msg("error getting session")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
@@ -102,7 +102,7 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 	session.Values["authenticated"] = true
 	err = session.Save(r, w)
 	if err != nil {
-		log.Printf("Error saving session on login: %+v", err)
+		log.Error().Err(err).Msg("error saving session on login")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 }
@@ -118,7 +118,7 @@ func (d *Data) UserLogout(w http.ResponseWriter, r *http.Request) {
 	session.Options.MaxAge = -1
 	err = session.Save(r, w)
 	if err != nil {
-		fmt.Println("Error saving session")
+		log.Error().Err(err).Msg("error saving session on logout")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 }

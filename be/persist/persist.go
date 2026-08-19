@@ -2,12 +2,11 @@ package persist
 
 import (
 	"database/sql"
-	"fmt"
-	"log"
 	"os"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
+	"github.com/rs/zerolog/log"
 )
 
 type Persist struct {
@@ -19,7 +18,7 @@ func NewDB(env string) (*sql.DB, error) {
 		envPath := "./infra/envs/local/.env"
 		err := godotenv.Load(envPath)
 		if err != nil {
-			log.Fatalf("error loading .env file: %v", err)
+			log.Fatal().Err(err).Msg("error loading .env file")
 		}
 	}
 
@@ -28,10 +27,12 @@ func NewDB(env string) (*sql.DB, error) {
 	dbName := os.Getenv("DB_NAME")
 	dbHost := os.Getenv("DB_HOST")
 
-	fmt.Println("dbUsername: ", dbUsername)
-	fmt.Println("dbPassword: ", dbPassword,
-		"dbName: ", dbName,
-		"dbHost: ", dbHost)
+	// Deliberately not logging dbPassword.
+	log.Debug().
+		Str("dbUsername", dbUsername).
+		Str("dbName", dbName).
+		Str("dbHost", dbHost).
+		Msg("connecting to db")
 
 	cfg := mysql.Config{
 		User:                 dbUsername,

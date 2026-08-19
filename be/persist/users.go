@@ -1,6 +1,6 @@
 package persist
 
-import "log"
+import "github.com/rs/zerolog/log"
 
 type User struct {
 	ID       int
@@ -40,7 +40,7 @@ func (p *Persist) GetUserByID(id int) (User, error) {
 
 	defer func() {
 		if closeErr := stmt.Close(); closeErr != nil {
-			log.Printf("error closing statement: %v", closeErr)
+			log.Error().Err(closeErr).Msg("error closing statement")
 		}
 	}()
 
@@ -69,7 +69,7 @@ func (p *Persist) GetUserByUsername(username string) (User, error) {
 
 	defer func() {
 		if closeErr := stmt.Close(); closeErr != nil {
-			log.Printf("error closing statement: %v", closeErr)
+			log.Error().Err(closeErr).Msg("error closing statement")
 		}
 	}()
 

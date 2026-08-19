@@ -3,13 +3,13 @@ package handlers
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 
 	"example.com/mishis4x/matchmaking"
 	"example.com/mishis4x/persist"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
+	"github.com/rs/zerolog/log"
 )
 
 type Data struct {
@@ -19,8 +19,9 @@ type Data struct {
 }
 
 func (d *Data) InitializeHttpServer(port int) {
-	log.Printf("Running http server on port: %d\n", port)
+	log.Info().Int("port", port).Msg("starting http server")
 	r := mux.NewRouter()
+	r.Use(requestLoggingMiddleware)
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(d.AuthMiddleware)
 
@@ -43,25 +44,31 @@ func (d *Data) InitializeHttpServer(port int) {
 		http.ServeFile(w, r, "./dist/index.html")
 	})
 
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), r))
+	log.Fatal().Err(http.ListenAndServe(fmt.Sprintf(":%d", port), r)).Msg("http server stopped")
 
+}
+
+// requestLoggingMiddleware logs every incoming request at debug level so it's
+// available locally without drowning out info-level logs in a real deploy.
+func requestLoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Debug().Str("method", r.Method).Str("path", r.URL.Path).Msg("incoming request")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(r.URL.Path)
-		fmt.Println("Auth middleware")
 		session, err := d.Sessions.Get(r, "session")
 		if err != nil {
+			log.Error().Err(err).Str("path", r.URL.Path).Msg("error reading session")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 
 		isAuthenticated := session.Values["authenticated"]
 		if isAuthenticated != nil && isAuthenticated == true {
-			fmt.Printf("User found %s", session.Values["globalData"])
 			next.ServeHTTP(w, r)
 		} else if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" {
-			fmt.Println("Login or create user")
 			next.ServeHTTP(w, r)
 		} else {
 			// TODO: add better error handling
