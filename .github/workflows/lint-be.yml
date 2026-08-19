@@ -2,8 +2,10 @@ name: Lint (backend)
 on:
   push:
     branches: [master]
+    paths: ["be/**", ".github/workflows/lint-be.yml"]
   pull_request:
     branches: [master]
+    paths: ["be/**", ".github/workflows/lint-be.yml"]
 jobs:
   golangci-lint:
     runs-on: ubuntu-latest

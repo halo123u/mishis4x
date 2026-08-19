@@ -2,8 +2,10 @@ name: Test (backend)
 on:
   push:
     branches: [master]
+    paths: ["be/**", ".github/workflows/test-be.yml"]
   pull_request:
     branches: [master]
+    paths: ["be/**", ".github/workflows/test-be.yml"]
 jobs:
   test:
     runs-on: ubuntu-latest
