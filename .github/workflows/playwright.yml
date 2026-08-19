@@ -7,12 +7,7 @@ on:
 jobs:
   test:
     timeout-minutes: 5
-    # Pinned (not ubuntu-latest): Playwright ^1.40.1's `--with-deps` package
-    # list predates Ubuntu 24.04 ("noble")'s package renames (libasound2 ->
-    # libasound2t64, libffi7/libx264-163 dropped), so it fails to install
-    # browser deps on 24.04. Revisit this pin if/when @playwright/test is
-    # upgraded to a version with noble support.
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
