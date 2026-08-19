@@ -19,15 +19,15 @@ const Navigation = () => {
 
   const handleLogout = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    // Log out client-side regardless of how the request goes - if the
+    // server is unreachable, the user still expects "Log out" to work.
     fetch('/api/logout')
-      .then((res) => {
-        if (res.status === 200) {
-          setGlobalData(null);
-          navigate('/login');
-        }
-      })
       .catch((err) => {
         console.log(err);
+      })
+      .finally(() => {
+        setGlobalData(null);
+        navigate('/login');
       });
   };
 

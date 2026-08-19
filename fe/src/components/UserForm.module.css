@@ -13,3 +13,14 @@
 .field input:focus-visible {
   border-color: var(--teal);
 }
+
+.field input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error {
+  color: var(--bad);
+  font-size: var(--text-sm);
+  margin: 0;
+}

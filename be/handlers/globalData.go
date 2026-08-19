@@ -11,23 +11,28 @@ import (
 
 func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 	session, err := d.Sessions.Get(r, "session")
-
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Error().Err(err).Msg("error reading session")
+		writeJSONError(w, http.StatusBadRequest, "Invalid session.")
+		return
 	}
 
-	userID := session.Values["userID"]
+	userID, ok := session.Values["userID"].(int)
+	if !ok {
+		log.Error().Msg("session missing a valid userID")
+		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
 	defer cancel()
 
-	user, err := d.P.GetUserByID(ctx, userID.(int))
+	user, err := d.P.GetUserByID(ctx, userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Error().Err(err).Int("userID", userID).Msg("error getting user")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
 	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
 
 	resp := api.GlobalData{
 		User: api.User{
@@ -37,11 +42,17 @@ func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	jsonData, jsonErr := json.Marshal(resp)
-
-	if jsonErr != nil {
-		http.Error(w, jsonErr.Error(), http.StatusBadRequest)
+	jsonData, err := json.Marshal(resp)
+	if err != nil {
+		log.Error().Err(err).Msg("error marshaling global data")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
 	}
+
+	// Content-Type must be set before WriteHeader - headers are locked in
+	// once the status is written.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write(jsonData); err != nil {
 		log.Error().Err(err).Msg("error writing response")
