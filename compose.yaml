@@ -53,5 +53,11 @@ services:
       DB_USERNAME: root
       DB_PASSWORD: root_password
       DB_NAME: mishis4x
+      # Dockerfile runs with --env prod, so be/cmd/http.go's loadSessionSecret
+      # refuses the infra/envs/local/.env placeholder here - this needs its
+      # own value. Still just a local-compose-testing placeholder, not a real
+      # deploy secret; a real deployment must set its own via that platform's
+      # actual secrets mechanism, not a committed compose file.
+      SESSION_SECRET: 7217646d7dd36b3912b7aa07dc6f151c8eea178a98db997c18d60d5af863ff45
     ports:
       - "8091:8091"
