@@ -1,0 +1,41 @@
+name: Test (backend)
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: mishis4x
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1:3306
+      DB_USERNAME: root
+      DB_PASSWORD: root_password
+      DB_NAME: mishis4x
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: be/go.mod
+
+      - name: run migrations
+        working-directory: be
+        run: go run main.go migrations --env test --direction up
+
+      - name: go test
+        working-directory: be
+        run: go test ./... -v
