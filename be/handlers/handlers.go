@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -122,18 +123,38 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 		session, err := d.Sessions.Get(r, "session")
 		if err != nil {
 			log.Error().Err(err).Str("path", r.URL.Path).Msg("error reading session")
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "Invalid session.")
+			return
 		}
 
-		isAuthenticated := session.Values["authenticated"]
-		if isAuthenticated != nil && isAuthenticated == true {
+		isAuthenticated, _ := session.Values["authenticated"].(bool)
+		if isAuthenticated {
 			next.ServeHTTP(w, r)
-		} else if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" {
-			next.ServeHTTP(w, r)
-		} else {
-			// TODO: add better error handling
-			http.Error(w, errors.New("{}").Error(), http.StatusUnauthorized)
+			return
 		}
 
+		if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
 	})
+}
+
+// errorResponse is the JSON body returned by writeJSONError.
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
+// writeJSONError writes a {"error": "..."} body with the given status.
+// message is shown directly to the user - it must never be a raw internal
+// error string (that risks leaking implementation details like SQL errors);
+// log the real error separately via zerolog before calling this.
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(errorResponse{Error: message}); err != nil {
+		log.Error().Err(err).Msg("error writing error response")
+	}
 }

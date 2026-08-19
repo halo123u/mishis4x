@@ -74,3 +74,16 @@ func TestCreateAndFetchUser(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, byID, byUsername)
 }
+
+func TestGetUser_NotFound(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+
+	missingUsername := fmt.Sprintf("does-not-exist-%d", os.Getpid())
+
+	_, err := p.GetUserByUsername(t.Context(), missingUsername)
+	require.ErrorIs(t, err, ErrUserNotFound)
+
+	_, err = p.GetUserByID(t.Context(), -1)
+	require.ErrorIs(t, err, ErrUserNotFound)
+}

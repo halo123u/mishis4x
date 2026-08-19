@@ -1,7 +1,8 @@
-import { useContext, FC } from 'react';
+import { useContext, useState, FC } from 'react';
 import UserForm from './UserForm.tsx';
 import { Link } from 'react-router-dom';
 import { GlobalDataContext } from '../GlobalDataContext';
+import styles from './AuthPage.module.css';
 
 const Login: FC = () => {
   const context = useContext(GlobalDataContext);
@@ -12,7 +13,13 @@ const Login: FC = () => {
 
   const { refreshGlobalData } = context;
 
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const handleLogin = (username: string, password: string) => {
+    setError(null);
+    setPending(true);
+
     fetch('/api/user/login', {
       method: 'POST',
       headers: {
@@ -23,29 +30,34 @@ const Login: FC = () => {
         password,
       }),
     })
-      .then((res) => {
-        console.log(res);
+      .then(async (res) => {
         if (res.status === 200) {
           refreshGlobalData();
+          return;
         }
 
-        if (res.status === 401) {
-          console.log('unauthorized');
-        }
-
-        if (res.status === 500) {
-          console.log('server error');
-        }
+        const body = await res.json().catch(() => null);
+        setError(body?.error ?? 'Something went wrong. Please try again.');
       })
-      .catch((err) => console.log(err));
+      .catch(() => {
+        setError('Could not reach the server. Please try again.');
+      })
+      .finally(() => setPending(false));
   };
   return (
-    <div>
+    <div className={styles.page}>
       <h1>Welcome to Mishis4x</h1>
-      <div className="stack">
-        <UserForm submit={handleLogin} buttonText="login" />
-
-        <Link to={`/sign-up`}>Create account</Link>
+      <div className={styles.form}>
+        <UserForm
+          submit={handleLogin}
+          buttonText="Log in"
+          pendingText="Logging in…"
+          pending={pending}
+          error={error}
+        />
+        <Link to="/sign-up" className={styles.link}>
+          Create account
+        </Link>
       </div>
     </div>
   );

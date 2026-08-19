@@ -2,9 +2,14 @@ package persist
 
 import (
 	"context"
+	"errors"
 
 	"github.com/rs/zerolog/log"
 )
+
+// ErrUserNotFound is returned by GetUserByID/GetUserByUsername when no row
+// matches. Callers must check for it explicitly - it is not a query error.
+var ErrUserNotFound = errors.New("user not found")
 
 type User struct {
 	ID       int
@@ -49,12 +54,17 @@ func (p *Persist) GetUserByID(ctx context.Context, id int) (User, error) {
 	}()
 
 	var u User
+	found := false
 
 	for stmt.Next() {
 		err := stmt.Scan(&u.ID, &u.Username, &u.Status, &u.Password)
 		if err != nil {
 			return User{}, err
 		}
+		found = true
+	}
+	if !found {
+		return User{}, ErrUserNotFound
 	}
 
 	return u, nil
@@ -78,12 +88,17 @@ func (p *Persist) GetUserByUsername(ctx context.Context, username string) (User,
 	}()
 
 	var u User
+	found := false
 
 	for stmt.Next() {
 		err := stmt.Scan(&u.Username, &u.Status, &u.Password, &u.ID)
 		if err != nil {
 			return User{}, err
 		}
+		found = true
+	}
+	if !found {
+		return User{}, ErrUserNotFound
 	}
 
 	return u, nil

@@ -1,0 +1,32 @@
+/*
+ * A small, deliberately short list of layout utilities - the "vanilla CSS"
+ * alternative to reaching for a component lib's <Stack>/<Flex> primitives.
+ * Keep this list short: a new utility should only show up here once it's
+ * needed in 2+ places, otherwise it belongs in the component's own module.
+ */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.stack.sm {
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.muted {
+  color: var(--ash);
+}

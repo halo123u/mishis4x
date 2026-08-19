@@ -1,0 +1,94 @@
+/*
+ * Design tokens - the single source of truth for color, type, space, and
+ * shape. Components should never hardcode a hex value, px size, or font
+ * name; they reach for a var(--...) defined here instead.
+ *
+ * mishis4x ships dark-mode-first: :root holds the dark palette (the app's
+ * default look, independent of OS preference), and the light variant below
+ * is offered to anyone whose system prefers light - not the other way
+ * around.
+ */
+
+:root {
+  /* -- color: dark (default) -- */
+  --ink: #e8ebee;
+  --ash: #8a939c;
+  --paper: #0f1215;
+  --surface: #171b1f;
+  --hairline: #262b30;
+
+  /* two accents, one job each: teal for primary actions/links/focus,
+     ember reserved for logout and other destructive actions only. */
+  --teal: #5fd3e0;
+  --teal-ink: #062226;
+  --ember: #ef6351;
+  --ember-ink: #170906;
+
+  /* semantic - kept separate from the two accent hues above */
+  --good: #4ade9a;
+  --warn: #f0b429;
+  --bad: #ff6b5e;
+
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --focus-ring: 0 0 0 3px rgba(95, 211, 224, 0.35);
+
+  /* -- type -- */
+  --font-display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
+  --font-body:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Avenir, Helvetica, Arial,
+    sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.75rem;
+  --leading-tight: 1.15;
+  --leading-normal: 1.55;
+
+  /* -- space (4px base) -- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-8: 3rem;
+  --space-10: 4rem;
+
+  /* -- shape -- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --ink: #14181c;
+    --ash: #55606a;
+    --paper: #f5f6f7;
+    --surface: #ffffff;
+    --hairline: #dfe3e6;
+
+    --teal: #0f7a8c;
+    --teal-ink: #ffffff;
+    --ember: #d24a34;
+    --ember-ink: #ffffff;
+
+    --good: #1a7f5a;
+    --warn: #a86a00;
+    --bad: #c0392b;
+
+    --shadow:
+      0 1px 2px rgba(20, 24, 28, 0.06), 0 8px 24px rgba(20, 24, 28, 0.08);
+    --focus-ring: 0 0 0 3px rgba(15, 122, 140, 0.3);
+
+    color-scheme: light;
+  }
+}

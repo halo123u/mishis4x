@@ -28,16 +28,21 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
   const refreshGlobalData = () => {
     fetch('/api/data')
       .then((res) => {
-        console.log(res);
         if (res.status === 200) {
-          console.log('getting data');
           return res.json();
         }
 
         if (res.status === 401) {
-          console.log('unauthorized');
           setGlobalData(null);
-          navigate('/login');
+          // Don't bounce away from /sign-up (or re-navigate to /login while
+          // already there) - an unauthenticated visitor landing directly on
+          // either auth page is expected, not an error to redirect out of.
+          if (
+            location.pathname !== '/login' &&
+            location.pathname !== '/sign-up'
+          ) {
+            navigate('/login');
+          }
         }
 
         if (res.status === 500) {
