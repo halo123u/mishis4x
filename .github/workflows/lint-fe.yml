@@ -2,8 +2,10 @@ name: Lint (frontend)
 on:
   push:
     branches: [master]
+    paths: ["fe/**", ".github/workflows/lint-fe.yml"]
   pull_request:
     branches: [master]
+    paths: ["fe/**", ".github/workflows/lint-fe.yml"]
 jobs:
   lint:
     runs-on: ubuntu-latest
