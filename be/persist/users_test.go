@@ -59,18 +59,18 @@ func TestCreateAndFetchUser(t *testing.T) {
 		_, _ = db.Exec("DELETE FROM users WHERE username = ?", username)
 	})
 
-	id, err := p.CreateUser(User{Username: username, Status: "active", Password: "hashedpw"})
+	id, err := p.CreateUser(t.Context(), User{Username: username, Status: "active", Password: "hashedpw"})
 	require.NoError(t, err)
 	require.Greater(t, id, 0)
 
-	byID, err := p.GetUserByID(id)
+	byID, err := p.GetUserByID(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, username, byID.Username)
 	require.Equal(t, "active", byID.Status)
 	require.Equal(t, "hashedpw", byID.Password)
 	require.Equal(t, id, byID.ID)
 
-	byUsername, err := p.GetUserByUsername(username)
+	byUsername, err := p.GetUserByUsername(t.Context(), username)
 	require.NoError(t, err)
 	require.Equal(t, byID, byUsername)
 }

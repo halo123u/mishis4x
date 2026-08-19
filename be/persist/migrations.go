@@ -1,14 +1,22 @@
 package persist
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"io/fs"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
+
+// statementTimeout bounds how long a single migration/seed SQL file is
+// allowed to run. These run as a one-shot process at deploy time (see
+// cmd/migrations.go), not per-request, so this is generous compared to
+// request-scoped DB timeouts.
+const statementTimeout = 30 * time.Second
 
 func RunMigrations(db *sql.DB, direction string, files embed.FS) {
 	log.Info().Str("direction", direction).Msg("running migrations")
@@ -83,7 +91,10 @@ func executeSQLFile(files embed.FS, filePath string, db *sql.DB) error {
 		log.Fatal().Err(err).Str("file", filePath).Msg("failed reading sql file")
 	}
 
-	_, err = db.Exec(string(content))
+	ctx, cancel := context.WithTimeout(context.Background(), statementTimeout)
+	defer cancel()
+
+	_, err = db.ExecContext(ctx, string(content))
 	if err != nil {
 		log.Fatal().Err(err).Str("file", filePath).Msg("failed executing sql file")
 	}

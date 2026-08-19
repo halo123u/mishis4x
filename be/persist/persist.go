@@ -1,13 +1,21 @@
 package persist
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 )
+
+// connectTimeout bounds how long we'll wait to confirm the DB is actually
+// reachable at startup. sql.Open never dials on its own - without this ping,
+// an unreachable DB would only surface on the first real query.
+const connectTimeout = 5 * time.Second
 
 type Persist struct {
 	DB *sql.DB
@@ -46,6 +54,13 @@ func NewDB(env string) (*sql.DB, error) {
 	db, err := sql.Open("mysql", cfg.FormatDSN())
 	if err != nil {
 		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("pinging db: %w", err)
 	}
 
 	return db, nil
