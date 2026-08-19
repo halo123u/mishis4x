@@ -2,6 +2,7 @@ import { useContext, FC } from 'react';
 import UserForm from './UserForm.tsx';
 import { Link } from 'react-router-dom';
 import { GlobalDataContext } from '../GlobalDataContext';
+import styles from './AuthPage.module.css';
 
 const Login: FC = () => {
   const context = useContext(GlobalDataContext);
@@ -24,7 +25,6 @@ const Login: FC = () => {
       }),
     })
       .then((res) => {
-        console.log(res);
         if (res.status === 200) {
           refreshGlobalData();
         }
@@ -40,12 +40,13 @@ const Login: FC = () => {
       .catch((err) => console.log(err));
   };
   return (
-    <div>
+    <div className={styles.page}>
       <h1>Welcome to Mishis4x</h1>
-      <div className="stack">
-        <UserForm submit={handleLogin} buttonText="login" />
-
-        <Link to={`/sign-up`}>Create account</Link>
+      <div className={styles.form}>
+        <UserForm submit={handleLogin} buttonText="Log in" />
+        <Link to="/sign-up" className={styles.link}>
+          Create account
+        </Link>
       </div>
     </div>
   );

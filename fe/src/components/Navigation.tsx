@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import { useContext } from 'react';
-// import type { GlobalDataContextT } from '../GlobalDataContext';
 import { GlobalDataContext } from '../GlobalDataContext';
+import Button from './ui/Button';
+import styles from './Navigation.module.css';
 
 const Navigation = () => {
   const context = useContext(GlobalDataContext);
@@ -17,12 +18,10 @@ const Navigation = () => {
   const navigate = useNavigate();
 
   const handleLogout = (e: React.MouseEvent<HTMLButtonElement>) => {
-    console.log(e);
     e.preventDefault();
     fetch('/api/logout')
       .then((res) => {
         if (res.status === 200) {
-          console.log('logout');
           setGlobalData(null);
           navigate('/login');
         }
@@ -34,22 +33,20 @@ const Navigation = () => {
 
   return (
     <header>
-      <nav className="row">
-        <a href="/">
-          <img
-            src="https://placehold.co/600x200"
-            alt="Company logo"
-            id="logo"
-          />
+      <nav className={`row ${styles.nav}`}>
+        <a href="/" className={styles.brand}>
+          mishis<span className={styles.accent}>4x</span>
         </a>
-        <div className="flex-space" />
+        <div className="spacer" />
         {globalData && (
-          <ul>
-            <li> Hello,{globalData.user.username}</li>
+          <ul className={styles.userMenu}>
+            <li className={styles.greeting}>
+              Hello, <strong>{globalData.user.username}</strong>
+            </li>
             <li>
-              <button className="button secondary" onClick={handleLogout}>
-                Logout
-              </button>
+              <Button variant="danger" onClick={handleLogout}>
+                Log out
+              </Button>
             </li>
           </ul>
         )}

@@ -1,4 +1,6 @@
 import { FC, FormEvent } from 'react';
+import Button from './ui/Button';
+import styles from './UserForm.module.css';
 
 type UserFormPropsT = {
   submit: (username: string, password: string) => void;
@@ -16,17 +18,27 @@ const UserForm: FC<UserFormPropsT> = (props) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="stack">
-      <div className="stack sm">
+    <form onSubmit={handleSubmit} className={styles.form}>
+      <div className={styles.field}>
         <label htmlFor="username">Username</label>
-        <input type="text" name="username" id="username" />
+        <input
+          type="text"
+          name="username"
+          id="username"
+          autoComplete="username"
+        />
       </div>
-      <div className="stack sm">
+      <div className={styles.field}>
         <label htmlFor="password">Password</label>
-        <input type="password" name="password" id="password" />
+        <input
+          type="password"
+          name="password"
+          id="password"
+          autoComplete="current-password"
+        />
       </div>
 
-      <button type="submit">{props.buttonText}</button>
+      <Button type="submit">{props.buttonText}</Button>
     </form>
   );
 };

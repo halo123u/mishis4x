@@ -1,6 +1,7 @@
 import { useContext } from 'react';
 import UserForm from './UserForm';
 import { GlobalDataContext } from '../GlobalDataContext';
+import styles from './AuthPage.module.css';
 
 const Signup = () => {
   const context = useContext(GlobalDataContext);
@@ -36,9 +37,11 @@ const Signup = () => {
       .catch((err) => console.log(err));
   };
   return (
-    <div>
+    <div className={styles.page}>
       <h1>Sign up to play mishis4x!</h1>
-      <UserForm submit={createUser} buttonText="create account" />
+      <div className={styles.form}>
+        <UserForm submit={createUser} buttonText="Create account" />
+      </div>
     </div>
   );
 };
