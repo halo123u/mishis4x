@@ -14,7 +14,6 @@ import (
 	"example.com/mishis4x/matchmaking"
 	"example.com/mishis4x/persist"
 	"github.com/gorilla/mux"
-	"github.com/gorilla/sessions"
 	"github.com/rs/zerolog/log"
 )
 
@@ -37,10 +36,34 @@ const (
 	dbQueryTimeout = 5 * time.Second
 )
 
+// SessionCookieConfig holds the cookie-level settings for server-side
+// sessions - everything except the actual session data, which lives in the
+// DB (see persist.Session). There's no signing secret here: the cookie only
+// ever carries an opaque, high-entropy random token (persist.NewSessionToken),
+// and that token's own randomness is what makes it unguessable - a lookup
+// against the sessions table is the actual authentication check.
+type SessionCookieConfig struct {
+	Name   string
+	Secure bool
+	TTL    time.Duration
+}
+
 type Data struct {
-	P        persist.Persist
-	Lobby    *matchmaking.Lobby
-	Sessions *sessions.CookieStore
+	P            persist.Persist
+	Lobby        *matchmaking.Lobby
+	Sessions     SessionCookieConfig
+	LoginLimiter *loginLimiter
+}
+
+// NewData builds a Data ready to serve requests, wiring up anything with
+// its own internal state (currently just the login rate limiter).
+func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig) *Data {
+	return &Data{
+		P:            p,
+		Lobby:        lobby,
+		Sessions:     sessions,
+		LoginLimiter: newLoginLimiter(),
+	}
 }
 
 func (d *Data) InitializeHttpServer(port int) {
@@ -56,6 +79,7 @@ func (d *Data) InitializeHttpServer(port int) {
 
 	// // Protected routes
 	api.HandleFunc("/logout", d.UserLogout)
+	api.HandleFunc("/user/password", d.ChangePassword).Methods("POST")
 	api.HandleFunc("/data", d.GetGlobalData)
 	api.HandleFunc("/lobbies", d.ListLobbies)
 	api.HandleFunc("/lobbies/create", d.CreateLobby)
@@ -118,19 +142,30 @@ func requestLoggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// userIDContextKey is the request-context key AuthMiddleware attaches an
+// authenticated request's user ID under, once it's validated the session.
+type userIDContextKey struct{}
+
+func userIDFromContext(r *http.Request) (int, bool) {
+	id, ok := r.Context().Value(userIDContextKey{}).(int)
+	return id, ok
+}
+
 func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session, err := d.Sessions.Get(r, "session")
-		if err != nil {
-			log.Error().Err(err).Str("path", r.URL.Path).Msg("error reading session")
-			writeJSONError(w, http.StatusBadRequest, "Invalid session.")
-			return
-		}
+		if token := d.sessionToken(r); token != "" {
+			lookupCtx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+			session, err := d.P.GetSession(lookupCtx, token)
+			cancel()
 
-		isAuthenticated, _ := session.Values["authenticated"].(bool)
-		if isAuthenticated {
-			next.ServeHTTP(w, r)
-			return
+			if err == nil {
+				ctx := context.WithValue(r.Context(), userIDContextKey{}, session.UserID)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+			if !errors.Is(err, persist.ErrSessionNotFound) {
+				log.Error().Err(err).Msg("error reading session")
+			}
 		}
 
 		if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" {
@@ -140,6 +175,45 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 
 		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
 	})
+}
+
+// setSessionCookie sets the session cookie to token, using the app's
+// configured TTL/Secure settings.
+func (d Data) setSessionCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     d.Sessions.Name,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   int(d.Sessions.TTL.Seconds()),
+		HttpOnly: true,
+		Secure:   d.Sessions.Secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// clearSessionCookie tells the browser to drop the session cookie
+// immediately (MaxAge -1). Callers should also delete the corresponding row
+// via d.P.DeleteSession - clearing the cookie alone doesn't revoke it.
+func (d Data) clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     d.Sessions.Name,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   d.Sessions.Secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// sessionToken reads the raw session cookie value from the request, or ""
+// if there isn't one.
+func (d Data) sessionToken(r *http.Request) string {
+	c, err := r.Cookie(d.Sessions.Name)
+	if err != nil {
+		return ""
+	}
+	return c.Value
 }
 
 // errorResponse is the JSON body returned by writeJSONError.

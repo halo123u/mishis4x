@@ -33,17 +33,11 @@ type User struct {
 	Status   string `json:"status"`
 }
 
-// validateSignupInput returns a user-facing message if username/password
-// don't meet the signup requirements, or "" if they're valid. Login
-// deliberately does not use this - a login attempt against an existing
-// account (e.g. one seeded before these rules existed) must never be
-// rejected for being "too short".
-func validateSignupInput(username, password string) string {
+// validatePassword is shared by signup and change-password - login
+// deliberately does not use it, so an existing/seeded account is never
+// locked out for being "too short" by rules added after it was created.
+func validatePassword(password string) string {
 	switch {
-	case username == "":
-		return "Username is required."
-	case len(username) < minUsernameLen || len(username) > maxUsernameLen:
-		return "Username must be between 3 and 32 characters."
 	case password == "":
 		return "Password is required."
 	case len(password) < minPasswordLen:
@@ -52,6 +46,16 @@ func validateSignupInput(username, password string) string {
 		return "Password must be at most 72 characters."
 	}
 	return ""
+}
+
+func validateSignupInput(username, password string) string {
+	switch {
+	case username == "":
+		return "Username is required."
+	case len(username) < minUsernameLen || len(username) > maxUsernameLen:
+		return "Username must be between 3 and 32 characters."
+	}
+	return validatePassword(password)
 }
 
 func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
@@ -99,21 +103,13 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := d.Sessions.Get(r, "session")
+	session, err := d.P.CreateSession(ctx, id, d.Sessions.TTL)
 	if err != nil {
-		log.Error().Err(err).Msg("error getting session")
+		log.Error().Err(err).Msg("error creating session")
 		writeJSONError(w, http.StatusInternalServerError, "Your account was created, but we couldn't sign you in automatically. Please log in.")
 		return
 	}
-
-	session.Values["userID"] = id
-	session.Values["authenticated"] = true
-	// saves cookie
-	if err := session.Save(r, w); err != nil {
-		log.Error().Err(err).Msg("error saving session on create")
-		writeJSONError(w, http.StatusInternalServerError, "Your account was created, but we couldn't sign you in automatically. Please log in.")
-		return
-	}
+	d.setSessionCookie(w, session.ID)
 
 	w.WriteHeader(http.StatusCreated)
 
@@ -137,6 +133,12 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if d.LoginLimiter.locked(b.Username) {
+		log.Warn().Str("username", b.Username).Msg("login blocked: too many failed attempts")
+		writeJSONError(w, http.StatusTooManyRequests, "Too many failed attempts. Please try again in a few minutes.")
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
 	defer cancel()
 
@@ -149,48 +151,108 @@ func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 		} else {
 			log.Error().Err(err).Str("username", b.Username).Msg("error getting user")
 		}
+		d.LoginLimiter.recordFailure(b.Username)
 		writeJSONError(w, http.StatusUnauthorized, "Incorrect username or password.")
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(b.Password)); err != nil {
 		log.Warn().Str("username", b.Username).Msg("login failed: password mismatch")
+		d.LoginLimiter.recordFailure(b.Username)
 		writeJSONError(w, http.StatusUnauthorized, "Incorrect username or password.")
 		return
 	}
 
-	session, err := d.Sessions.Get(r, "session")
+	session, err := d.P.CreateSession(ctx, u.ID, d.Sessions.TTL)
 	if err != nil {
-		log.Error().Err(err).Msg("error getting session")
+		log.Error().Err(err).Msg("error creating session")
 		writeJSONError(w, http.StatusInternalServerError, "Something went wrong. Please try again.")
 		return
 	}
+	d.setSessionCookie(w, session.ID)
 
-	session.Values["userID"] = u.ID
-	session.Values["authenticated"] = true
-	if err := session.Save(r, w); err != nil {
-		log.Error().Err(err).Msg("error saving session on login")
-		writeJSONError(w, http.StatusInternalServerError, "Something went wrong. Please try again.")
-		return
-	}
-
+	d.LoginLimiter.recordSuccess(b.Username)
 	log.Info().Str("username", u.Username).Msg("user authenticated")
 }
 
 // TODO: maybe move to its own file ?
 func (d *Data) UserLogout(w http.ResponseWriter, r *http.Request) {
-	session, err := d.Sessions.Get(r, "session")
+	if token := d.sessionToken(r); token != "" {
+		ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+		defer cancel()
+
+		if err := d.P.DeleteSession(ctx, token); err != nil {
+			log.Error().Err(err).Msg("error deleting session")
+			// Still clear the cookie below even if the DB delete failed -
+			// logout should never visibly fail from the user's perspective.
+		}
+	}
+
+	d.clearSessionCookie(w)
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+// ChangePassword requires the caller's current password (confirms it's
+// really them, not just someone with a live session) before accepting a new
+// one, then revokes every other session for this user - if a stolen
+// password is what prompted the change, this logs out whoever had it.
+func (d *Data) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r)
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
+		return
+	}
+
+	var req changePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Error().Err(err).Msg("error decoding change-password request")
+		writeJSONError(w, http.StatusBadRequest, "Invalid request.")
+		return
+	}
+
+	if msg := validatePassword(req.NewPassword); msg != "" {
+		writeJSONError(w, http.StatusBadRequest, msg)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	user, err := d.P.GetUserByID(ctx, userID)
 	if err != nil {
-		log.Error().Err(err).Msg("error getting session")
+		log.Error().Err(err).Int("userID", userID).Msg("error getting user for password change")
 		writeJSONError(w, http.StatusInternalServerError, "Something went wrong. Please try again.")
 		return
 	}
 
-	session.Values["authenticated"] = false
-	session.Options.MaxAge = -1
-	if err := session.Save(r, w); err != nil {
-		log.Error().Err(err).Msg("error saving session on logout")
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)); err != nil {
+		log.Warn().Int("userID", userID).Msg("change-password failed: current password mismatch")
+		writeJSONError(w, http.StatusUnauthorized, "Current password is incorrect.")
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		log.Error().Err(err).Msg("error hashing new password")
 		writeJSONError(w, http.StatusInternalServerError, "Something went wrong. Please try again.")
 		return
 	}
+
+	if err := d.P.UpdateUserPassword(ctx, userID, string(hashedPassword)); err != nil {
+		log.Error().Err(err).Int("userID", userID).Msg("error updating password")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong. Please try again.")
+		return
+	}
+
+	if currentToken := d.sessionToken(r); currentToken != "" {
+		if err := d.P.DeleteOtherSessions(ctx, userID, currentToken); err != nil {
+			log.Error().Err(err).Int("userID", userID).Msg("error revoking other sessions")
+		}
+	}
+
+	log.Info().Int("userID", userID).Msg("password changed")
 }

@@ -10,16 +10,12 @@ import (
 )
 
 func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
-	session, err := d.Sessions.Get(r, "session")
-	if err != nil {
-		log.Error().Err(err).Msg("error reading session")
-		writeJSONError(w, http.StatusBadRequest, "Invalid session.")
-		return
-	}
-
-	userID, ok := session.Values["userID"].(int)
+	userID, ok := userIDFromContext(r)
 	if !ok {
-		log.Error().Msg("session missing a valid userID")
+		// AuthMiddleware already gates this route, so this would mean a
+		// programming error (e.g. this handler wired up outside the
+		// authenticated subrouter), not a normal unauthenticated request.
+		log.Error().Msg("GetGlobalData called without an authenticated user in context")
 		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
 		return
 	}
