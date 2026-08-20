@@ -30,6 +30,7 @@ func testDB(t *testing.T) *sql.DB {
 		Addr:                 host,
 		DBName:               envOr("DB_NAME", "mishis4x"),
 		AllowNativePasswords: true,
+		ParseTime:            true,
 	}
 
 	db, err := sql.Open("mysql", cfg.FormatDSN())

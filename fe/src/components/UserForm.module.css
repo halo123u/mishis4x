@@ -24,3 +24,9 @@
   font-size: var(--text-sm);
   margin: 0;
 }
+
+.success {
+  color: var(--good);
+  font-size: var(--text-sm);
+  margin: 0;
+}

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useContext } from 'react';
 import { GlobalDataContext } from '../GlobalDataContext';
 import Button from './ui/Button';
@@ -42,6 +42,9 @@ const Navigation = () => {
           <ul className={styles.userMenu}>
             <li className={styles.greeting}>
               Hello, <strong>{globalData.user.username}</strong>
+            </li>
+            <li>
+              <Link to="/account">Account</Link>
             </li>
             <li>
               <Button variant="danger" onClick={handleLogout}>

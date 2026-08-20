@@ -49,6 +49,11 @@ func NewDB(env string) (*sql.DB, error) {
 		Addr:                 dbHost,
 		DBName:               dbName,
 		AllowNativePasswords: true,
+		// Without this, the driver scans DATETIME/TIMESTAMP columns as raw
+		// []byte instead of time.Time - fine as long as nothing scans into a
+		// time.Time field, which stopped being true once sessions.expires_at
+		// showed up.
+		ParseTime: true,
 	}
 
 	db, err := sql.Open("mysql", cfg.FormatDSN())

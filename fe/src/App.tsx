@@ -3,6 +3,7 @@ import { GlobalDataProvider } from './GlobalDataContext';
 import Login from './components/Login.tsx';
 import Signup from './components/Signup.tsx';
 import Home from './components/Home.tsx';
+import ChangePassword from './components/ChangePassword.tsx';
 import Layout from './components/Layout';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/sign-up" element={<Signup />} />
+            <Route path="/account" element={<ChangePassword />} />
           </Route>
         </Routes>
       </GlobalDataProvider>

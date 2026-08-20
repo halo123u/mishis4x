@@ -64,12 +64,12 @@ runs with `--env local` (the default for every `be` subcommand). See
 environment variables instead — `NewDB` only reads a `.env` file for
 `local`.
 
-`SESSION_SECRET` (used by the `http` subcommand only, to sign the login
-session cookie) is required for every env, including local — the app
-refuses to start without it rather than falling back to a hardcoded key.
-The local `.env`/`.env.example` value is a placeholder that's explicitly
-rejected outside `local`/`test`; a real deployment needs its own, generated
-with `openssl rand -hex 32` and set as a real secret, never committed.
+Sessions don't need a signing secret: login/signup issue a random opaque
+token (`persist.NewSessionToken`, 256 bits from `crypto/rand`) stored server-
+side in the `sessions` table, and the cookie only ever carries that token.
+There's nothing to sign, encrypt, or leak — the token's own randomness plus
+the server-side lookup is what authenticates a request, and logout deletes
+the row outright instead of just clearing a client-side cookie.
 
 ## Common tasks
 

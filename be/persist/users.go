@@ -103,3 +103,12 @@ func (p *Persist) GetUserByUsername(ctx context.Context, username string) (User,
 
 	return u, nil
 }
+
+// UpdateUserPassword replaces userID's stored password hash. Callers must
+// have already hashed newPassword (this function never sees plaintext) and
+// verified the caller's identity - it does not.
+func (p *Persist) UpdateUserPassword(ctx context.Context, userID int, hashedPassword string) error {
+	q := `UPDATE users SET password = ? WHERE id = ?;`
+	_, err := p.DB.ExecContext(ctx, q, hashedPassword, userID)
+	return err
+}
