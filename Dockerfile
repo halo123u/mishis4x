@@ -29,12 +29,16 @@ RUN npm run build
 
 
 # Use a small base image to run the application
-FROM alpine:latest  
-WORKDIR /root/
+FROM alpine:latest
+RUN addgroup -S app && adduser -S -G app app
+WORKDIR /app
 
 # Copy the compiled application from the builder stage
 COPY --from=builder /app/mishis4x .
 COPY --from=fe-builder /webapp/dist ./dist
+
+RUN chown -R app:app /app
+USER app
 
 # Expose the port the app runs on
 EXPOSE 8091
