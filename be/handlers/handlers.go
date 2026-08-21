@@ -80,8 +80,11 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 	}
 }
 
-func (d *Data) InitializeHttpServer(port int) {
-	log.Info().Int("port", port).Msg("starting http server")
+// NewRouter builds the app's full route table - split out from
+// InitializeHttpServer so tests can exercise the real routing/middleware
+// stack (via httptest.Server) instead of calling handler funcs directly and
+// bypassing AuthMiddleware, security headers, etc.
+func (d *Data) NewRouter() *mux.Router {
 	r := mux.NewRouter()
 	r.Use(requestLoggingMiddleware)
 	r.Use(d.securityHeadersMiddleware)
@@ -108,9 +111,15 @@ func (d *Data) InitializeHttpServer(port int) {
 		http.ServeFile(w, r, "./dist/index.html")
 	})
 
+	return r
+}
+
+func (d *Data) InitializeHttpServer(port int) {
+	log.Info().Int("port", port).Msg("starting http server")
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           r,
+		Handler:           d.NewRouter(),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
