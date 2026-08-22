@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -34,6 +35,13 @@ const (
 	// request is allowed to take, so a hung DB can't hang the request (and
 	// the client) forever.
 	dbQueryTimeout = 5 * time.Second
+
+	// maxRequestBodyBytes bounds how much of a request body we'll ever read.
+	// Generous for this app's JSON API (every body is a handful of short
+	// fields) - the point is capping it at all, not the exact number.
+	// Without this, nothing stopped a client from sending an arbitrarily
+	// large body and making the server try to read all of it.
+	maxRequestBodyBytes = 1 << 20 // 1 MiB
 )
 
 // contentSecurityPolicy is scoped to what the app actually loads: same-
@@ -63,20 +71,26 @@ type SessionCookieConfig struct {
 }
 
 type Data struct {
-	P            persist.Persist
-	Lobby        *matchmaking.Lobby
-	Sessions     SessionCookieConfig
-	LoginLimiter *loginLimiter
+	P        persist.Persist
+	Lobby    *matchmaking.Lobby
+	Sessions SessionCookieConfig
+	// LoginLimiter and SignupLimiter are deliberately separate instances -
+	// see attemptLimiter's doc comment for why sharing one would let a run
+	// of failed signups against an already-taken username also lock out a
+	// real login for that account, and vice versa.
+	LoginLimiter  *attemptLimiter
+	SignupLimiter *attemptLimiter
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
-// its own internal state (currently just the login rate limiter).
+// its own internal state (the login/signup rate limiters).
 func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig) *Data {
 	return &Data{
-		P:            p,
-		Lobby:        lobby,
-		Sessions:     sessions,
-		LoginLimiter: newLoginLimiter(),
+		P:             p,
+		Lobby:         lobby,
+		Sessions:      sessions,
+		LoginLimiter:  newAttemptLimiter(),
+		SignupLimiter: newAttemptLimiter(),
 	}
 }
 
@@ -86,8 +100,12 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 // bypassing AuthMiddleware, security headers, etc.
 func (d *Data) NewRouter() *mux.Router {
 	r := mux.NewRouter()
+	// Registered first so it's the outermost wrapper - catches a panic from
+	// any handler *or* any other middleware below it.
+	r.Use(recoverMiddleware)
 	r.Use(requestLoggingMiddleware)
 	r.Use(d.securityHeadersMiddleware)
+	r.Use(maxBodyMiddleware)
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(d.AuthMiddleware)
 
@@ -164,6 +182,53 @@ func requestLoggingMiddleware(next http.Handler) http.Handler {
 		log.Debug().Str("method", r.Method).Str("path", r.URL.Path).Msg("incoming request")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// recoverMiddleware turns a panicking handler into a logged 500 instead of
+// an unstructured stack trace printed straight to stderr by net/http's own
+// (still-present) recovery - without this, a panic looks nothing like every
+// other log line once something's actually watching logs on a real host.
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Error().
+					Interface("panic", rec).
+					Str("stack", string(debug.Stack())).
+					Str("path", r.URL.Path).
+					Msg("recovered from panic")
+				writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// maxBodyMiddleware caps how much of a request body any handler will ever
+// read - see maxRequestBodyBytes.
+func maxBodyMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// decodeJSONBody decodes r's body as JSON into v. On failure it writes the
+// response itself (413 if the body exceeded maxRequestBodyBytes, 400
+// otherwise) and returns false - callers should just `return` when this
+// returns false, the response is already sent.
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "Request body too large.")
+			return false
+		}
+		log.Error().Err(err).Msg("error decoding request body")
+		writeJSONError(w, http.StatusBadRequest, "Invalid request.")
+		return false
+	}
+	return true
 }
 
 // securityHeadersMiddleware sets response headers that matter precisely

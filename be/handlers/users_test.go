@@ -8,6 +8,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"example.com/mishis4x/persist"
@@ -207,7 +208,7 @@ func TestUserLogin_RateLimiting(t *testing.T) {
 	createTestUser(t, db, username, "correctpass123")
 
 	var lastStatus int
-	for i := 0; i < maxFailedLoginAttempts; i++ {
+	for i := 0; i < maxFailedAttempts; i++ {
 		res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
 			"username": username,
 			"password": "wrongpassword",
@@ -228,6 +229,72 @@ func TestUserLogin_RateLimiting(t *testing.T) {
 		"password": "correctpass123",
 	})
 	require.Equal(t, http.StatusTooManyRequests, correctButLockedRes.StatusCode)
+}
+
+func TestUserCreate_RateLimiting(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+	username := testUsername(t, db)
+	createTestUser(t, db, username, "correctpass123")
+
+	// Every attempt below hits the duplicate-username (409) branch, since
+	// username already exists - repeatedly probing that is exactly the
+	// enumeration angle this limiter exists to slow down.
+	var lastStatus int
+	for i := 0; i < maxFailedAttempts; i++ {
+		res := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
+			"username": username,
+			"password": "someotherpass123",
+		})
+		lastStatus = res.StatusCode
+	}
+	require.Equal(t, http.StatusConflict, lastStatus, "the threshold-th attempt is still just a normal duplicate-username response")
+
+	lockedRes := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
+		"username": username,
+		"password": "someotherpass123",
+	})
+	require.Equal(t, http.StatusTooManyRequests, lockedRes.StatusCode)
+
+	// A completely different, available username must be unaffected - the
+	// limiter is keyed per-username, not global.
+	freeUsername := testUsername(t, db)
+	freeRes := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
+		"username": freeUsername,
+		"password": "someotherpass123",
+	})
+	require.Equal(t, http.StatusCreated, freeRes.StatusCode)
+}
+
+func TestRequestBodyTooLarge(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+
+	// Must be syntactically valid JSON, just oversized - a body that's
+	// simply garbage bytes fails on JSON syntax after reading only the
+	// first few bytes, never actually exercising the size limit.
+	hugeValue := strings.Repeat("a", maxRequestBodyBytes+1)
+	oversized := []byte(`{"username":"` + hugeValue + `","password":"whatever"}`)
+
+	res, err := client.Post(ts.URL+"/api/user/login", "application/json", bytes.NewReader(oversized))
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, res.StatusCode)
+}
+
+func TestRecoverMiddleware_TurnsPanicIntoLogged500(t *testing.T) {
+	panicking := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("boom")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/whatever", nil)
+	rec := httptest.NewRecorder()
+
+	recoverMiddleware(panicking).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, "Something went wrong.", decodeError(t, rec.Result()))
 }
 
 func TestUserLogout_ActuallyRevokesSession(t *testing.T) {

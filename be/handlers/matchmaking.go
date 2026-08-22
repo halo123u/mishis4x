@@ -11,27 +11,27 @@ import (
 func (d *Data) CreateLobby(w http.ResponseWriter, r *http.Request) {
 	i := &api.NewGameInput{}
 
-	decoder := json.NewDecoder(r.Body)
-
-	err := decoder.Decode(&i)
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	}
-
-	if err := d.Lobby.AddGame(i); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if !decodeJSONBody(w, r, i) {
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	w.Header().Set("Content-Type", "application/json")
+	if err := d.Lobby.AddGame(i); err != nil {
+		log.Error().Err(err).Msg("error adding game")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
+	}
 
 	resp, err := json.Marshal(d.Lobby.ListGames())
-
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Error().Err(err).Msg("error marshaling games")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
 	}
+
+	// Content-Type must be set before WriteHeader - headers are locked in
+	// once the status is written.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 
 	if _, err := w.Write(resp); err != nil {
 		log.Error().Err(err).Msg("error writing response")
@@ -41,14 +41,15 @@ func (d *Data) CreateLobby(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Data) ListLobbies(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-
 	resp, err := json.Marshal(d.Lobby.Games)
-
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Error().Err(err).Msg("error marshaling games")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write(resp); err != nil {
 		log.Error().Err(err).Msg("error writing response")

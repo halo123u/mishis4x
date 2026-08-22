@@ -7,10 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoginLimiter_LocksOutAfterThreshold(t *testing.T) {
-	l := newLoginLimiter()
+func TestAttemptLimiter_LocksOutAfterThreshold(t *testing.T) {
+	l := newAttemptLimiter()
 
-	for i := 0; i < maxFailedLoginAttempts-1; i++ {
+	for i := 0; i < maxFailedAttempts-1; i++ {
 		l.recordFailure("alice")
 		require.False(t, l.locked("alice"), "should not lock out before the threshold")
 	}
@@ -19,21 +19,21 @@ func TestLoginLimiter_LocksOutAfterThreshold(t *testing.T) {
 	require.True(t, l.locked("alice"), "should lock out once the threshold is reached")
 }
 
-func TestLoginLimiter_TracksUsersIndependently(t *testing.T) {
-	l := newLoginLimiter()
+func TestAttemptLimiter_TracksKeysIndependently(t *testing.T) {
+	l := newAttemptLimiter()
 
-	for i := 0; i < maxFailedLoginAttempts; i++ {
+	for i := 0; i < maxFailedAttempts; i++ {
 		l.recordFailure("alice")
 	}
 
 	require.True(t, l.locked("alice"))
-	require.False(t, l.locked("bob"), "a different username must not be affected")
+	require.False(t, l.locked("bob"), "a different key must not be affected")
 }
 
-func TestLoginLimiter_SuccessClearsFailures(t *testing.T) {
-	l := newLoginLimiter()
+func TestAttemptLimiter_SuccessClearsFailures(t *testing.T) {
+	l := newAttemptLimiter()
 
-	for i := 0; i < maxFailedLoginAttempts-1; i++ {
+	for i := 0; i < maxFailedAttempts-1; i++ {
 		l.recordFailure("alice")
 	}
 
@@ -43,13 +43,13 @@ func TestLoginLimiter_SuccessClearsFailures(t *testing.T) {
 	require.False(t, l.locked("alice"), "a success should reset the failure count")
 }
 
-func TestLoginLimiter_UnlocksAfterLockoutDuration(t *testing.T) {
-	l := newLoginLimiter()
+func TestAttemptLimiter_UnlocksAfterLockoutDuration(t *testing.T) {
+	l := newAttemptLimiter()
 
 	now := time.Now()
-	l.attempts["alice"] = &loginAttempt{
-		count:       maxFailedLoginAttempts,
-		windowStart: now.Add(-loginLockoutWindow / 2),
+	l.attempts["alice"] = &trackedAttempt{
+		count:       maxFailedAttempts,
+		windowStart: now.Add(-attemptLockoutWindow / 2),
 		lockedUntil: now.Add(-time.Second), // already in the past
 	}
 
