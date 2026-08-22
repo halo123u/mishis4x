@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"syscall"
 	"time"
@@ -126,6 +127,17 @@ func (d *Data) NewRouter() *mux.Router {
 	r.PathPrefix(("/assets/")).Handler(http.StripPrefix("/assets/", http.FileServer(http.Dir("./dist/assets/"))))
 
 	r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Serve a real static file if one exists at this path (favicon,
+		// robots.txt, anything else Vite copies from fe/public/ to the dist
+		// root) - otherwise fall back to the SPA shell so client-side routes
+		// (/login, /account, ...) still resolve. Without this, every non-
+		// /assets/ request - including the favicon - silently got index.html
+		// back instead of the file it actually asked for.
+		requestedPath := filepath.Join("./dist", r.URL.Path)
+		if info, err := os.Stat(requestedPath); err == nil && !info.IsDir() {
+			http.ServeFile(w, r, requestedPath)
+			return
+		}
 		http.ServeFile(w, r, "./dist/index.html")
 	})
 
