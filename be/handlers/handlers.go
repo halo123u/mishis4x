@@ -36,6 +36,20 @@ const (
 	dbQueryTimeout = 5 * time.Second
 )
 
+// contentSecurityPolicy is scoped to what the app actually loads: same-
+// origin scripts/API calls, plus Google Fonts (see fe/index.html) - not a
+// generic template. Update this if the frontend starts loading from
+// somewhere new, or requests will silently fail instead of erroring loudly.
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self'; " +
+	"style-src 'self' https://fonts.googleapis.com; " +
+	"font-src 'self' https://fonts.gstatic.com; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"object-src 'none'; " +
+	"base-uri 'self'; " +
+	"frame-ancestors 'none'"
+
 // SessionCookieConfig holds the cookie-level settings for server-side
 // sessions - everything except the actual session data, which lives in the
 // DB (see persist.Session). There's no signing secret here: the cookie only
@@ -66,10 +80,14 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 	}
 }
 
-func (d *Data) InitializeHttpServer(port int) {
-	log.Info().Int("port", port).Msg("starting http server")
+// NewRouter builds the app's full route table - split out from
+// InitializeHttpServer so tests can exercise the real routing/middleware
+// stack (via httptest.Server) instead of calling handler funcs directly and
+// bypassing AuthMiddleware, security headers, etc.
+func (d *Data) NewRouter() *mux.Router {
 	r := mux.NewRouter()
 	r.Use(requestLoggingMiddleware)
+	r.Use(d.securityHeadersMiddleware)
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(d.AuthMiddleware)
 
@@ -93,9 +111,15 @@ func (d *Data) InitializeHttpServer(port int) {
 		http.ServeFile(w, r, "./dist/index.html")
 	})
 
+	return r
+}
+
+func (d *Data) InitializeHttpServer(port int) {
+	log.Info().Int("port", port).Msg("starting http server")
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           r,
+		Handler:           d.NewRouter(),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
@@ -138,6 +162,25 @@ func (d *Data) InitializeHttpServer(port int) {
 func requestLoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Debug().Str("method", r.Method).Str("path", r.URL.Path).Msg("incoming request")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// securityHeadersMiddleware sets response headers that matter precisely
+// because this one process serves both the HTML/JS the browser renders and
+// the API it calls - there's no separate frontend server to add these to.
+func (d Data) securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		// HSTS only makes sense once we're actually expected to be served
+		// over HTTPS - reuses the same signal already driving the session
+		// cookie's Secure flag, rather than introducing a second env check.
+		if d.Sessions.Secure {
+			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
