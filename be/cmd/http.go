@@ -18,6 +18,16 @@ import (
 // keeps the cookie) after login/signup.
 const sessionTTL = 30 * 24 * time.Hour
 
+// DB connection pool settings. None of these existed before beyond
+// SetMaxOpenConns - matters more the moment this is on a managed DB that
+// recycles idle connections server-side rather than a throwaway local one.
+const (
+	dbMaxOpenConns    = 5
+	dbMaxIdleConns    = 5
+	dbConnMaxLifetime = 5 * time.Minute
+	dbConnMaxIdleTime = 2 * time.Minute
+)
+
 // defaultPort is used locally and whenever PORT isn't set. Most PaaS hosts
 // (Railway, Render, etc.) inject PORT and expect the app to bind to it
 // rather than a fixed port, so this needs to be configurable, not just a
@@ -64,7 +74,11 @@ var httpCMD = &cobra.Command{
 			log.Fatal().Err(err).Msg("error connecting to db")
 		}
 
-		db.SetMaxOpenConns(5)
+		db.SetMaxOpenConns(dbMaxOpenConns)
+		db.SetMaxIdleConns(dbMaxIdleConns)
+		db.SetConnMaxLifetime(dbConnMaxLifetime)
+		db.SetConnMaxIdleTime(dbConnMaxIdleTime)
+
 		port := loadPort()
 
 		h := handlers.NewData(

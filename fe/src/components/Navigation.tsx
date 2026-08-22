@@ -1,19 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useContext } from 'react';
-import { GlobalDataContext } from '../GlobalDataContext';
+import { useGlobalData } from '../useGlobalData';
 import Button from './ui/Button';
 import styles from './Navigation.module.css';
 
 const Navigation = () => {
-  const context = useContext(GlobalDataContext);
-
-  if (!context) {
-    throw new Error(
-      'GlobalDataContext is not defined. Make sure to wrap this component in GlobalDataProvider',
-    );
-  }
-
-  const { globalData, setGlobalData } = context;
+  const { globalData, setGlobalData } = useGlobalData();
 
   const navigate = useNavigate();
 
@@ -23,7 +14,7 @@ const Navigation = () => {
     // server is unreachable, the user still expects "Log out" to work.
     fetch('/api/logout')
       .catch((err) => {
-        console.log(err);
+        console.error('POST /api/logout failed:', err);
       })
       .finally(() => {
         setGlobalData(null);

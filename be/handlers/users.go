@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -62,10 +61,7 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	var u User
 	u.Status = "active"
 
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&u); err != nil {
-		log.Error().Err(err).Msg("error decoding user")
-		writeJSONError(w, http.StatusBadRequest, "Invalid request.")
+	if !decodeJSONBody(w, r, &u) {
 		return
 	}
 
@@ -73,6 +69,15 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 
 	if msg := validateSignupInput(u.Username, u.Password); msg != "" {
 		writeJSONError(w, http.StatusBadRequest, msg)
+		return
+	}
+
+	// Rate limited per username, separately from login (see
+	// attemptLimiter's doc comment) - mainly to slow down probing whether a
+	// given username is taken via repeated signup attempts against it.
+	if d.SignupLimiter.locked(u.Username) {
+		log.Warn().Str("username", u.Username).Msg("signup blocked: too many failed attempts")
+		writeJSONError(w, http.StatusTooManyRequests, "Too many attempts. Please try again in a few minutes.")
 		return
 	}
 
@@ -95,6 +100,7 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		var mysqlErr *mysql.MySQLError
 		if errors.As(err, &mysqlErr) && mysqlErr.Number == mysqlErrDuplicateEntry {
 			log.Warn().Str("username", u.Username).Msg("signup failed: username already taken")
+			d.SignupLimiter.recordFailure(u.Username)
 			writeJSONError(w, http.StatusConflict, "That username is already taken.")
 			return
 		}
@@ -102,6 +108,7 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "Something went wrong creating your account. Please try again.")
 		return
 	}
+	d.SignupLimiter.recordSuccess(u.Username)
 
 	session, err := d.P.CreateSession(ctx, id, d.Sessions.TTL)
 	if err != nil {
@@ -120,10 +127,7 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 func (d *Data) UserLogin(w http.ResponseWriter, r *http.Request) {
 	var b api.UserLogin
 
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&b); err != nil {
-		log.Error().Err(err).Msg("error decoding login request")
-		writeJSONError(w, http.StatusBadRequest, "Invalid request.")
+	if !decodeJSONBody(w, r, &b) {
 		return
 	}
 
@@ -208,9 +212,7 @@ func (d *Data) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req changePasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Error().Err(err).Msg("error decoding change-password request")
-		writeJSONError(w, http.StatusBadRequest, "Invalid request.")
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
