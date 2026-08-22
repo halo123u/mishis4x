@@ -1,7 +1,9 @@
 # mishis4x
 
-A Go + React web app with cookie-session auth as its foundation, plus an
-in-progress matchmaking/lobby system. The backend serves the built
+A Go + React web app with a hardened account system (signup, login,
+logout, change-password, rate-limited, fully revocable server-side
+sessions) as its foundation, plus an in-progress matchmaking/lobby system
+that hasn't been built on top of it yet. The backend serves the built
 frontend directly, so the whole thing ships as one binary/one image.
 
 - `be/` — Go backend. A single `cobra` CLI (`be http`, `be migrations`,
@@ -12,8 +14,8 @@ frontend directly, so the whole thing ships as one binary/one image.
 
 ## Requirements
 
-- Go 1.21+
-- Node 20+
+- Go 1.26+
+- Node 24+
 - Docker + Docker Compose
 
 ## Running it locally
@@ -86,4 +88,18 @@ the row outright instead of just clearing a client-side cookie.
   database.
 - Migration/seed SQL is embedded into the `be` binary at build time
   (`be/db/embed.go`), so the migration runner works the same regardless
-  of where or how it's invoked.
+  of where or how it's invoked. Both are tracked in a `schema_migrations`
+  table, so re-running them against an already-migrated database (e.g.
+  a normal restart against `compose.yaml`'s persisted volume) skips
+  what's already applied instead of erroring.
+- Login is rate-limited per username: 5 failed attempts within 15
+  minutes triggers a 5-minute lockout (`be/handlers/loginLimiter.go`).
+- Sessions are server-side — the cookie only ever carries an opaque
+  random token, looked up against a `sessions` table. Logout and
+  changing your password both actually delete session rows (revoked
+  for real), not just clear a client-side cookie.
+- `/healthcheck` verifies real DB connectivity (503 if unreachable),
+  not just that the process is alive.
+- The HTTP port is configurable via the `PORT` env var (defaults to
+  `8091`) — most hosting platforms inject this rather than letting you
+  pick a fixed port.
