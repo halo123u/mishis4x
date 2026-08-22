@@ -1,5 +1,5 @@
 import { Route, Routes } from 'react-router-dom';
-import { GlobalDataProvider } from './GlobalDataContext';
+import { GlobalDataProvider } from './GlobalDataProvider';
 import Login from './components/Login.tsx';
 import Signup from './components/Signup.tsx';
 import Home from './components/Home.tsx';

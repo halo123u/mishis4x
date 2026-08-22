@@ -1,16 +1,10 @@
-import { useContext, useState } from 'react';
+import { useState } from 'react';
 import UserForm from './UserForm';
-import { GlobalDataContext } from '../GlobalDataContext';
+import { useGlobalData } from '../useGlobalData';
 import styles from './AuthPage.module.css';
 
 const Signup = () => {
-  const context = useContext(GlobalDataContext);
-
-  if (!context) {
-    throw new Error('context is undefined');
-  }
-
-  const { refreshGlobalData } = context;
+  const { refreshGlobalData } = useGlobalData();
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

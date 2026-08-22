@@ -1,22 +1,7 @@
-import React, {
-  createContext,
-  useState,
-  useEffect,
-  FC,
-  ReactNode,
-} from 'react';
+import { useState, useEffect, FC, ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { GlobalData } from './types';
-
-export type GlobalDataContextT = {
-  globalData: GlobalData | null;
-  setGlobalData: React.Dispatch<React.SetStateAction<GlobalData | null>>;
-  refreshGlobalData: () => void;
-};
-
-export const GlobalDataContext = createContext<GlobalDataContextT | undefined>(
-  undefined,
-);
+import { GlobalDataContext } from './globalDataContext';
 
 export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
   children,
@@ -46,12 +31,12 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
         }
 
         if (res.status === 500) {
-          console.log('server error');
+          console.error('GET /api/data returned a server error');
         }
       })
       .then((res) => {
-        // when unathorized this is undefined
-        // TODO maybe find a better way to do this
+        // undefined here means the response wasn't a 200 (see above) - the
+        // redirect/error handling already happened, nothing further to do.
         if (res) {
           let path = location.pathname;
           if (path === '/login' || path === '/sign-up') {
@@ -63,8 +48,7 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
         }
       })
       .catch((err) => {
-        console.log('error');
-        console.log(err);
+        console.error('GET /api/data failed:', err);
       });
   };
 

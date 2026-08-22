@@ -1,17 +1,11 @@
-import { useContext, useState, FC } from 'react';
+import { useState, FC } from 'react';
 import UserForm from './UserForm.tsx';
 import { Link } from 'react-router-dom';
-import { GlobalDataContext } from '../GlobalDataContext';
+import { useGlobalData } from '../useGlobalData';
 import styles from './AuthPage.module.css';
 
 const Login: FC = () => {
-  const context = useContext(GlobalDataContext);
-
-  if (!context) {
-    throw new Error('context is undefined');
-  }
-
-  const { refreshGlobalData } = context;
+  const { refreshGlobalData } = useGlobalData();
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
