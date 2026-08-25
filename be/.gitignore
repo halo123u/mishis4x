@@ -1,2 +1,6 @@
 __debug_bin
 /db/misc
+
+# One-off real credentials for running prod DB commands (e.g. migrations)
+# manually from a laptop - never committed, see infra/envs/prod/.env.local.
+/infra/envs/prod/
