@@ -43,5 +43,9 @@ USER app
 # Expose the port the app runs on
 EXPOSE 8091
 
+# wget comes from busybox, already in alpine - no extra install needed.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://localhost:8091/healthcheck || exit 1
+
 # Command to run the executable
 CMD ["./mishis4x", "http", "--env", "prod"]
