@@ -11,6 +11,14 @@
       "args": ["http", "--env", "local"],
       "mode": "auto",
       "program": "${workspaceFolder}/be/main.go"
+    },
+    {
+      "name": "Run Migrations (dev)",
+      "type": "go",
+      "request": "launch",
+      "args": ["migrations", "--direction", "up", "--env", "local"],
+      "mode": "auto",
+      "program": "${workspaceFolder}/be/main.go"
     }
   ]
 }
