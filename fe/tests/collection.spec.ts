@@ -1,0 +1,76 @@
+import { test, expect, Page } from "@playwright/test";
+import { nanoid } from "nanoid";
+
+// Relies on the fixture set/cards in be/db/seeds/005_sets_seed.sql and
+// 006_cards_seed.sql - not real catalog data (that's #68/#70's job via the
+// CSV import), just a committed fixture so this test has something real to
+// click through in both local dev and CI. If that seed data ever changes,
+// this test's assertions need to move with it.
+
+test("card manager: widget -> dashboard -> set detail -> back", async ({
+  page,
+}) => {
+  await login(page, "test", "test");
+
+  // "Card Manager" appears as the widget's heading on Home - clicking it
+  // is the actual entry point into the feature this test exercises.
+  await page.getByRole("heading", { name: "Card Manager" }).click();
+
+  await expect(page).toHaveURL(/\/collection$/);
+  await expect(page.getByText("Brown Dust 2")).toBeVisible();
+
+  await page.getByText("Brown Dust 2").click();
+
+  await expect(page).toHaveURL(/\/collection\/[^/]+$/);
+  await expect(page.getByText("BRD/W139-001S")).toBeVisible();
+  await expect(page.getByText("Poolside Fairy Refithea")).toBeVisible();
+
+  await page.getByText("Back to sets").click();
+  await expect(page).toHaveURL(/\/collection$/);
+});
+
+test("card manager: unknown set shows a not-found message, not a crash", async ({
+  page,
+}) => {
+  await login(page, "test", "test");
+
+  await page.goto("http://localhost:8091/collection/does-not-exist");
+  await expect(page.getByText("This set could not be found.")).toBeVisible();
+});
+
+test("card manager: a real but non-owner account is blocked, not shown the data", async ({
+  page,
+}) => {
+  // The seeded "test" user (id 1) is the configured COLLECTION_OWNER_USER_ID
+  // for this stack (see compose.yaml) - any other real, fully-authenticated
+  // account must still be denied. This is the actual security property
+  // ownerOnlyMiddleware exists for (see handlers.Data.CollectionOwnerUserID)
+  // - "logged in" alone must not be enough.
+  await page.goto("http://localhost:8091/login");
+  await page.click('a[href="/sign-up"]');
+  await page.fill('input[name="username"]', nanoid());
+  await page.fill('input[name="password"]', "validpass123");
+  await page.click('button[type="submit"]');
+  await page.waitForURL("http://localhost:8091/");
+
+  await page.goto("http://localhost:8091/collection");
+  await expect(
+    page.getByText("Could not load sets. Please try again."),
+  ).toBeVisible();
+  await expect(page.getByText("Brown Dust 2")).not.toBeVisible();
+});
+
+const login = async (page: Page, username: string, password: string) => {
+  await page.goto("http://localhost:8091/login");
+  await page.fill('input[name="username"]', username);
+  await page.fill('input[name="password"]', password);
+  await page.click('button[type="submit"]');
+
+  // Not asserting on "Welcome to mishis4x" text here (see login.spec.ts) -
+  // Playwright's getByText matches case-insensitively by default, and the
+  // Login page's own heading ("Welcome to Mishis4x") satisfies that same
+  // text before the real post-login navigation ever happens. Waiting for
+  // the URL itself is the only way to know we've actually reached Home,
+  // not just that the login page (still) renders similar-looking text.
+  await page.waitForURL("http://localhost:8091/");
+};

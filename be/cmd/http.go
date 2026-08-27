@@ -57,6 +57,25 @@ func parsePort(raw string) (int, error) {
 	return port, nil
 }
 
+// loadCollectionOwnerUserID reads COLLECTION_OWNER_USER_ID - the one users.id
+// allowed to see collection-tracker routes (see
+// handlers.Data.CollectionOwnerUserID's doc comment for why). Unset/empty
+// returns 0, which handlers.ownerOnlyMiddleware treats as "nobody" rather
+// than "everybody" - failing closed by default, not open.
+func loadCollectionOwnerUserID() int {
+	raw := os.Getenv("COLLECTION_OWNER_USER_ID")
+	if raw == "" {
+		return 0
+	}
+
+	id, err := strconv.Atoi(raw)
+	if err != nil {
+		log.Fatal().Err(err).Str("COLLECTION_OWNER_USER_ID", raw).Msg("invalid COLLECTION_OWNER_USER_ID")
+	}
+
+	return id
+}
+
 func init() {
 	httpCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to run migrations on")
 	rootCMD.AddCommand(httpCMD)
@@ -96,6 +115,7 @@ var httpCMD = &cobra.Command{
 				// on once we're not on local/test's plain HTTP.
 				Secure: env != "local" && env != "test",
 			},
+			loadCollectionOwnerUserID(),
 		)
 		h.InitializeHttpServer(port)
 

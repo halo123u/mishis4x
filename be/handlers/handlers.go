@@ -81,17 +81,29 @@ type Data struct {
 	// real login for that account, and vice versa.
 	LoginLimiter  *attemptLimiter
 	SignupLimiter *attemptLimiter
+	// CollectionOwnerUserID gates every collection-tracker route (see
+	// ownerOnlyMiddleware) to exactly this one user ID. This isn't a general
+	// admin/role system - it exists specifically because eBay's API License
+	// Agreement requires eBay's express prior written consent for any
+	// "Public Display" of data from their APIs (see the collection-tracker's
+	// price-sync design notes). As long as this app has open signup, "logged
+	// in" alone isn't a strong enough boundary - literally nobody but this
+	// one account should ever see eBay-sourced data through this app. 0
+	// means unset, which fails closed (nobody, including this account,
+	// passes the check) rather than failing open.
+	CollectionOwnerUserID int
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
 // its own internal state (the login/signup rate limiters).
-func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig) *Data {
+func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int) *Data {
 	return &Data{
-		P:             p,
-		Lobby:         lobby,
-		Sessions:      sessions,
-		LoginLimiter:  newAttemptLimiter(),
-		SignupLimiter: newAttemptLimiter(),
+		P:                     p,
+		Lobby:                 lobby,
+		Sessions:              sessions,
+		LoginLimiter:          newAttemptLimiter(),
+		SignupLimiter:         newAttemptLimiter(),
+		CollectionOwnerUserID: collectionOwnerUserID,
 	}
 }
 
@@ -120,6 +132,15 @@ func (d *Data) NewRouter() *mux.Router {
 	api.HandleFunc("/data", d.GetGlobalData)
 	api.HandleFunc("/lobbies", d.ListLobbies)
 	api.HandleFunc("/lobbies/create", d.CreateLobby)
+
+	// Collection-tracker routes: authenticated (via the api subrouter's
+	// AuthMiddleware) is not enough on its own here - see
+	// CollectionOwnerUserID's doc comment for why every one of these also
+	// needs ownerOnlyMiddleware.
+	collection := api.PathPrefix("/sets").Subrouter()
+	collection.Use(d.ownerOnlyMiddleware)
+	collection.HandleFunc("", d.ListSets).Methods("GET")
+	collection.HandleFunc("/{setID}/cards", d.ListCardsForSet).Methods("GET")
 
 	// healthcheck
 	r.PathPrefix("/healthcheck").HandlerFunc(d.Healthcheck).Methods("GET")
@@ -294,6 +315,22 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
+	})
+}
+
+// ownerOnlyMiddleware restricts a route to exactly d.CollectionOwnerUserID,
+// regardless of who else is logged in. Must run after AuthMiddleware (relies
+// on userIDFromContext already being set) - 401 still means "not logged in
+// at all", this returns 403 for "logged in, but not the one account allowed
+// to see this". See CollectionOwnerUserID's doc comment for why this exists.
+func (d Data) ownerOnlyMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := userIDFromContext(r)
+		if !ok || d.CollectionOwnerUserID == 0 || userID != d.CollectionOwnerUserID {
+			writeJSONError(w, http.StatusForbidden, "Not available on this account.")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

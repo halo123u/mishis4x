@@ -55,6 +55,10 @@ services:
       DB_USERNAME: root
       DB_PASSWORD: root_password
       DB_NAME: mishis4x
+      # 1 is the seeded test/test user's ID (db/seeds/001_users_seed.sql) -
+      # this compose stack is dev/CI-only, so the e2e-tested owner account
+      # is the seeded one. See handlers.Data.CollectionOwnerUserID.
+      COLLECTION_OWNER_USER_ID: "1"
     ports:
       - "8091:8091"
 
