@@ -1,10 +1,10 @@
 import { test, expect, Page } from "@playwright/test";
 
-// Relies on the same seeded "Brown Dust 2" set/cards used for local manual
-// testing (see be/db/seeds once a real seed file exists - #68/#70 track
-// making this reproducible via the actual CSV import job instead of an
-// ad hoc INSERT). If that seed data ever changes, this test's assertions
-// need to move with it.
+// Relies on the fixture set/cards in be/db/seeds/005_sets_seed.sql and
+// 006_cards_seed.sql - not real catalog data (that's #68/#70's job via the
+// CSV import), just a committed fixture so this test has something real to
+// click through in both local dev and CI. If that seed data ever changes,
+// this test's assertions need to move with it.
 
 test("card manager: widget -> dashboard -> set detail -> back", async ({
   page,
