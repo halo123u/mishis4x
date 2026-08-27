@@ -54,7 +54,13 @@ func TestCardLifecycle(t *testing.T) {
 
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
+	// cards must go before sets - cards.set_id FKs to sets(id), so deleting
+	// the set first silently fails (err discarded here on purpose, same as
+	// every other cleanup in this file) and leaks both rows.
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
 
 	firstID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
 	require.NoError(t, err)
@@ -80,7 +86,10 @@ func TestCard_UniquePerSetAndCode(t *testing.T) {
 
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
 
 	_, err = p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
 	require.NoError(t, err)

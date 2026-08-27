@@ -1,4 +1,5 @@
 import { test, expect, Page } from "@playwright/test";
+import { nanoid } from "nanoid";
 
 // Relies on the fixture set/cards in be/db/seeds/005_sets_seed.sql and
 // 006_cards_seed.sql - not real catalog data (that's #68/#70's job via the
@@ -35,6 +36,28 @@ test("card manager: unknown set shows a not-found message, not a crash", async (
 
   await page.goto("http://localhost:8091/collection/does-not-exist");
   await expect(page.getByText("This set could not be found.")).toBeVisible();
+});
+
+test("card manager: a real but non-owner account is blocked, not shown the data", async ({
+  page,
+}) => {
+  // The seeded "test" user (id 1) is the configured COLLECTION_OWNER_USER_ID
+  // for this stack (see compose.yaml) - any other real, fully-authenticated
+  // account must still be denied. This is the actual security property
+  // ownerOnlyMiddleware exists for (see handlers.Data.CollectionOwnerUserID)
+  // - "logged in" alone must not be enough.
+  await page.goto("http://localhost:8091/login");
+  await page.click('a[href="/sign-up"]');
+  await page.fill('input[name="username"]', nanoid());
+  await page.fill('input[name="password"]', "validpass123");
+  await page.click('button[type="submit"]');
+  await page.waitForURL("http://localhost:8091/");
+
+  await page.goto("http://localhost:8091/collection");
+  await expect(
+    page.getByText("Could not load sets. Please try again."),
+  ).toBeVisible();
+  await expect(page.getByText("Brown Dust 2")).not.toBeVisible();
 });
 
 const login = async (page: Page, username: string, password: string) => {

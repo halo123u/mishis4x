@@ -29,7 +29,11 @@ func TestOwnedSetLifecycle(t *testing.T) {
 
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
+	// owned_sets before sets - owned_sets.set_id FKs to sets(id).
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
 
 	require.NoError(t, p.SetOwnedSet(t.Context(), userID, setID))
 
@@ -45,7 +49,10 @@ func TestSetOwnedSet_Idempotent(t *testing.T) {
 
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
 
 	require.NoError(t, p.SetOwnedSet(t.Context(), userID, setID))
 	require.NoError(t, p.SetOwnedSet(t.Context(), userID, setID), "onboarding the same set twice must not error")
@@ -62,7 +69,11 @@ func TestOwnedCard_NotOwnedReturnsZeroQuantity(t *testing.T) {
 
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
+	// cards must go before sets - cards.set_id FKs to sets(id).
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
 
 	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
 	require.NoError(t, err)
@@ -79,7 +90,12 @@ func TestSetCardQuantity_UpsertAndUpdate(t *testing.T) {
 
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
+	// owned_cards, then cards, then sets - each FKs to the previous.
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
 
 	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
 	require.NoError(t, err)

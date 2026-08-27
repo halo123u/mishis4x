@@ -64,12 +64,19 @@ func testSessionCookieConfig() SessionCookieConfig {
 }
 
 // newTestData builds a real, fully-wired Data (real DB, real rate limiter)
-// for tests to spin up a router from.
+// for tests to spin up a router from. CollectionOwnerUserID is 0 (nobody) -
+// tests that need collection-tracker routes to actually authorize someone
+// should use newTestDataWithOwner instead.
 func newTestData(db *sql.DB) *Data {
+	return newTestDataWithOwner(db, 0)
+}
+
+func newTestDataWithOwner(db *sql.DB, ownerUserID int) *Data {
 	return NewData(
 		persist.Persist{DB: db},
 		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
 		testSessionCookieConfig(),
+		ownerUserID,
 	)
 }
 
