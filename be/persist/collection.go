@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/rs/zerolog/log"
 )
 
@@ -37,11 +38,12 @@ func (p *Persist) CreateSet(ctx context.Context, name string, cardCount int, rel
 		return "", err
 	}
 
-	q := `
-		INSERT INTO sets (id, name, card_count, release_date, status)
-		VALUES (?, ?, ?, ?, ?);
-	`
-	if _, err := p.DB.ExecContext(ctx, q, id, name, cardCount, releaseDate, status); err != nil {
+	_, err = sq.Insert("sets").
+		Columns("id", "name", "card_count", "release_date", "status").
+		Values(id, name, cardCount, releaseDate, status).
+		RunWith(p.DB).
+		ExecContext(ctx)
+	if err != nil {
 		return "", err
 	}
 
@@ -50,14 +52,15 @@ func (p *Persist) CreateSet(ctx context.Context, name string, cardCount int, rel
 
 // GetSet looks up a set by ID. Returns ErrSetNotFound if no row matches.
 func (p *Persist) GetSet(ctx context.Context, id string) (Set, error) {
-	q := `
-		SELECT id, name, card_count, release_date, status, created_at
-		FROM sets
-		WHERE id = ?;
-	`
+	row := sq.Select("id", "name", "card_count", "release_date", "status", "created_at").
+		From("sets").
+		Where(sq.Eq{"id": id}).
+		RunWith(p.DB).
+		QueryRowContext(ctx)
+
 	var s Set
 	var releaseDate sql.NullTime
-	err := p.DB.QueryRowContext(ctx, q, id).Scan(&s.ID, &s.Name, &s.CardCount, &releaseDate, &s.Status, &s.CreatedAt)
+	err := row.Scan(&s.ID, &s.Name, &s.CardCount, &releaseDate, &s.Status, &s.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Set{}, ErrSetNotFound
@@ -79,11 +82,12 @@ func (p *Persist) CreateCard(ctx context.Context, setID, name, code, rarity stri
 		return "", err
 	}
 
-	q := `
-		INSERT INTO cards (id, set_id, name, code, rarity)
-		VALUES (?, ?, ?, ?, ?);
-	`
-	if _, err := p.DB.ExecContext(ctx, q, id, setID, name, code, rarity); err != nil {
+	_, err = sq.Insert("cards").
+		Columns("id", "set_id", "name", "code", "rarity").
+		Values(id, setID, name, code, rarity).
+		RunWith(p.DB).
+		ExecContext(ctx)
+	if err != nil {
 		return "", err
 	}
 
@@ -94,13 +98,12 @@ func (p *Persist) CreateCard(ctx context.Context, setID, name, code, rarity stri
 // (UUIDv7 IDs sort by creation time, so ORDER BY id doubles as ORDER BY
 // created_at without needing a separate index).
 func (p *Persist) ListCardsBySet(ctx context.Context, setID string) ([]Card, error) {
-	q := `
-		SELECT id, set_id, name, code, rarity, created_at
-		FROM cards
-		WHERE set_id = ?
-		ORDER BY id;
-	`
-	rows, err := p.DB.QueryContext(ctx, q, setID)
+	rows, err := sq.Select("id", "set_id", "name", "code", "rarity", "created_at").
+		From("cards").
+		Where(sq.Eq{"set_id": setID}).
+		OrderBy("id").
+		RunWith(p.DB).
+		QueryContext(ctx)
 	if err != nil {
 		return nil, err
 	}
