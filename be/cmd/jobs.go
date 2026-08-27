@@ -34,7 +34,7 @@ var jobsCMD = &cobra.Command{
 
 func generateTypes() {
 	log.Info().Msg("generating types")
-	converter := typescriptify.New().Add(api.GlobalData{})
+	converter := typescriptify.New().Add(api.GlobalData{}).Add(api.Set{}).Add(api.Card{})
 
 	err := converter.WithInterface(true).ConvertToFile("types.ts")
 	if err != nil {

@@ -120,6 +120,8 @@ func (d *Data) NewRouter() *mux.Router {
 	api.HandleFunc("/data", d.GetGlobalData)
 	api.HandleFunc("/lobbies", d.ListLobbies)
 	api.HandleFunc("/lobbies/create", d.CreateLobby)
+	api.HandleFunc("/sets", d.ListSets).Methods("GET")
+	api.HandleFunc("/sets/{setID}/cards", d.ListCardsForSet).Methods("GET")
 
 	// healthcheck
 	r.PathPrefix("/healthcheck").HandlerFunc(d.Healthcheck).Methods("GET")

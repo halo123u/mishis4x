@@ -8,3 +8,18 @@ export interface User {
 export interface GlobalData {
   user: User;
 }
+export interface Time {}
+export interface Set {
+  id: string;
+  name: string;
+  card_count: number;
+  release_date?: Time;
+  status: string;
+}
+export interface Card {
+  id: string;
+  set_id: string;
+  name: string;
+  code: string;
+  rarity: string;
+}

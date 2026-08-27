@@ -74,6 +74,39 @@ func (p *Persist) GetSet(ctx context.Context, id string) (Set, error) {
 	return s, nil
 }
 
+// ListSets returns every set, in insertion order (see ListCardsBySet's doc
+// comment for why ORDER BY id doubles as creation order for UUIDv7 keys).
+func (p *Persist) ListSets(ctx context.Context) ([]Set, error) {
+	rows, err := sq.Select("id", "name", "card_count", "release_date", "status", "created_at").
+		From("sets").
+		OrderBy("id").
+		RunWith(p.DB).
+		QueryContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("error closing rows")
+		}
+	}()
+
+	var sets []Set
+	for rows.Next() {
+		var s Set
+		var releaseDate sql.NullTime
+		if err := rows.Scan(&s.ID, &s.Name, &s.CardCount, &releaseDate, &s.Status, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		if releaseDate.Valid {
+			s.ReleaseDate = &releaseDate.Time
+		}
+		sets = append(sets, s)
+	}
+
+	return sets, rows.Err()
+}
+
 // CreateCard inserts a new card belonging to setID and returns its
 // generated UUIDv7 ID.
 func (p *Persist) CreateCard(ctx context.Context, setID, name, code, rarity string) (string, error) {
