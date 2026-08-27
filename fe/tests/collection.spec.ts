@@ -1,0 +1,53 @@
+import { test, expect, Page } from "@playwright/test";
+
+// Relies on the same seeded "Brown Dust 2" set/cards used for local manual
+// testing (see be/db/seeds once a real seed file exists - #68/#70 track
+// making this reproducible via the actual CSV import job instead of an
+// ad hoc INSERT). If that seed data ever changes, this test's assertions
+// need to move with it.
+
+test("card manager: widget -> dashboard -> set detail -> back", async ({
+  page,
+}) => {
+  await login(page, "test", "test");
+
+  // "Card Manager" appears as the widget's heading on Home - clicking it
+  // is the actual entry point into the feature this test exercises.
+  await page.getByRole("heading", { name: "Card Manager" }).click();
+
+  await expect(page).toHaveURL(/\/collection$/);
+  await expect(page.getByText("Brown Dust 2")).toBeVisible();
+
+  await page.getByText("Brown Dust 2").click();
+
+  await expect(page).toHaveURL(/\/collection\/[^/]+$/);
+  await expect(page.getByText("BRD/W139-001S")).toBeVisible();
+  await expect(page.getByText("Poolside Fairy Refithea")).toBeVisible();
+
+  await page.getByText("Back to sets").click();
+  await expect(page).toHaveURL(/\/collection$/);
+});
+
+test("card manager: unknown set shows a not-found message, not a crash", async ({
+  page,
+}) => {
+  await login(page, "test", "test");
+
+  await page.goto("http://localhost:8091/collection/does-not-exist");
+  await expect(page.getByText("This set could not be found.")).toBeVisible();
+});
+
+const login = async (page: Page, username: string, password: string) => {
+  await page.goto("http://localhost:8091/login");
+  await page.fill('input[name="username"]', username);
+  await page.fill('input[name="password"]', password);
+  await page.click('button[type="submit"]');
+
+  // Not asserting on "Welcome to mishis4x" text here (see login.spec.ts) -
+  // Playwright's getByText matches case-insensitively by default, and the
+  // Login page's own heading ("Welcome to Mishis4x") satisfies that same
+  // text before the real post-login navigation ever happens. Waiting for
+  // the URL itself is the only way to know we've actually reached Home,
+  // not just that the login page (still) renders similar-looking text.
+  await page.waitForURL("http://localhost:8091/");
+};
