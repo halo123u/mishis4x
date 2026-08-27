@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // ErrSetNotFound is returned by GetSet when no row matches.
@@ -102,7 +104,11 @@ func (p *Persist) ListCardsBySet(ctx context.Context, setID string) ([]Card, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("error closing rows")
+		}
+	}()
 
 	var cards []Card
 	for rows.Next() {
