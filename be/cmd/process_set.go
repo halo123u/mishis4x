@@ -9,50 +9,18 @@ import (
 	"os"
 	"time"
 
-	"example.com/mishis4x/api"
 	"example.com/mishis4x/logger"
 	"example.com/mishis4x/persist"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"github.com/tkrajina/typescriptify-golang-structs/typescriptify"
 )
 
-// jobsCMD is just a grouping parent - each job is its own subcommand below
-// (`jobs generate-types`, `jobs process-set --file ...`) rather than one
-// shared entrypoint switched on a --job flag, so each job's own flags show
-// up in --help instead of being lumped together.
-var jobsCMD = &cobra.Command{
-	Use:   "jobs",
-	Short: "Run a one-off job",
-	Long:  `Run a one-off job. See the subcommands for what's available.`,
-}
-
 func init() {
-	rootCMD.AddCommand(jobsCMD)
-	jobsCMD.AddCommand(generateTypesCMD)
-	jobsCMD.AddCommand(processSetCMD)
-}
-
-var generateTypesCMD = &cobra.Command{
-	Use:   "generate-types",
-	Short: "Regenerate fe/src/types.ts from the Go API structs",
-	Long:  `Regenerate fe/src/types.ts from the Go API structs`,
-	Run: func(cmd *cobra.Command, args []string) {
-		// Dev/build-time tooling only, no --env of its own - always use
-		// local's human-readable console output.
-		logger.Init("local")
-		generateTypes()
-	},
-}
-
-func generateTypes() {
-	log.Info().Msg("generating types")
-	converter := typescriptify.New().Add(api.GlobalData{}).Add(api.Set{}).Add(api.Card{})
-
-	err := converter.WithInterface(true).ConvertToFile("types.ts")
-	if err != nil {
-		log.Error().Err(err).Msg("error generating types")
-	}
+	rootCMD.AddCommand(processSetCMD)
+	processSetCMD.Flags().StringVarP(&processSetFile, "file", "f", "", "CSV file to import")
+	processSetCMD.Flags().StringVarP(&processSetMetaFile, "set-file", "s", "", "Optional JSON file with the set's real metadata (name, card_count, release_date, status)")
+	processSetCMD.Flags().BoolVarP(&processSetRefresh, "refresh", "r", false, "Wipe the set named in --set-file before reimporting, instead of upserting on top of it (requires --set-file)")
+	processSetCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to connect to")
 }
 
 var processSetFile string
@@ -90,13 +58,6 @@ replacing them.`,
 		logger.Init(env)
 		processSet(processSetFile, processSetMetaFile, processSetRefresh)
 	},
-}
-
-func init() {
-	processSetCMD.Flags().StringVarP(&processSetFile, "file", "f", "", "CSV file to import")
-	processSetCMD.Flags().StringVarP(&processSetMetaFile, "set-file", "s", "", "Optional JSON file with the set's real metadata (name, card_count, release_date, status)")
-	processSetCMD.Flags().BoolVarP(&processSetRefresh, "refresh", "r", false, "Wipe the set named in --set-file before reimporting, instead of upserting on top of it (requires --set-file)")
-	processSetCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to connect to")
 }
 
 // setMetadata is the shape expected in --set-file. release_date is a plain
