@@ -76,6 +76,25 @@ func loadCollectionOwnerUserID() int {
 	return id
 }
 
+// loadCollectionAllowAllUsers reads COLLECTION_ALLOW_ALL_USERS - an
+// explicit opt-out of the COLLECTION_OWNER_USER_ID restriction (see
+// handlers.Data.CollectionAllowAllUsers's doc comment for why this exists).
+// Unset/empty returns false, so any environment that doesn't set this stays
+// on the original fail-closed behavior by default.
+func loadCollectionAllowAllUsers() bool {
+	raw := os.Getenv("COLLECTION_ALLOW_ALL_USERS")
+	if raw == "" {
+		return false
+	}
+
+	allow, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Fatal().Err(err).Str("COLLECTION_ALLOW_ALL_USERS", raw).Msg("invalid COLLECTION_ALLOW_ALL_USERS")
+	}
+
+	return allow
+}
+
 func init() {
 	httpCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to run migrations on")
 	rootCMD.AddCommand(httpCMD)
@@ -116,6 +135,7 @@ var httpCMD = &cobra.Command{
 				Secure: env != "local" && env != "test",
 			},
 			loadCollectionOwnerUserID(),
+			loadCollectionAllowAllUsers(),
 		)
 		h.InitializeHttpServer(port)
 

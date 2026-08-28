@@ -82,28 +82,38 @@ type Data struct {
 	LoginLimiter  *attemptLimiter
 	SignupLimiter *attemptLimiter
 	// CollectionOwnerUserID gates every collection-tracker route (see
-	// ownerOnlyMiddleware) to exactly this one user ID. This isn't a general
-	// admin/role system - it exists specifically because eBay's API License
-	// Agreement requires eBay's express prior written consent for any
-	// "Public Display" of data from their APIs (see the collection-tracker's
-	// price-sync design notes). As long as this app has open signup, "logged
-	// in" alone isn't a strong enough boundary - literally nobody but this
-	// one account should ever see eBay-sourced data through this app. 0
-	// means unset, which fails closed (nobody, including this account,
-	// passes the check) rather than failing open.
+	// ownerOnlyMiddleware) to exactly this one user ID, unless
+	// CollectionAllowAllUsers overrides it. This isn't a general admin/role
+	// system - it exists because eBay's API License Agreement requires
+	// eBay's express prior written consent for any "Public Display" of data
+	// from their APIs, and this app has open signup. 0 means unset, which
+	// fails closed (nobody, including this account, passes) rather than
+	// failing open.
 	CollectionOwnerUserID int
+	// CollectionAllowAllUsers, when true, makes ownerOnlyMiddleware pass any
+	// authenticated user regardless of CollectionOwnerUserID - an explicit
+	// opt-out (COLLECTION_ALLOW_ALL_USERS env var, see loadCollectionAllowAllUsers
+	// in cmd/http.go), not the default. Exists because nothing served through
+	// these routes is eBay-sourced data yet (issue #74, eBay API
+	// registration, is still unstarted) - a personal, manually-transcribed
+	// CSV catalog doesn't need the eBay ToS restriction enforced while it's
+	// the only thing these routes serve. Defaults to false (strict) so any
+	// environment that doesn't explicitly set the var keeps the original
+	// fail-closed behavior.
+	CollectionAllowAllUsers bool
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
 // its own internal state (the login/signup rate limiters).
-func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int) *Data {
+func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool) *Data {
 	return &Data{
-		P:                     p,
-		Lobby:                 lobby,
-		Sessions:              sessions,
-		LoginLimiter:          newAttemptLimiter(),
-		SignupLimiter:         newAttemptLimiter(),
-		CollectionOwnerUserID: collectionOwnerUserID,
+		P:                       p,
+		Lobby:                   lobby,
+		Sessions:                sessions,
+		LoginLimiter:            newAttemptLimiter(),
+		SignupLimiter:           newAttemptLimiter(),
+		CollectionOwnerUserID:   collectionOwnerUserID,
+		CollectionAllowAllUsers: collectionAllowAllUsers,
 	}
 }
 
@@ -319,14 +329,20 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 }
 
 // ownerOnlyMiddleware restricts a route to exactly d.CollectionOwnerUserID,
-// regardless of who else is logged in. Must run after AuthMiddleware (relies
-// on userIDFromContext already being set) - 401 still means "not logged in
-// at all", this returns 403 for "logged in, but not the one account allowed
-// to see this". See CollectionOwnerUserID's doc comment for why this exists.
+// regardless of who else is logged in - unless d.CollectionAllowAllUsers is
+// set, in which case any authenticated user passes (see its doc comment for
+// why that override exists and when it's meant to be used). Must run after
+// AuthMiddleware (relies on userIDFromContext already being set) - 401
+// still means "not logged in at all", this returns 403 for "logged in, but
+// not the one account allowed to see this".
 func (d Data) ownerOnlyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := userIDFromContext(r)
-		if !ok || d.CollectionOwnerUserID == 0 || userID != d.CollectionOwnerUserID {
+		if !ok {
+			writeJSONError(w, http.StatusForbidden, "Not available on this account.")
+			return
+		}
+		if !d.CollectionAllowAllUsers && (d.CollectionOwnerUserID == 0 || userID != d.CollectionOwnerUserID) {
 			writeJSONError(w, http.StatusForbidden, "Not available on this account.")
 			return
 		}

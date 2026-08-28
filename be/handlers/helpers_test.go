@@ -77,6 +77,20 @@ func newTestDataWithOwner(db *sql.DB, ownerUserID int) *Data {
 		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
 		testSessionCookieConfig(),
 		ownerUserID,
+		false,
+	)
+}
+
+// newTestDataAllowAllUsers builds a Data with CollectionAllowAllUsers set,
+// for tests covering that explicit opt-out rather than the default
+// strict/fail-closed behavior newTestData/newTestDataWithOwner exercise.
+func newTestDataAllowAllUsers(db *sql.DB) *Data {
+	return NewData(
+		persist.Persist{DB: db},
+		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
+		testSessionCookieConfig(),
+		0,
+		true,
 	)
 }
 
