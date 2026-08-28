@@ -130,15 +130,15 @@ func (p *Persist) CreateCard(ctx context.Context, setID, name, code, rarity stri
 	return id, nil
 }
 
-// GetOrCreateSetByName looks up a set by name, creating it (with a
-// placeholder card_count/status) if no row matches yet. Used by the
-// process-set job, where the CSV only knows a set's name, not its ID.
+// getSetIDByName looks up a set's id by name, returning ErrSetNotFound
+// (the same sentinel GetSet uses) if no row matches - shared by every
+// by-name operation below instead of each repeating the same SELECT.
 //
-// sets.name has no unique constraint (see the add_sets_table migration), so
-// this does a plain SELECT-then-INSERT rather than an atomic upsert - a
-// real race is possible under concurrent callers, but this job is expected
-// to run as a single, one-at-a-time CLI invocation, not a web handler.
-func (p *Persist) GetOrCreateSetByName(ctx context.Context, name string) (string, error) {
+// sets.name has no unique constraint (see the add_sets_table migration),
+// so callers building a check-then-write on top of this aren't atomic - a
+// real race is possible under concurrent callers, but every current
+// caller is a one-at-a-time CLI invocation, not a web handler.
+func (p *Persist) getSetIDByName(ctx context.Context, name string) (string, error) {
 	row := sq.Select("id").
 		From("sets").
 		Where(sq.Eq{"name": name}).
@@ -146,11 +146,25 @@ func (p *Persist) GetOrCreateSetByName(ctx context.Context, name string) (string
 		QueryRowContext(ctx)
 
 	var id string
-	err := row.Scan(&id)
+	if err := row.Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrSetNotFound
+		}
+		return "", err
+	}
+
+	return id, nil
+}
+
+// GetOrCreateSetByName looks up a set by name, creating it (with a
+// placeholder card_count/status) if no row matches yet. Used by the
+// process-set job, where the CSV only knows a set's name, not its ID.
+func (p *Persist) GetOrCreateSetByName(ctx context.Context, name string) (string, error) {
+	id, err := p.getSetIDByName(ctx, name)
 	if err == nil {
 		return id, nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !errors.Is(err, ErrSetNotFound) {
 		return "", err
 	}
 
@@ -163,19 +177,8 @@ func (p *Persist) GetOrCreateSetByName(ctx context.Context, name string) (string
 // ever fills in placeholders - this is for when the caller actually has
 // real metadata (e.g. the process-set job's optional --set-file) to apply,
 // including correcting a set that already exists as a placeholder.
-//
-// Same SELECT-then-write caveat as GetOrCreateSetByName: sets.name has no
-// unique constraint, so this isn't atomic - fine for a one-at-a-time CLI
-// job, not safe for concurrent callers.
 func (p *Persist) UpsertSetMetadata(ctx context.Context, name string, cardCount int, releaseDate *time.Time, status string) (string, error) {
-	row := sq.Select("id").
-		From("sets").
-		Where(sq.Eq{"name": name}).
-		RunWith(p.DB).
-		QueryRowContext(ctx)
-
-	var id string
-	err := row.Scan(&id)
+	id, err := p.getSetIDByName(ctx, name)
 	if err == nil {
 		_, err = sq.Update("sets").
 			Set("card_count", cardCount).
@@ -186,7 +189,7 @@ func (p *Persist) UpsertSetMetadata(ctx context.Context, name string, cardCount 
 			ExecContext(ctx)
 		return id, err
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !errors.Is(err, ErrSetNotFound) {
 		return "", err
 	}
 
@@ -223,15 +226,8 @@ func (p *Persist) DeleteCardsForSet(ctx context.Context, setID string) error {
 // needs DeleteCardsForSet, to avoid churning the set's id on every
 // refresh) - this is for genuinely retiring a set altogether.
 func (p *Persist) DeleteSetCascade(ctx context.Context, name string) error {
-	row := sq.Select("id").
-		From("sets").
-		Where(sq.Eq{"name": name}).
-		RunWith(p.DB).
-		QueryRowContext(ctx)
-
-	var id string
-	err := row.Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
+	id, err := p.getSetIDByName(ctx, name)
+	if errors.Is(err, ErrSetNotFound) {
 		return nil
 	}
 	if err != nil {

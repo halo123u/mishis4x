@@ -105,6 +105,23 @@ func TestCard_UniquePerSetAndCode(t *testing.T) {
 	require.Error(t, err, "same set_id + code must violate the unique key")
 }
 
+func TestGetSetIDByName(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+
+	_, err := p.getSetIDByName(t.Context(), "getSetIDByName Does Not Exist")
+	require.ErrorIs(t, err, ErrSetNotFound)
+
+	name := "getSetIDByName Test Set"
+	id, err := p.CreateSet(t.Context(), name, 0, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", id) })
+
+	found, err := p.getSetIDByName(t.Context(), name)
+	require.NoError(t, err)
+	require.Equal(t, id, found)
+}
+
 func TestGetOrCreateSetByName(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
