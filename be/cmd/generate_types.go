@@ -8,27 +8,19 @@ import (
 	"github.com/tkrajina/typescriptify-golang-structs/typescriptify"
 )
 
-var jobName string
-
 func init() {
-	jobsCMD.Flags().StringVarP(&jobName, "job", "j", "", "Name of the job to run")
-	rootCMD.AddCommand(jobsCMD)
+	rootCMD.AddCommand(generateTypesCMD)
 }
 
-var jobsCMD = &cobra.Command{
-	Use:   "jobs",
-	Short: "Start the jobs server",
-	Long:  `Start the jobs server`,
+var generateTypesCMD = &cobra.Command{
+	Use:   "generate-types",
+	Short: "Regenerate fe/src/types.ts from the Go API structs",
+	Long:  `Regenerate fe/src/types.ts from the Go API structs`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// No --env flag on this command; jobs are dev/build-time tooling, so
-		// always use local's human-readable console output.
+		// Dev/build-time tooling only, no --env of its own - always use
+		// local's human-readable console output.
 		logger.Init("local")
-		log.Info().Str("job", jobName).Msg("running job")
-		switch jobName {
-		case "generate-types":
-			generateTypes()
-		}
-
+		generateTypes()
 	},
 }
 
@@ -40,5 +32,4 @@ func generateTypes() {
 	if err != nil {
 		log.Error().Err(err).Msg("error generating types")
 	}
-
 }

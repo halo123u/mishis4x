@@ -43,6 +43,18 @@ func newTestServerWithOwner(t *testing.T, db *sql.DB, ownerUserID int) (*httptes
 	return ts, newClient(t)
 }
 
+// newTestServerAllowAllUsers is newTestServer but with CollectionAllowAllUsers
+// set, for tests exercising that explicit opt-out of ownerOnlyMiddleware.
+func newTestServerAllowAllUsers(t *testing.T, db *sql.DB) (*httptest.Server, *http.Client) {
+	t.Helper()
+
+	d := newTestDataAllowAllUsers(db)
+	ts := httptest.NewServer(d.NewRouter())
+	t.Cleanup(ts.Close)
+
+	return ts, newClient(t)
+}
+
 // newClient builds an independent *http.Client with its own cookie jar.
 // Deliberately NOT built from ts.Client() for a second/third client in the
 // same test - httptest.Server.Client() caches and returns the SAME

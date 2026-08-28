@@ -1,5 +1,5 @@
 generate_types:
-	@cd be && go run main.go jobs --job generate-types
+	@cd be && go run main.go generate-types
 	@mv ./be/types.ts ./fe/src/types.ts
 
 run_db:

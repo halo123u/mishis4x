@@ -43,7 +43,8 @@ test("card manager: a real but non-owner account is blocked, not shown the data"
 }) => {
   // The seeded "test" user (id 1) is the configured COLLECTION_OWNER_USER_ID
   // for this stack (see compose.yaml) - any other real, fully-authenticated
-  // account must still be denied. This is the actual security property
+  // account must still be denied by default (COLLECTION_ALLOW_ALL_USERS
+  // isn't set for this stack). This is the actual security property
   // ownerOnlyMiddleware exists for (see handlers.Data.CollectionOwnerUserID)
   // - "logged in" alone must not be enough.
   await page.goto("http://localhost:8091/login");

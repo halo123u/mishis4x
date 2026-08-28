@@ -87,21 +87,23 @@ func TestListSets_NotTheOwner(t *testing.T) {
 
 	// Server's owner is some other, unrelated user ID - never a real row,
 	// which is exactly the point: an ordinary logged-in user must not pass
-	// just by virtue of being authenticated.
+	// just by virtue of being authenticated. This is the default
+	// (CollectionAllowAllUsers unset/false) - see TestListSets_AllowAllUsers
+	// for the explicit opt-out.
 	ts, client := newTestServerWithOwner(t, db, -1)
 	createAndLoginTestUser(t, db, client, ts.URL)
 
 	res, err := client.Get(ts.URL + "/api/sets")
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
-	require.Equal(t, http.StatusForbidden, res.StatusCode, "logged in but not the configured owner must be 403, not 200")
+	require.Equal(t, http.StatusForbidden, res.StatusCode, "logged in but not the configured owner must be 403 by default, not 200")
 }
 
 func TestListSets_OwnerUnset(t *testing.T) {
 	db := testDB(t)
 
-	// CollectionOwnerUserID unset (0) must fail closed - nobody passes,
-	// including a real, valid, logged-in user - not fail open.
+	// CollectionOwnerUserID unset (0) must fail closed by default - nobody
+	// passes, including a real, valid, logged-in user - not fail open.
 	ts, client := newTestServer(t, db)
 	createAndLoginTestUser(t, db, client, ts.URL)
 
@@ -109,6 +111,21 @@ func TestListSets_OwnerUnset(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusForbidden, res.StatusCode)
+}
+
+func TestListSets_AllowAllUsers(t *testing.T) {
+	db := testDB(t)
+
+	// CollectionAllowAllUsers is the explicit opt-out (see its doc comment)
+	// - with it set, an ordinary logged-in user who isn't the configured
+	// owner (there isn't one here at all) must pass, not be blocked.
+	ts, client := newTestServerAllowAllUsers(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
+
+	res, err := client.Get(ts.URL + "/api/sets")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusOK, res.StatusCode, "CollectionAllowAllUsers must let any authenticated user through")
 }
 
 func TestListCardsForSet(t *testing.T) {
@@ -145,8 +162,11 @@ func TestListCardsForSet(t *testing.T) {
 	var cards []api.Card
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&cards))
 	require.Len(t, cards, 2)
-	require.Equal(t, "BRD/W139-001S", cards[0].Code)
-	require.Equal(t, "BRD/W139-003S", cards[1].Code)
+	// Both are "S" suffix, so star tier decides order: 003S is 2-star,
+	// 001S is 3-star - see persist.TestCardLifecycle for the full ordering
+	// behavior this is just confirming survives the HTTP/JSON round-trip.
+	require.Equal(t, "BRD/W139-003S", cards[0].Code)
+	require.Equal(t, "BRD/W139-001S", cards[1].Code)
 }
 
 func TestListCardsForSet_NotTheOwner(t *testing.T) {
