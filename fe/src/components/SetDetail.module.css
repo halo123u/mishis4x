@@ -1,3 +1,12 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 40rem;
+}
+
 .back {
   font-size: var(--text-sm);
   color: var(--teal);
@@ -6,6 +15,30 @@
 
 .back:hover {
   text-decoration: underline;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.confirmDelete {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 40rem;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--ember);
+  border-radius: var(--radius-md);
+}
+
+.confirmActions {
+  display: flex;
+  gap: var(--space-3);
 }
 
 .table {
@@ -34,6 +67,21 @@
   font-size: var(--text-sm);
   color: var(--ash);
   white-space: nowrap;
+}
+
+.rowMissing {
+  opacity: 0.55;
+}
+
+.owned {
+  color: var(--teal);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.missing {
+  font-size: var(--text-sm);
+  color: var(--ash);
 }
 
 .error {

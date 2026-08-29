@@ -24,3 +24,13 @@ export interface Card {
   code: string;
   rarity: string;
 }
+export interface AddOwnedSetInput {
+  set_id: string;
+}
+export interface OwnedCardInput {
+  card_id: string;
+  quantity: number;
+}
+export interface SetOwnedCardsInput {
+  cards: OwnedCardInput[];
+}

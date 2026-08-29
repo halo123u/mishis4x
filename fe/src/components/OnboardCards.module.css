@@ -1,0 +1,66 @@
+.back {
+  font-size: var(--text-sm);
+  color: var(--teal);
+  text-decoration: none;
+}
+
+.back:hover {
+  text-decoration: underline;
+}
+
+.table {
+  width: 100%;
+  max-width: 40rem;
+  border-collapse: collapse;
+}
+
+.table th {
+  text-align: left;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ash);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--ash);
+  white-space: nowrap;
+}
+
+.checkboxCol {
+  width: 1%;
+  text-align: center;
+}
+
+.quantityCol {
+  width: 5rem;
+  text-align: center;
+}
+
+.quantityInput {
+  width: 4rem;
+  text-align: center;
+}
+
+.quantityInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.error {
+  color: var(--bad);
+}
