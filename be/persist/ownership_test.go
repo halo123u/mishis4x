@@ -112,3 +112,36 @@ func TestSetCardQuantity_UpsertAndUpdate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, oc.Quantity, "must update in place, not insert a second row")
 }
+
+func TestListOwnedSets(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	// Nothing onboarded yet - a fresh user's dashboard starts empty even
+	// though the catalog itself isn't.
+	sets, err := p.ListOwnedSets(t.Context(), userID)
+	require.NoError(t, err)
+	require.Empty(t, sets)
+
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	// A set existing in the catalog isn't enough on its own - onboarding
+	// it is what makes it show up here.
+	sets, err = p.ListOwnedSets(t.Context(), userID)
+	require.NoError(t, err)
+	require.Empty(t, sets, "a real catalog set must not appear until onboarded")
+
+	require.NoError(t, p.SetOwnedSet(t.Context(), userID, setID))
+
+	sets, err = p.ListOwnedSets(t.Context(), userID)
+	require.NoError(t, err)
+	require.Len(t, sets, 1)
+	require.Equal(t, setID, sets[0].ID)
+	require.Equal(t, "Brown Dust 2", sets[0].Name)
+}

@@ -6,6 +6,7 @@ import Home from './components/Home.tsx';
 import ChangePassword from './components/ChangePassword.tsx';
 import Layout from './components/Layout';
 import CollectionDashboard from './components/CollectionDashboard.tsx';
+import AddSet from './components/AddSet.tsx';
 import SetDetail from './components/SetDetail.tsx';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
             <Route path="/sign-up" element={<Signup />} />
             <Route path="/account" element={<ChangePassword />} />
             <Route path="/collection" element={<CollectionDashboard />} />
+            <Route path="/collection/add" element={<AddSet />} />
             <Route path="/collection/:setID" element={<SetDetail />} />
           </Route>
         </Routes>

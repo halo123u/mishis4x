@@ -35,6 +35,43 @@ func (p *Persist) SetOwnedSet(ctx context.Context, userID int, setID string) err
 	return err
 }
 
+// ListOwnedSets returns the full Set data for every set userID has
+// onboarded, ordered by name. Distinct from ListSets (every set in the
+// catalog) - this is what the collection dashboard actually shows, since a
+// fresh user's onboarded list starts empty even when the catalog doesn't.
+func (p *Persist) ListOwnedSets(ctx context.Context, userID int) ([]Set, error) {
+	rows, err := sq.Select("s.id", "s.name", "s.card_count", "s.release_date", "s.status", "s.created_at").
+		From("owned_sets os").
+		Join("sets s ON s.id = os.set_id").
+		Where(sq.Eq{"os.user_id": userID}).
+		OrderBy("s.name").
+		RunWith(p.DB).
+		QueryContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("error closing rows")
+		}
+	}()
+
+	var sets []Set
+	for rows.Next() {
+		var s Set
+		var releaseDate sql.NullTime
+		if err := rows.Scan(&s.ID, &s.Name, &s.CardCount, &releaseDate, &s.Status, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		if releaseDate.Valid {
+			s.ReleaseDate = &releaseDate.Time
+		}
+		sets = append(sets, s)
+	}
+
+	return sets, rows.Err()
+}
+
 // ListOwnedSetIDs returns the IDs of every set userID has onboarded.
 func (p *Persist) ListOwnedSetIDs(ctx context.Context, userID int) ([]string, error) {
 	rows, err := sq.Select("set_id").

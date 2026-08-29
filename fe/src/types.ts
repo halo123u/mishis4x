@@ -24,3 +24,6 @@ export interface Card {
   code: string;
   rarity: string;
 }
+export interface AddOwnedSetInput {
+  set_id: string;
+}

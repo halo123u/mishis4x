@@ -1,13 +1,11 @@
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  max-width: 32rem;
+.back {
+  font-size: var(--text-sm);
+  color: var(--teal);
+  text-decoration: none;
 }
 
-.header h1 {
-  margin: 0;
+.back:hover {
+  text-decoration: underline;
 }
 
 .list {
@@ -30,23 +28,11 @@
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
-  text-decoration: none;
-  color: var(--ink);
-  transition: border-color 0.15s ease;
-}
-
-.setCard:hover {
-  border-color: var(--teal);
-  color: var(--ink);
-}
-
-.setCard:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 .setName {
   font-weight: 600;
+  display: block;
 }
 
 .setMeta {

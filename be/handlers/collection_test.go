@@ -224,3 +224,106 @@ func TestListCardsForSet_EmptySet(t *testing.T) {
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&cards))
 	require.Empty(t, cards)
 }
+
+func TestListOwnedSets_StartsEmpty(t *testing.T) {
+	db := testDB(t)
+	username := testUsername(t, db)
+	userID := createTestUser(t, db, username, "correctpass123")
+
+	ts, client := newTestServerWithOwner(t, db, userID)
+	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	// A set existing in the catalog isn't enough - a fresh user's dashboard
+	// starts empty until they onboard something, even though ListSets
+	// itself is non-empty.
+	p := &persist.Persist{DB: db}
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
+
+	res, err = client.Get(ts.URL + "/api/owned-sets")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	var sets []api.Set
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&sets))
+	require.Empty(t, sets)
+}
+
+func TestListOwnedSets_Unauthenticated(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+
+	res, err := client.Get(ts.URL + "/api/owned-sets")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+}
+
+func TestAddOwnedSet_ThenListedAsOwned(t *testing.T) {
+	db := testDB(t)
+	username := testUsername(t, db)
+	userID := createTestUser(t, db, username, "correctpass123")
+
+	ts, client := newTestServerWithOwner(t, db, userID)
+	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	p := &persist.Persist{DB: db}
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	res = postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": setID})
+	require.Equal(t, http.StatusNoContent, res.StatusCode)
+
+	// Onboarding the same set twice must not error or duplicate it.
+	res = postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": setID})
+	require.Equal(t, http.StatusNoContent, res.StatusCode)
+
+	res, err = client.Get(ts.URL + "/api/owned-sets")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	var sets []api.Set
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&sets))
+	require.Len(t, sets, 1, "onboarding twice must not duplicate the set in the list")
+	require.Equal(t, setID, sets[0].ID)
+}
+
+func TestAddOwnedSet_UnknownSetIsNotFound(t *testing.T) {
+	db := testDB(t)
+	username := testUsername(t, db)
+	userID := createTestUser(t, db, username, "correctpass123")
+
+	ts, client := newTestServerWithOwner(t, db, userID)
+	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	res = postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": "does-not-exist"})
+	require.Equal(t, http.StatusNotFound, res.StatusCode, "must not silently onboard a garbage set_id")
+}
+
+func TestAddOwnedSet_NotTheOwner(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithOwner(t, db, -1)
+	createAndLoginTestUser(t, db, client, ts.URL)
+
+	res := postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": "anything"})
+	require.Equal(t, http.StatusForbidden, res.StatusCode, "must be blocked before even reaching the set-lookup logic")
+}

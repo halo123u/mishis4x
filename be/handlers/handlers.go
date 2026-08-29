@@ -152,6 +152,11 @@ func (d *Data) NewRouter() *mux.Router {
 	collection.HandleFunc("", d.ListSets).Methods("GET")
 	collection.HandleFunc("/{setID}/cards", d.ListCardsForSet).Methods("GET")
 
+	ownedSets := api.PathPrefix("/owned-sets").Subrouter()
+	ownedSets.Use(d.ownerOnlyMiddleware)
+	ownedSets.HandleFunc("", d.ListOwnedSets).Methods("GET")
+	ownedSets.HandleFunc("", d.AddOwnedSet).Methods("POST")
+
 	// healthcheck
 	r.PathPrefix("/healthcheck").HandlerFunc(d.Healthcheck).Methods("GET")
 
