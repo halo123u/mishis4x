@@ -1,3 +1,12 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 40rem;
+}
+
 .back {
   font-size: var(--text-sm);
   color: var(--teal);
@@ -34,6 +43,21 @@
   font-size: var(--text-sm);
   color: var(--ash);
   white-space: nowrap;
+}
+
+.rowMissing {
+  opacity: 0.55;
+}
+
+.owned {
+  color: var(--teal);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.missing {
+  font-size: var(--text-sm);
+  color: var(--ash);
 }
 
 .error {

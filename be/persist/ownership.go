@@ -142,6 +142,40 @@ func (p *Persist) SetOwnedCards(ctx context.Context, userID int, cards []CardQua
 	return err
 }
 
+// ListOwnedCardsBySet returns userID's ownership rows for every card
+// belonging to setID that userID has an owned_cards row for - including
+// explicit zero-quantity rows, since callers (the set-editor form's
+// pre-fill, in particular) need to tell "explicitly marked not owned" apart
+// from "never interacted" the same way GetOwnedCard does for a single card.
+// A card with no row at all simply doesn't appear in the result.
+func (p *Persist) ListOwnedCardsBySet(ctx context.Context, userID int, setID string) ([]CardQuantity, error) {
+	rows, err := sq.Select("oc.card_id", "oc.quantity").
+		From("owned_cards oc").
+		Join("cards c ON c.id = oc.card_id").
+		Where(sq.Eq{"oc.user_id": userID, "c.set_id": setID}).
+		RunWith(p.DB).
+		QueryContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("error closing rows")
+		}
+	}()
+
+	var owned []CardQuantity
+	for rows.Next() {
+		var cq CardQuantity
+		if err := rows.Scan(&cq.CardID, &cq.Quantity); err != nil {
+			return nil, err
+		}
+		owned = append(owned, cq)
+	}
+
+	return owned, rows.Err()
+}
+
 // GetOwnedCard returns userID's ownership row for cardID. If no row exists
 // yet (the user has never interacted with this card's ownership), it
 // returns a zero-quantity OwnedCard rather than an error - "not owned" is

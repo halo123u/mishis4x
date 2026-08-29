@@ -1,41 +1,76 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { Card } from '../types';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import type { Card, OwnedCardInput } from '../types';
 import Button from './ui/Button';
 import styles from './OnboardCards.module.css';
 
-// The onboarding flow's "which cards do you actually own" step, shown right
-// after AddSet's "Add" click for a given set. Submitting here does two
-// things at once: onboards the set itself (POST /api/owned-sets, same call
-// AddSet used to make directly) and records ownership + quantity for
-// whichever cards got checked (POST /api/owned-sets/{setID}/cards) - so a
-// user who never submits this form never ends up with a set marked owned
-// but no card data, and one who does gets both in one step.
+// The "which cards do you own" step - reused for two entry points, told
+// apart by how we got here (see backTo below): AddSet's "Add" click for a
+// brand new set, where every row starts unchecked, and SetDetail's "Edit
+// collection" button for a set already onboarded, where rows pre-fill from
+// GET /api/owned-sets/{setID}/cards. Either way, submitting onboards the
+// set itself (POST /api/owned-sets, idempotent) alongside recording card
+// ownership, so an abandoned form never leaves a set marked owned with no
+// card data.
 const OnboardCards = () => {
   const { setID } = useParams<{ setID: string }>();
+  const location = useLocation();
   const [cards, setCards] = useState<Card[] | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  // The quantities we loaded on mount, for cards with quantity > 0 only -
+  // used on save to tell "unchecked, was never owned" (nothing to submit)
+  // apart from "unchecked, but WAS owned" (must submit an explicit 0 to
+  // actually clear it - see handleSave).
+  const [initiallyOwned, setInitiallyOwned] = useState<Record<string, number>>(
+    {},
+  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  // Arrived via SetDetail's "Edit collection" button - go back there
+  // instead of the add-a-set picker (which wouldn't make sense mid-edit),
+  // and adjust the copy below to match ("skip this" reads oddly once
+  // there's already something to skip past).
+  const isEditing =
+    (location.state as { from?: string } | null)?.from === 'detail';
+  const backTo =
+    isEditing && setID ? `/collection/${setID}` : '/collection/add';
 
   useEffect(() => {
     if (!setID) {
       return;
     }
 
-    fetch(`/api/sets/${setID}/cards`)
-      .then(async (res) => {
-        if (res.status === 404) {
+    Promise.all([
+      fetch(`/api/sets/${setID}/cards`),
+      fetch(`/api/owned-sets/${setID}/cards`),
+    ])
+      .then(async ([cardsRes, ownedRes]) => {
+        if (cardsRes.status === 404) {
           setError('This set could not be found.');
           return;
         }
-        if (res.status !== 200) {
+        if (cardsRes.status !== 200 || ownedRes.status !== 200) {
           setError('Could not load cards. Please try again.');
           return;
         }
-        setCards(await res.json());
+
+        const owned: OwnedCardInput[] = await ownedRes.json();
+        const ownedNow: Record<string, number> = {};
+        const initiallySelected: Record<string, boolean> = {};
+        for (const oc of owned) {
+          if (oc.quantity > 0) {
+            ownedNow[oc.card_id] = oc.quantity;
+            initiallySelected[oc.card_id] = true;
+          }
+        }
+        setInitiallyOwned(ownedNow);
+        setQuantities(ownedNow);
+        setSelected(initiallySelected);
+
+        setCards(await cardsRes.json());
       })
       .catch(() => {
         setError('Could not reach the server. Please try again.');
@@ -53,8 +88,8 @@ const OnboardCards = () => {
 
   // Onboards the set (idempotent either way) and, if any cards are passed,
   // records their ownership in the same submit. "Skip for now" calls this
-  // with an empty list regardless of what's checked, rather than reusing
-  // whatever the checkboxes currently hold.
+  // with an empty list regardless of what's checked or was previously
+  // owned - it never touches card ownership, only the set itself.
   const submit = (selectedCards: { card_id: string; quantity: number }[]) => {
     if (!setID) {
       return;
@@ -93,16 +128,35 @@ const OnboardCards = () => {
       });
   };
 
+  // Checked cards submit their quantity as usual. A card that WAS owned
+  // (initiallyOwned) but is no longer checked has to be submitted too,
+  // explicitly at quantity 0 - otherwise SetOwnedCards never hears about
+  // it and the old ownership row just sits there unchanged. A card that
+  // was never owned and stays unchecked is left out entirely, same as
+  // before - no need to create a "never interacted" row for it.
+  const handleSave = () => {
+    const toSubmit = cards ?? [];
+    submit(
+      toSubmit
+        .filter((card) => selected[card.id] || initiallyOwned[card.id])
+        .map((card) => ({
+          card_id: card.id,
+          quantity: selected[card.id] ? (quantities[card.id] ?? 1) : 0,
+        })),
+    );
+  };
+
   return (
     <div className="stack">
-      <Link to="/collection/add" className={styles.back}>
-        ← Back to add a set
+      <Link to={backTo} className={styles.back}>
+        ← Back
       </Link>
 
       <h1>Which cards do you own?</h1>
       <p className="muted">
-        Check off the cards you have and how many, or skip this for now and add
-        them later.
+        {isEditing
+          ? 'Check off the cards you have and how many.'
+          : 'Check off the cards you have and how many, or skip this for now and add them later.'}
       </p>
 
       {error && (
@@ -160,19 +214,7 @@ const OnboardCards = () => {
 
       {cards && (
         <div className={styles.actions}>
-          <Button
-            onClick={() =>
-              submit(
-                Object.keys(selected)
-                  .filter((cardID) => selected[cardID])
-                  .map((cardID) => ({
-                    card_id: cardID,
-                    quantity: quantities[cardID] ?? 1,
-                  })),
-              )
-            }
-            disabled={submitting}
-          >
+          <Button onClick={handleSave} disabled={submitting}>
             {submitting ? 'Saving…' : 'Save my collection'}
           </Button>
           <Button
@@ -180,7 +222,7 @@ const OnboardCards = () => {
             onClick={() => submit([])}
             disabled={submitting}
           >
-            Skip for now
+            {isEditing ? 'Discard changes' : 'Skip for now'}
           </Button>
         </div>
       )}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Card } from '../types';
+import { Card, OwnedCardInput } from '../types';
+import Button from './ui/Button';
 import styles from './SetDetail.module.css';
 
 // Thin wrapper so navigating directly between two sets (/collection/A ->
@@ -15,6 +16,12 @@ const SetDetail = () => {
 
 const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [cards, setCards] = useState<Card[] | null>(null);
+  // card_id -> quantity, only for cards with a quantity > 0 owned_cards
+  // row - a card missing from this map reads as "not owned" whether that's
+  // because there's no row at all or an explicit quantity-0 one, which is
+  // the right distinction for this read-only view (SetDetail doesn't need
+  // to tell those two apart the way the editor form does).
+  const [owned, setOwned] = useState<Record<string, number> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -22,17 +29,29 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       return;
     }
 
-    fetch(`/api/sets/${setID}/cards`)
-      .then(async (res) => {
-        if (res.status === 404) {
+    Promise.all([
+      fetch(`/api/sets/${setID}/cards`),
+      fetch(`/api/owned-sets/${setID}/cards`),
+    ])
+      .then(async ([cardsRes, ownedRes]) => {
+        if (cardsRes.status === 404) {
           setError('This set could not be found.');
           return;
         }
-        if (res.status !== 200) {
+        if (cardsRes.status !== 200 || ownedRes.status !== 200) {
           setError('Could not load cards. Please try again.');
           return;
         }
-        setCards(await res.json());
+
+        const ownedCards: OwnedCardInput[] = await ownedRes.json();
+        const ownedMap: Record<string, number> = {};
+        for (const oc of ownedCards) {
+          if (oc.quantity > 0) {
+            ownedMap[oc.card_id] = oc.quantity;
+          }
+        }
+        setOwned(ownedMap);
+        setCards(await cardsRes.json());
       })
       .catch(() => {
         setError('Could not reach the server. Please try again.');
@@ -41,9 +60,16 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
 
   return (
     <div className="stack">
-      <Link to="/collection" className={styles.back}>
-        ← Back to sets
-      </Link>
+      <div className={styles.header}>
+        <Link to="/collection" className={styles.back}>
+          ← Back to sets
+        </Link>
+        {setID && (
+          <Link to={`/collection/${setID}/onboard`} state={{ from: 'detail' }}>
+            <Button variant="secondary">Edit collection</Button>
+          </Link>
+        )}
+      </div>
 
       {error && (
         <p className={styles.error} role="alert">
@@ -64,16 +90,30 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
               <th>Code</th>
               <th>Name</th>
               <th>Rarity</th>
+              <th>Owned</th>
             </tr>
           </thead>
           <tbody>
-            {cards.map((card) => (
-              <tr key={card.id}>
-                <td className={styles.code}>{card.code}</td>
-                <td>{card.name}</td>
-                <td>{card.rarity}</td>
-              </tr>
-            ))}
+            {cards.map((card) => {
+              const quantity = owned?.[card.id] ?? 0;
+              return (
+                <tr
+                  key={card.id}
+                  className={quantity === 0 ? styles.rowMissing : undefined}
+                >
+                  <td className={styles.code}>{card.code}</td>
+                  <td>{card.name}</td>
+                  <td>{card.rarity}</td>
+                  <td>
+                    {quantity > 0 ? (
+                      <span className={styles.owned}>×{quantity}</span>
+                    ) : (
+                      <span className={styles.missing}>Missing</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

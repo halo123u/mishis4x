@@ -114,6 +114,39 @@ func (d *Data) AddOwnedSet(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ListOwnedCardsForSet returns the authenticated user's ownership rows for
+// the set named by the {setID} path variable - what SetDetail uses to tell
+// owned cards apart from missing ones, and what the set-editor form uses to
+// pre-fill its checkboxes/quantities. A card the user has never interacted
+// with simply doesn't appear in the response, same as ListOwnedCardsBySet.
+func (d *Data) ListOwnedCardsForSet(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r)
+	if !ok {
+		log.Error().Msg("ListOwnedCardsForSet called without an authenticated user in context")
+		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
+		return
+	}
+
+	setID := mux.Vars(r)["setID"]
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	owned, err := d.P.ListOwnedCardsBySet(ctx, userID, setID)
+	if err != nil {
+		log.Error().Err(err).Int("userID", userID).Str("setID", setID).Msg("error listing owned cards")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
+	}
+
+	resp := make([]api.OwnedCardInput, 0, len(owned))
+	for _, oc := range owned {
+		resp = append(resp, api.OwnedCardInput{CardID: oc.CardID, Quantity: oc.Quantity})
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // SetOwnedCardsForSet records which cards of the set named by the {setID}
 // path variable the authenticated user owns, and in what quantity - the
 // card-selection step of onboarding, submitted after AddOwnedSet has
