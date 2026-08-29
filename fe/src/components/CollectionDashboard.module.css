@@ -3,6 +3,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+  width: 100%;
   max-width: 32rem;
 }
 
