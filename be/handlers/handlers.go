@@ -328,21 +328,25 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// ownerOnlyMiddleware restricts a route to exactly d.CollectionOwnerUserID,
-// regardless of who else is logged in - unless d.CollectionAllowAllUsers is
-// set, in which case any authenticated user passes (see its doc comment for
-// why that override exists and when it's meant to be used). Must run after
-// AuthMiddleware (relies on userIDFromContext already being set) - 401
-// still means "not logged in at all", this returns 403 for "logged in, but
-// not the one account allowed to see this".
+// canAccessCollection is the actual rule ownerOnlyMiddleware enforces,
+// pulled out so GetGlobalData can expose the same answer to the frontend
+// (see api.GlobalData.CollectionAccess) - the frontend hides the Card
+// Manager widget entirely for a user this returns false for, rather than
+// showing it and letting them click through to a 403. Single source of
+// truth: this function is the only place either has to reason about
+// CollectionOwnerUserID/CollectionAllowAllUsers's interaction.
+func (d Data) canAccessCollection(userID int) bool {
+	return d.CollectionAllowAllUsers || (d.CollectionOwnerUserID != 0 && userID == d.CollectionOwnerUserID)
+}
+
+// ownerOnlyMiddleware restricts a route to whoever canAccessCollection
+// allows. Must run after AuthMiddleware (relies on userIDFromContext
+// already being set) - 401 still means "not logged in at all", this
+// returns 403 for "logged in, but not allowed to see this".
 func (d Data) ownerOnlyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := userIDFromContext(r)
-		if !ok {
-			writeJSONError(w, http.StatusForbidden, "Not available on this account.")
-			return
-		}
-		if !d.CollectionAllowAllUsers && (d.CollectionOwnerUserID == 0 || userID != d.CollectionOwnerUserID) {
+		if !ok || !d.canAccessCollection(userID) {
 			writeJSONError(w, http.StatusForbidden, "Not available on this account.")
 			return
 		}
