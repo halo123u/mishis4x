@@ -17,3 +17,9 @@ type Card struct {
 	Code   string `json:"code"`
 	Rarity string `json:"rarity"`
 }
+
+// AddOwnedSetInput is the POST /api/owned-sets request body - onboards
+// SetID for the authenticated user.
+type AddOwnedSetInput struct {
+	SetID string `json:"set_id"`
+}

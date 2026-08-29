@@ -38,6 +38,82 @@ func (d *Data) ListSets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// ListOwnedSets returns the sets the authenticated user has onboarded -
+// what the collection dashboard actually shows, as opposed to ListSets'
+// full catalog. Starts empty for a fresh user even once the catalog isn't.
+func (d *Data) ListOwnedSets(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r)
+	if !ok {
+		// AuthMiddleware already gates this route - see GetGlobalData's
+		// identical comment for why this would mean a programming error.
+		log.Error().Msg("ListOwnedSets called without an authenticated user in context")
+		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	sets, err := d.P.ListOwnedSets(ctx, userID)
+	if err != nil {
+		log.Error().Err(err).Int("userID", userID).Msg("error listing owned sets")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
+	}
+
+	resp := make([]api.Set, 0, len(sets))
+	for _, s := range sets {
+		resp = append(resp, api.Set{
+			ID:          s.ID,
+			Name:        s.Name,
+			CardCount:   s.CardCount,
+			ReleaseDate: s.ReleaseDate,
+			Status:      s.Status,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// AddOwnedSet onboards the set named in the request body for the
+// authenticated user - the "add a set" step of the onboarding flow.
+// Idempotent (see persist.SetOwnedSet); 404s on an unknown set_id rather
+// than silently onboarding a garbage ID.
+func (d *Data) AddOwnedSet(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r)
+	if !ok {
+		log.Error().Msg("AddOwnedSet called without an authenticated user in context")
+		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
+		return
+	}
+
+	var input api.AddOwnedSetInput
+	if !decodeJSONBody(w, r, &input) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	if _, err := d.P.GetSet(ctx, input.SetID); err != nil {
+		if errors.Is(err, persist.ErrSetNotFound) {
+			writeJSONError(w, http.StatusNotFound, "Set not found.")
+			return
+		}
+		log.Error().Err(err).Str("setID", input.SetID).Msg("error getting set")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
+	}
+
+	if err := d.P.SetOwnedSet(ctx, userID, input.SetID); err != nil {
+		log.Error().Err(err).Int("userID", userID).Str("setID", input.SetID).Msg("error onboarding set")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListCardsForSet returns every card belonging to the set named by the
 // {setID} path variable. 404s if setID doesn't match a real set, rather
 // than silently returning an empty list indistinguishable from "this set

@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Set } from '../types';
+import Button from './ui/Button';
 import styles from './CollectionDashboard.module.css';
 
+// Shows the sets the user has actually onboarded (GET /api/owned-sets),
+// not the full catalog (GET /api/sets) - a fresh account starts empty here
+// even once the catalog doesn't, and "Add a set" is how that gap gets
+// closed rather than the dashboard just listing everything that exists.
 const CollectionDashboard = () => {
   const [sets, setSets] = useState<Set[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    fetch('/api/sets')
+    fetch('/api/owned-sets')
       .then(async (res) => {
         if (res.status !== 200) {
-          setError('Could not load sets. Please try again.');
+          setError('Could not load your sets. Please try again.');
           return;
         }
         setSets(await res.json());
@@ -23,7 +29,10 @@ const CollectionDashboard = () => {
 
   return (
     <div className="stack">
-      <h1>Card Manager</h1>
+      <div className={styles.header}>
+        <h1>Card Manager</h1>
+        <Button onClick={() => navigate('/collection/add')}>Add a set</Button>
+      </div>
 
       {error && (
         <p className={styles.error} role="alert">
@@ -31,12 +40,11 @@ const CollectionDashboard = () => {
         </p>
       )}
 
-      {!error && sets === null && <p className="muted">Loading sets…</p>}
+      {!error && sets === null && <p className="muted">Loading your sets…</p>}
 
       {sets && sets.length === 0 && (
         <p className="muted">
-          No sets have been added yet - check back once the catalog import job
-          has run.
+          You haven't added any sets yet - click "Add a set" to get started.
         </p>
       )}
 
