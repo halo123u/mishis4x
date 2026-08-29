@@ -113,6 +113,51 @@ func TestSetCardQuantity_UpsertAndUpdate(t *testing.T) {
 	require.Equal(t, 2, oc.Quantity, "must update in place, not insert a second row")
 }
 
+func TestDeleteOwnedSet_RemovesSetAndItsCards(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+
+	require.NoError(t, p.SetOwnedSet(t.Context(), userID, setID))
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{{CardID: cardID, Quantity: 2}}))
+
+	require.NoError(t, p.DeleteOwnedSet(t.Context(), userID, setID))
+
+	setIDs, err := p.ListOwnedSetIDs(t.Context(), userID)
+	require.NoError(t, err)
+	require.Empty(t, setIDs, "the set must no longer be onboarded")
+
+	oc, err := p.GetOwnedCard(t.Context(), userID, cardID)
+	require.NoError(t, err)
+	require.Equal(t, 0, oc.Quantity, "card ownership must be cleared, not left resurrectable")
+
+	// The underlying catalog card must still exist - only ownership data
+	// was removed, not the card itself.
+	cards, err := p.ListCardsBySet(t.Context(), setID)
+	require.NoError(t, err)
+	require.Len(t, cards, 1)
+}
+
+func TestDeleteOwnedSet_NeverOnboardedIsNoop(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	require.NoError(t, p.DeleteOwnedSet(t.Context(), userID, "does-not-exist"), "deleting a set that was never onboarded must not error")
+}
+
 func TestSetOwnedCards_BulkUpsertAndUpdate(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}

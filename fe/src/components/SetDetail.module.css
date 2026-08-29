@@ -17,6 +17,30 @@
   text-decoration: underline;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.confirmDelete {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 40rem;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--ember);
+  border-radius: var(--radius-md);
+}
+
+.confirmActions {
+  display: flex;
+  gap: var(--space-3);
+}
+
 .table {
   width: 100%;
   max-width: 40rem;

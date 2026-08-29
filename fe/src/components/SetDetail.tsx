@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Card, OwnedCardInput } from '../types';
 import Button from './ui/Button';
 import styles from './SetDetail.module.css';
@@ -23,6 +23,14 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // to tell those two apart the way the editor form does).
   const [owned, setOwned] = useState<Record<string, number> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Deleting is a destructive, unrecoverable action (it clears card
+  // ownership too, not just the set marker) - confirmingDelete gates a
+  // second, explicit click behind an inline prompt instead of a native
+  // confirm() dialog, matching the rest of the app's hand-rolled UI.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!setID) {
@@ -58,6 +66,27 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       });
   }, [setID]);
 
+  const handleDelete = () => {
+    if (!setID) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError(null);
+
+    fetch(`/api/owned-sets/${setID}`, { method: 'DELETE' })
+      .then((res) => {
+        if (res.status !== 204) {
+          throw new Error('delete-failed');
+        }
+        navigate('/collection');
+      })
+      .catch(() => {
+        setDeleteError('Could not remove this set. Please try again.');
+        setDeleting(false);
+      });
+  };
+
   return (
     <div className="stack">
       <div className={styles.header}>
@@ -65,11 +94,46 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
           ← Back to sets
         </Link>
         {setID && (
-          <Link to={`/collection/${setID}/onboard`} state={{ from: 'detail' }}>
-            <Button variant="secondary">Edit collection</Button>
-          </Link>
+          <div className={styles.headerActions}>
+            <Link
+              to={`/collection/${setID}/onboard`}
+              state={{ from: 'detail' }}
+            >
+              <Button variant="secondary">Edit collection</Button>
+            </Link>
+            <Button variant="danger" onClick={() => setConfirmingDelete(true)}>
+              Delete set
+            </Button>
+          </div>
         )}
       </div>
+
+      {confirmingDelete && (
+        <div className={styles.confirmDelete} role="alert">
+          <p>
+            Remove this set and everything you've tracked for it? This can't be
+            undone.
+          </p>
+          <div className={styles.confirmActions}>
+            <Button variant="danger" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Removing…' : 'Yes, delete'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setConfirmingDelete(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {deleteError && (
+        <p className={styles.error} role="alert">
+          {deleteError}
+        </p>
+      )}
 
       {error && (
         <p className={styles.error} role="alert">
