@@ -12,7 +12,6 @@ import styles from './AddSet.module.css';
 const AddSet = () => {
   const [available, setAvailable] = useState<SetT[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [addingID, setAddingID] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,27 +33,11 @@ const AddSet = () => {
       });
   }, []);
 
+  // Onboarding the set itself now happens in OnboardCards' submit, bundled
+  // with whichever cards get checked there - "Add" here is just navigation,
+  // not an API call.
   const handleAdd = (setID: string) => {
-    setAddingID(setID);
-    setError(null);
-
-    fetch('/api/owned-sets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ set_id: setID }),
-    })
-      .then((res) => {
-        if (res.status !== 204) {
-          setError('Could not add that set. Please try again.');
-          setAddingID(null);
-          return;
-        }
-        navigate(`/collection/${setID}`);
-      })
-      .catch(() => {
-        setError('Could not reach the server. Please try again.');
-        setAddingID(null);
-      });
+    navigate(`/collection/${setID}/onboard`);
   };
 
   return (
@@ -89,12 +72,7 @@ const AddSet = () => {
                   {set.card_count} cards · {set.status}
                 </span>
               </div>
-              <Button
-                onClick={() => handleAdd(set.id)}
-                disabled={addingID === set.id}
-              >
-                {addingID === set.id ? 'Adding…' : 'Add'}
-              </Button>
+              <Button onClick={() => handleAdd(set.id)}>Add</Button>
             </li>
           ))}
         </ul>
