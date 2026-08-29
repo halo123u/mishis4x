@@ -114,6 +114,34 @@ func (d *Data) AddOwnedSet(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// DeleteOwnedSet removes the set named by the {setID} path variable from
+// the authenticated user's collection - both the owned_sets row and every
+// owned_cards row for one of its cards (see persist.DeleteOwnedSet), so
+// re-adding the set later starts clean rather than resurrecting old
+// ownership data. Idempotent like AddOwnedSet's counterpart: deleting a set
+// that was never onboarded is still a 204, not an error.
+func (d *Data) DeleteOwnedSet(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r)
+	if !ok {
+		log.Error().Msg("DeleteOwnedSet called without an authenticated user in context")
+		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
+		return
+	}
+
+	setID := mux.Vars(r)["setID"]
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	if err := d.P.DeleteOwnedSet(ctx, userID, setID); err != nil {
+		log.Error().Err(err).Int("userID", userID).Str("setID", setID).Msg("error deleting owned set")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListOwnedCardsForSet returns the authenticated user's ownership rows for
 // the set named by the {setID} path variable - what SetDetail uses to tell
 // owned cards apart from missing ones, and what the set-editor form uses to

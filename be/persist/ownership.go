@@ -100,6 +100,29 @@ func (p *Persist) ListOwnedSetIDs(ctx context.Context, userID int) ([]string, er
 	return setIDs, rows.Err()
 }
 
+// DeleteOwnedSet removes setID from userID's collection entirely - the
+// owned_sets row (so it drops off the dashboard and becomes onboardable
+// again) and every owned_cards row for one of setID's cards (so re-adding
+// the set later starts from a clean slate instead of resurrecting old
+// ownership data via the editor form's pre-fill). A no-op, not an error,
+// if userID never onboarded setID - same idempotent shape as SetOwnedSet.
+func (p *Persist) DeleteOwnedSet(ctx context.Context, userID int, setID string) error {
+	_, err := sq.Delete("owned_cards").
+		Where("card_id IN (SELECT id FROM cards WHERE set_id = ?)", setID).
+		Where(sq.Eq{"user_id": userID}).
+		RunWith(p.DB).
+		ExecContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = sq.Delete("owned_sets").
+		Where(sq.Eq{"user_id": userID, "set_id": setID}).
+		RunWith(p.DB).
+		ExecContext(ctx)
+	return err
+}
+
 // SetCardQuantity upserts how many copies of cardID userID owns. A
 // quantity of 0 is a valid state (explicitly marked "don't own this"),
 // distinct from no row existing at all (never interacted with).
