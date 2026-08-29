@@ -156,6 +156,7 @@ func (d *Data) NewRouter() *mux.Router {
 	ownedSets.Use(d.ownerOnlyMiddleware)
 	ownedSets.HandleFunc("", d.ListOwnedSets).Methods("GET")
 	ownedSets.HandleFunc("", d.AddOwnedSet).Methods("POST")
+	ownedSets.HandleFunc("/{setID}/cards", d.ListOwnedCardsForSet).Methods("GET")
 	ownedSets.HandleFunc("/{setID}/cards", d.SetOwnedCardsForSet).Methods("POST")
 
 	// healthcheck

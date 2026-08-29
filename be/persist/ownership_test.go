@@ -156,6 +156,43 @@ func TestSetOwnedCards_BulkUpsertAndUpdate(t *testing.T) {
 	require.Equal(t, 1, ocTwo.Quantity, "must not touch a card not present in this call")
 }
 
+func TestListOwnedCardsBySet(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardOne, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+	cardTwo, err := p.CreateCard(t.Context(), setID, "Michaela", "BRD/W139-009S", "SR 1-star")
+	require.NoError(t, err)
+
+	// Nothing interacted with yet - must be empty, not a row per card at
+	// quantity 0.
+	owned, err := p.ListOwnedCardsBySet(t.Context(), userID, setID)
+	require.NoError(t, err)
+	require.Empty(t, owned)
+
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardOne, Quantity: 2},
+		{CardID: cardTwo, Quantity: 0}, // explicitly marked not owned
+	}))
+
+	owned, err = p.ListOwnedCardsBySet(t.Context(), userID, setID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []CardQuantity{
+		{CardID: cardOne, Quantity: 2},
+		{CardID: cardTwo, Quantity: 0},
+	}, owned, "an explicit zero-quantity row must still be returned, not filtered out")
+}
+
 func TestSetOwnedCards_EmptyIsNoop(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
