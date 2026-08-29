@@ -114,6 +114,60 @@ func (d *Data) AddOwnedSet(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SetOwnedCardsForSet records which cards of the set named by the {setID}
+// path variable the authenticated user owns, and in what quantity - the
+// card-selection step of onboarding, submitted after AddOwnedSet has
+// already onboarded the set itself. Only accepts card IDs that actually
+// belong to setID, rather than trusting the client to only ever submit
+// ones that do.
+func (d *Data) SetOwnedCardsForSet(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r)
+	if !ok {
+		log.Error().Msg("SetOwnedCardsForSet called without an authenticated user in context")
+		writeJSONError(w, http.StatusUnauthorized, "You must be logged in.")
+		return
+	}
+
+	setID := mux.Vars(r)["setID"]
+
+	var input api.SetOwnedCardsInput
+	if !decodeJSONBody(w, r, &input) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	catalogCards, err := d.P.ListCardsBySet(ctx, setID)
+	if err != nil {
+		log.Error().Err(err).Str("setID", setID).Msg("error listing cards for set")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
+	}
+
+	validCardIDs := make(map[string]bool, len(catalogCards))
+	for _, c := range catalogCards {
+		validCardIDs[c.ID] = true
+	}
+
+	cards := make([]persist.CardQuantity, 0, len(input.Cards))
+	for _, c := range input.Cards {
+		if !validCardIDs[c.CardID] {
+			writeJSONError(w, http.StatusBadRequest, "One of these cards doesn't belong to this set.")
+			return
+		}
+		cards = append(cards, persist.CardQuantity{CardID: c.CardID, Quantity: c.Quantity})
+	}
+
+	if err := d.P.SetOwnedCards(ctx, userID, cards); err != nil {
+		log.Error().Err(err).Int("userID", userID).Str("setID", setID).Msg("error setting owned cards")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListCardsForSet returns every card belonging to the set named by the
 // {setID} path variable. 404s if setID doesn't match a real set, rather
 // than silently returning an empty list indistinguishable from "this set

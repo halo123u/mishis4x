@@ -113,6 +113,35 @@ func (p *Persist) SetCardQuantity(ctx context.Context, userID int, cardID string
 	return err
 }
 
+// CardQuantity pairs a card with a quantity - the unit SetOwnedCards
+// operates on in bulk, as opposed to SetCardQuantity's one-card-at-a-time
+// form.
+type CardQuantity struct {
+	CardID   string
+	Quantity int
+}
+
+// SetOwnedCards upserts quantity for every entry in cards in a single
+// statement - the bulk form of SetCardQuantity, used by the onboarding
+// flow's card-selection step, where a user submits many cards' ownership
+// at once rather than one at a time. A nil/empty cards is a no-op, not an
+// error - it never runs an empty INSERT.
+func (p *Persist) SetOwnedCards(ctx context.Context, userID int, cards []CardQuantity) error {
+	if len(cards) == 0 {
+		return nil
+	}
+
+	insert := sq.Insert("owned_cards").
+		Columns("user_id", "card_id", "quantity").
+		Suffix("ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)")
+	for _, c := range cards {
+		insert = insert.Values(userID, c.CardID, c.Quantity)
+	}
+
+	_, err := insert.RunWith(p.DB).ExecContext(ctx)
+	return err
+}
+
 // GetOwnedCard returns userID's ownership row for cardID. If no row exists
 // yet (the user has never interacted with this card's ownership), it
 // returns a zero-quantity OwnedCard rather than an error - "not owned" is
