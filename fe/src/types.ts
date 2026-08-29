@@ -7,6 +7,7 @@ export interface User {
 }
 export interface GlobalData {
   user: User;
+  collection_access: boolean;
 }
 export interface Time {}
 export interface Set {
