@@ -8,9 +8,14 @@
   text-decoration: underline;
 }
 
-.table {
+.tableWrap {
   width: 100%;
   max-width: 40rem;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
   border-collapse: collapse;
 }
 
@@ -58,6 +63,7 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 

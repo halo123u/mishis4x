@@ -148,38 +148,40 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       )}
 
       {cards && cards.length > 0 && (
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>Code</th>
-              <th>Name</th>
-              <th>Rarity</th>
-              <th>Owned</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cards.map((card) => {
-              const quantity = owned?.[card.id] ?? 0;
-              return (
-                <tr
-                  key={card.id}
-                  className={quantity === 0 ? styles.rowMissing : undefined}
-                >
-                  <td className={styles.code}>{card.code}</td>
-                  <td>{card.name}</td>
-                  <td>{card.rarity}</td>
-                  <td>
-                    {quantity > 0 ? (
-                      <span className={styles.owned}>×{quantity}</span>
-                    ) : (
-                      <span className={styles.missing}>Missing</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Rarity</th>
+                <th>Owned</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cards.map((card) => {
+                const quantity = owned?.[card.id] ?? 0;
+                return (
+                  <tr
+                    key={card.id}
+                    className={quantity === 0 ? styles.rowMissing : undefined}
+                  >
+                    <td className={styles.code}>{card.code}</td>
+                    <td>{card.name}</td>
+                    <td>{card.rarity}</td>
+                    <td>
+                      {quantity > 0 ? (
+                        <span className={styles.owned}>×{quantity}</span>
+                      ) : (
+                        <span className={styles.missing}>Missing</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

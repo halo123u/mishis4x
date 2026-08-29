@@ -168,48 +168,50 @@ const OnboardCards = () => {
       {!error && cards === null && <p className="muted">Loading cards…</p>}
 
       {cards && cards.length > 0 && (
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th className={styles.checkboxCol}>Owned</th>
-              <th>Code</th>
-              <th>Name</th>
-              <th>Rarity</th>
-              <th className={styles.quantityCol}>Qty</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cards.map((card) => (
-              <tr key={card.id}>
-                <td className={styles.checkboxCol}>
-                  <input
-                    type="checkbox"
-                    aria-label={`I own ${card.name}`}
-                    checked={!!selected[card.id]}
-                    onChange={() => toggleCard(card.id)}
-                    disabled={submitting}
-                  />
-                </td>
-                <td className={styles.code}>{card.code}</td>
-                <td>{card.name}</td>
-                <td>{card.rarity}</td>
-                <td className={styles.quantityCol}>
-                  <input
-                    type="number"
-                    min={1}
-                    aria-label={`Quantity of ${card.name}`}
-                    className={styles.quantityInput}
-                    value={quantities[card.id] ?? 1}
-                    onChange={(event) =>
-                      setQuantity(card.id, Number(event.target.value))
-                    }
-                    disabled={!selected[card.id] || submitting}
-                  />
-                </td>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th className={styles.checkboxCol}>Owned</th>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Rarity</th>
+                <th className={styles.quantityCol}>Qty</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {cards.map((card) => (
+                <tr key={card.id}>
+                  <td className={styles.checkboxCol}>
+                    <input
+                      type="checkbox"
+                      aria-label={`I own ${card.name}`}
+                      checked={!!selected[card.id]}
+                      onChange={() => toggleCard(card.id)}
+                      disabled={submitting}
+                    />
+                  </td>
+                  <td className={styles.code}>{card.code}</td>
+                  <td>{card.name}</td>
+                  <td>{card.rarity}</td>
+                  <td className={styles.quantityCol}>
+                    <input
+                      type="number"
+                      min={1}
+                      aria-label={`Quantity of ${card.name}`}
+                      className={styles.quantityInput}
+                      value={quantities[card.id] ?? 1}
+                      onChange={(event) =>
+                        setQuantity(card.id, Number(event.target.value))
+                      }
+                      disabled={!selected[card.id] || submitting}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {cards && (
