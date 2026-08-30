@@ -201,6 +201,63 @@ func TestSetOwnedCards_BulkUpsertAndUpdate(t *testing.T) {
 	require.Equal(t, 1, ocTwo.Quantity, "must not touch a card not present in this call")
 }
 
+func TestSetOwnedCards_PricePaidCents(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+
+	// No price given at all - nil, not $0, since the two mean different
+	// things (unknown vs. a genuine free acquisition).
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Quantity: 1},
+	}))
+	oc, err := p.GetOwnedCard(t.Context(), userID, cardID)
+	require.NoError(t, err)
+	require.Nil(t, oc.PricePaidCents, "no price submitted must stay nil, not default to 0")
+
+	// Recording a real price - $16.33, matching the actual first entry in
+	// the personal tracker this feature is meant to replace.
+	priceCents := 1633
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Quantity: 1, PricePaidCents: &priceCents},
+	}))
+	oc, err = p.GetOwnedCard(t.Context(), userID, cardID)
+	require.NoError(t, err)
+	require.NotNil(t, oc.PricePaidCents)
+	require.Equal(t, 1633, *oc.PricePaidCents)
+
+	// Submitting nil again fully replaces the stored price back to
+	// unknown - price follows the same "whatever's submitted wins" rule
+	// quantity already does, it's never merged with what's there.
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Quantity: 1},
+	}))
+	oc, err = p.GetOwnedCard(t.Context(), userID, cardID)
+	require.NoError(t, err)
+	require.Nil(t, oc.PricePaidCents, "resubmitting without a price must clear the old one, not leave it untouched")
+
+	// ListOwnedCardsBySet must surface the same field.
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Quantity: 1, PricePaidCents: &priceCents},
+	}))
+	owned, err := p.ListOwnedCardsBySet(t.Context(), userID, setID)
+	require.NoError(t, err)
+	require.Len(t, owned, 1)
+	require.NotNil(t, owned[0].PricePaidCents)
+	require.Equal(t, 1633, *owned[0].PricePaidCents)
+}
+
 func TestListOwnedCardsBySet(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}

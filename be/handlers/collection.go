@@ -169,7 +169,11 @@ func (d *Data) ListOwnedCardsForSet(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]api.OwnedCardInput, 0, len(owned))
 	for _, oc := range owned {
-		resp = append(resp, api.OwnedCardInput{CardID: oc.CardID, Quantity: oc.Quantity})
+		resp = append(resp, api.OwnedCardInput{
+			CardID:         oc.CardID,
+			Quantity:       oc.Quantity,
+			PricePaidCents: oc.PricePaidCents,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -217,7 +221,11 @@ func (d *Data) SetOwnedCardsForSet(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, "One of these cards doesn't belong to this set.")
 			return
 		}
-		cards = append(cards, persist.CardQuantity{CardID: c.CardID, Quantity: c.Quantity})
+		cards = append(cards, persist.CardQuantity{
+			CardID:         c.CardID,
+			Quantity:       c.Quantity,
+			PricePaidCents: c.PricePaidCents,
+		})
 	}
 
 	if err := d.P.SetOwnedCards(ctx, userID, cards); err != nil {

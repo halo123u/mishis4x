@@ -31,9 +31,14 @@ type AddOwnedSetInput struct {
 // the way out). CardID must belong to the set named by the request's
 // {setID} path variable (checked server-side, not just trusted from the
 // client) - Quantity is how many copies of it the user reports owning.
+// PricePaidCents is in cents, not a decimal dollar amount (avoids float
+// rounding on money entirely); nil/omitted means unknown, not $0 - and like
+// Quantity, submitting it always fully replaces whatever was stored before,
+// it's never merged with an existing value server-side.
 type OwnedCardInput struct {
-	CardID   string `json:"card_id"`
-	Quantity int    `json:"quantity"`
+	CardID         string `json:"card_id"`
+	Quantity       int    `json:"quantity"`
+	PricePaidCents *int   `json:"price_paid_cents,omitempty"`
 }
 
 // SetOwnedCardsInput is the POST /api/owned-sets/{setID}/cards request

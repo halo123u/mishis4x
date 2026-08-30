@@ -22,6 +22,10 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // the right distinction for this read-only view (SetDetail doesn't need
   // to tell those two apart the way the editor form does).
   const [owned, setOwned] = useState<Record<string, number> | null>(null);
+  // card_id -> price_paid_cents, only for owned cards with a known price -
+  // a card missing here just means "unknown," same as an unowned card
+  // missing from `owned` above.
+  const [ownedPrices, setOwnedPrices] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   // Deleting is a destructive, unrecoverable action (it clears card
   // ownership too, not just the set marker) - confirmingDelete gates a
@@ -53,12 +57,17 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
 
         const ownedCards: OwnedCardInput[] = await ownedRes.json();
         const ownedMap: Record<string, number> = {};
+        const pricesMap: Record<string, number> = {};
         for (const oc of ownedCards) {
           if (oc.quantity > 0) {
             ownedMap[oc.card_id] = oc.quantity;
+            if (oc.price_paid_cents != null) {
+              pricesMap[oc.card_id] = oc.price_paid_cents;
+            }
           }
         }
         setOwned(ownedMap);
+        setOwnedPrices(pricesMap);
         setCards(await cardsRes.json());
       })
       .catch(() => {
@@ -156,6 +165,7 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                 <th>Name</th>
                 <th>Rarity</th>
                 <th>Owned</th>
+                <th>Price paid</th>
               </tr>
             </thead>
             <tbody>
@@ -174,6 +184,15 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                         <span className={styles.owned}>×{quantity}</span>
                       ) : (
                         <span className={styles.missing}>Missing</span>
+                      )}
+                    </td>
+                    <td>
+                      {quantity > 0 && ownedPrices[card.id] != null ? (
+                        <span className={styles.price}>
+                          ${(ownedPrices[card.id] / 100).toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className={styles.missing}>—</span>
                       )}
                     </td>
                   </tr>

@@ -91,6 +91,10 @@
   color: var(--ash);
 }
 
+.price {
+  font-variant-numeric: tabular-nums;
+}
+
 .error {
   color: var(--bad);
 }
