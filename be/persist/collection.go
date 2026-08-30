@@ -219,6 +219,32 @@ func (p *Persist) DeleteCardsForSet(ctx context.Context, setID string) error {
 	return err
 }
 
+// DeleteCardsForSetExceptCodes deletes every card in setID whose code isn't
+// in keepCodes - the surgical counterpart to DeleteCardsForSet, used by
+// process-set --refresh so re-running against an updated CSV only touches
+// codes that actually disappeared, not the whole set. This matters because
+// the FK check on owned_cards/card_images runs across the whole DELETE
+// statement at once: DeleteCardsForSet fails if *any* card anywhere in the
+// set is owned, even one whose code isn't changing at all, while this only
+// fails if a card that's genuinely being removed (its code truly isn't in
+// the new CSV) happens to be owned - a real, unavoidable conflict, not a
+// side effect of cards that didn't need to move in the first place.
+// keepCodes must be non-empty - an empty list would delete the entire set,
+// which isn't a real CSV import (an empty CSV for the target set is
+// almost certainly a mistake, not an intentional wipe).
+func (p *Persist) DeleteCardsForSetExceptCodes(ctx context.Context, setID string, keepCodes []string) error {
+	if len(keepCodes) == 0 {
+		return errors.New("keepCodes must not be empty")
+	}
+
+	_, err := sq.Delete("cards").
+		Where(sq.Eq{"set_id": setID}).
+		Where(sq.NotEq{"code": keepCodes}).
+		RunWith(p.DB).
+		ExecContext(ctx)
+	return err
+}
+
 // DeleteSetCascade deletes a set's cards, then the set row itself, by
 // name - a full removal, unlike DeleteCardsForSet, which deliberately
 // preserves the set's own id/identity. A no-op (nil error) if no set with
@@ -244,11 +270,15 @@ func (p *Persist) DeleteSetCascade(ctx context.Context, name string) error {
 // UpsertCard inserts a card, or updates its name/rarity in place if one
 // already exists for the same (set_id, code) - the catalog importer's whole
 // point is being safe to re-run against an updated CSV without duplicating
-// rows. The existing row's id is left untouched on update.
-func (p *Persist) UpsertCard(ctx context.Context, setID, name, code, rarity string) error {
+// rows. The existing row's id is left untouched on update. Returns the
+// card's id either way - on a duplicate-key update the id generated below
+// is never actually used (the existing row's original id wins), so it's
+// looked up explicitly afterward rather than assumed, for callers (e.g.
+// process-set attaching an image) that need the real id.
+func (p *Persist) UpsertCard(ctx context.Context, setID, name, code, rarity string) (string, error) {
 	id, err := NewUUIDv7()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	_, err = sq.Insert("cards").
@@ -257,8 +287,30 @@ func (p *Persist) UpsertCard(ctx context.Context, setID, name, code, rarity stri
 		Suffix("ON DUPLICATE KEY UPDATE name = VALUES(name), rarity = VALUES(rarity)").
 		RunWith(p.DB).
 		ExecContext(ctx)
+	if err != nil {
+		return "", err
+	}
 
-	return err
+	return p.getCardIDByCode(ctx, setID, code)
+}
+
+// getCardIDByCode looks up a card's id by (set_id, code) - the natural key
+// UpsertCard matches on, but not something callers can assume they already
+// know the id for (that's the whole reason UpsertCard exists instead of a
+// plain insert).
+func (p *Persist) getCardIDByCode(ctx context.Context, setID, code string) (string, error) {
+	row := sq.Select("id").
+		From("cards").
+		Where(sq.Eq{"set_id": setID, "code": code}).
+		RunWith(p.DB).
+		QueryRowContext(ctx)
+
+	var id string
+	if err := row.Scan(&id); err != nil {
+		return "", err
+	}
+
+	return id, nil
 }
 
 // codePattern splits a card code into everything before its trailing

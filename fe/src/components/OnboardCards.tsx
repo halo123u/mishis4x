@@ -18,6 +18,11 @@ const OnboardCards = () => {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  // Dollar-amount text as typed, not cents - kept as a string (rather than
+  // a number) so a card with no known price is a genuinely empty input,
+  // not a "0" the user would have to delete first, and so mid-edit text
+  // like "12." isn't clobbered by re-parsing on every keystroke.
+  const [prices, setPrices] = useState<Record<string, string>>({});
   // The quantities we loaded on mount, for cards with quantity > 0 only -
   // used on save to tell "unchecked, was never owned" (nothing to submit)
   // apart from "unchecked, but WAS owned" (must submit an explicit 0 to
@@ -60,14 +65,21 @@ const OnboardCards = () => {
         const owned: OwnedCardInput[] = await ownedRes.json();
         const ownedNow: Record<string, number> = {};
         const initiallySelected: Record<string, boolean> = {};
+        const initialPrices: Record<string, string> = {};
         for (const oc of owned) {
           if (oc.quantity > 0) {
             ownedNow[oc.card_id] = oc.quantity;
             initiallySelected[oc.card_id] = true;
+            if (oc.price_paid_cents != null) {
+              initialPrices[oc.card_id] = (oc.price_paid_cents / 100).toFixed(
+                2,
+              );
+            }
           }
         }
         setInitiallyOwned(ownedNow);
         setQuantities(ownedNow);
+        setPrices(initialPrices);
         setSelected(initiallySelected);
 
         setCards(await cardsRes.json());
@@ -86,11 +98,36 @@ const OnboardCards = () => {
     setQuantities((prev) => ({ ...prev, [cardID]: Math.max(1, quantity) }));
   };
 
+  const setPrice = (cardID: string, value: string) => {
+    setPrices((prev) => ({ ...prev, [cardID]: value }));
+  };
+
+  // undefined for "no price entered" (blank, or not a real number yet
+  // mid-typing) - cents (rounded, to sidestep float cruft like 12.1*100)
+  // for a real amount.
+  const priceCentsFor = (cardID: string): number | undefined => {
+    const raw = prices[cardID];
+    if (!raw || raw.trim() === '') {
+      return undefined;
+    }
+    const dollars = Number(raw);
+    if (Number.isNaN(dollars)) {
+      return undefined;
+    }
+    return Math.round(dollars * 100);
+  };
+
   // Onboards the set (idempotent either way) and, if any cards are passed,
   // records their ownership in the same submit. "Skip for now" calls this
   // with an empty list regardless of what's checked or was previously
   // owned - it never touches card ownership, only the set itself.
-  const submit = (selectedCards: { card_id: string; quantity: number }[]) => {
+  const submit = (
+    selectedCards: {
+      card_id: string;
+      quantity: number;
+      price_paid_cents?: number;
+    }[],
+  ) => {
     if (!setID) {
       return;
     }
@@ -128,12 +165,14 @@ const OnboardCards = () => {
       });
   };
 
-  // Checked cards submit their quantity as usual. A card that WAS owned
-  // (initiallyOwned) but is no longer checked has to be submitted too,
-  // explicitly at quantity 0 - otherwise SetOwnedCards never hears about
-  // it and the old ownership row just sits there unchanged. A card that
-  // was never owned and stays unchecked is left out entirely, same as
-  // before - no need to create a "never interacted" row for it.
+  // Checked cards submit their quantity (and price, if entered) as usual.
+  // A card that WAS owned (initiallyOwned) but is no longer checked has to
+  // be submitted too, explicitly at quantity 0 - otherwise SetOwnedCards
+  // never hears about it and the old ownership row just sits there
+  // unchanged. A card that was never owned and stays unchecked is left out
+  // entirely, same as before - no need to create a "never interacted" row
+  // for it. Price is only ever sent for checked cards - an unchecked card
+  // being cleared to quantity 0 has no meaningful price to keep either.
   const handleSave = () => {
     const toSubmit = cards ?? [];
     submit(
@@ -142,6 +181,9 @@ const OnboardCards = () => {
         .map((card) => ({
           card_id: card.id,
           quantity: selected[card.id] ? (quantities[card.id] ?? 1) : 0,
+          price_paid_cents: selected[card.id]
+            ? priceCentsFor(card.id)
+            : undefined,
         })),
     );
   };
@@ -177,6 +219,7 @@ const OnboardCards = () => {
                 <th>Name</th>
                 <th>Rarity</th>
                 <th className={styles.quantityCol}>Qty</th>
+                <th className={styles.priceCol}>Price paid</th>
               </tr>
             </thead>
             <tbody>
@@ -206,6 +249,26 @@ const OnboardCards = () => {
                       }
                       disabled={!selected[card.id] || submitting}
                     />
+                  </td>
+                  <td className={styles.priceCol}>
+                    <span className={styles.priceInputWrap}>
+                      <span className={styles.priceCurrency} aria-hidden="true">
+                        $
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        placeholder="Optional"
+                        aria-label={`Price paid for ${card.name}`}
+                        className={styles.priceInput}
+                        value={prices[card.id] ?? ''}
+                        onChange={(event) =>
+                          setPrice(card.id, event.target.value)
+                        }
+                        disabled={!selected[card.id] || submitting}
+                      />
+                    </span>
                   </td>
                 </tr>
               ))}

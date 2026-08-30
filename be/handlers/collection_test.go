@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"testing"
 
@@ -197,6 +198,90 @@ func TestListCardsForSet_NotFound(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusNotFound, res.StatusCode)
+}
+
+func TestGetCardImage_ReturnsStoredImage(t *testing.T) {
+	db := testDB(t)
+	username := testUsername(t, db)
+	userID := createTestUser(t, db, username, "correctpass123")
+
+	ts, client := newTestServerWithOwner(t, db, userID)
+	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	p := &persist.Persist{DB: db}
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+	require.NoError(t, p.UpsertCardImage(t.Context(), cardID, []byte("test image bytes"), "image/jpeg"))
+
+	res, err = client.Get(ts.URL + "/api/cards/" + cardID + "/image")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	require.Equal(t, "image/jpeg", res.Header.Get("Content-Type"))
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.Equal(t, []byte("test image bytes"), body)
+}
+
+func TestGetCardImage_NoneStoredIsNotFound(t *testing.T) {
+	db := testDB(t)
+	username := testUsername(t, db)
+	userID := createTestUser(t, db, username, "correctpass123")
+
+	ts, client := newTestServerWithOwner(t, db, userID)
+	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	p := &persist.Persist{DB: db}
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+
+	res, err = client.Get(ts.URL + "/api/cards/" + cardID + "/image")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusNotFound, res.StatusCode)
+}
+
+func TestGetCardImage_Unauthenticated(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+
+	res, err := client.Get(ts.URL + "/api/cards/anything/image")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+}
+
+func TestGetCardImage_NotTheOwner(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithOwner(t, db, -1)
+	createAndLoginTestUser(t, db, client, ts.URL)
+
+	res, err := client.Get(ts.URL + "/api/cards/anything/image")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
 }
 
 func TestListCardsForSet_EmptySet(t *testing.T) {
@@ -522,6 +607,47 @@ func TestSetOwnedCardsForSet_RecordsOwnership(t *testing.T) {
 	ocTwo, err := p.GetOwnedCard(t.Context(), userID, cardTwo)
 	require.NoError(t, err)
 	require.Equal(t, 1, ocTwo.Quantity)
+}
+
+func TestSetOwnedCardsForSet_RecordsPricePaid(t *testing.T) {
+	db := testDB(t)
+	username := testUsername(t, db)
+	userID := createTestUser(t, db, username, "correctpass123")
+
+	ts, client := newTestServerWithOwner(t, db, userID)
+	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	p := &persist.Persist{DB: db}
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+
+	priceCents := 1633
+	res = postSetOwnedCards(t, client, ts.URL, setID, api.SetOwnedCardsInput{
+		Cards: []api.OwnedCardInput{
+			{CardID: cardID, Quantity: 1, PricePaidCents: &priceCents},
+		},
+	})
+	require.Equal(t, http.StatusNoContent, res.StatusCode)
+
+	res, err = client.Get(ts.URL + "/api/owned-sets/" + setID + "/cards")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	var owned []api.OwnedCardInput
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&owned))
+	require.Equal(t, []api.OwnedCardInput{{CardID: cardID, Quantity: 1, PricePaidCents: &priceCents}}, owned)
 }
 
 func TestSetOwnedCardsForSet_UnknownCardIsRejected(t *testing.T) {

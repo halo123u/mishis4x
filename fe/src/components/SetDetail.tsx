@@ -22,6 +22,10 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // the right distinction for this read-only view (SetDetail doesn't need
   // to tell those two apart the way the editor form does).
   const [owned, setOwned] = useState<Record<string, number> | null>(null);
+  // card_id -> price_paid_cents, only for owned cards with a known price -
+  // a card missing here just means "unknown," same as an unowned card
+  // missing from `owned` above.
+  const [ownedPrices, setOwnedPrices] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   // Deleting is a destructive, unrecoverable action (it clears card
   // ownership too, not just the set marker) - confirmingDelete gates a
@@ -30,7 +34,43 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Set while hovering a thumbnail - drives the larger floating preview.
+  // position: fixed (not absolute) deliberately, so the preview escapes
+  // .tableWrap's overflow-x: auto instead of getting clipped by it (per
+  // the CSS overflow spec, setting overflow on one axis makes the other
+  // axis clip too, not just scroll horizontally).
+  const [preview, setPreview] = useState<{
+    cardId: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const navigate = useNavigate();
+
+  // previewWidth/Height must match .preview's CSS - used here purely to
+  // keep the preview on-screen, never to size it (that's CSS's job).
+  const previewWidth = 260;
+  const previewHeight = (previewWidth * 88) / 63;
+
+  const showPreview =
+    (cardId: string) => (event: React.MouseEvent<HTMLImageElement>) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const gap = 12;
+
+      let left = rect.right + gap;
+      if (left + previewWidth > window.innerWidth) {
+        left = rect.left - gap - previewWidth;
+      }
+
+      let top = rect.top;
+      if (top + previewHeight > window.innerHeight) {
+        top = window.innerHeight - previewHeight - gap;
+      }
+      top = Math.max(gap, top);
+
+      setPreview({ cardId, top, left });
+    };
+
+  const hidePreview = () => setPreview(null);
 
   useEffect(() => {
     if (!setID) {
@@ -53,12 +93,17 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
 
         const ownedCards: OwnedCardInput[] = await ownedRes.json();
         const ownedMap: Record<string, number> = {};
+        const pricesMap: Record<string, number> = {};
         for (const oc of ownedCards) {
           if (oc.quantity > 0) {
             ownedMap[oc.card_id] = oc.quantity;
+            if (oc.price_paid_cents != null) {
+              pricesMap[oc.card_id] = oc.price_paid_cents;
+            }
           }
         }
         setOwned(ownedMap);
+        setOwnedPrices(pricesMap);
         setCards(await cardsRes.json());
       })
       .catch(() => {
@@ -152,10 +197,12 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
           <table className={styles.table}>
             <thead>
               <tr>
+                <th className={styles.thumbnailCol}></th>
                 <th>Code</th>
                 <th>Name</th>
                 <th>Rarity</th>
                 <th>Owned</th>
+                <th>Price paid</th>
               </tr>
             </thead>
             <tbody>
@@ -166,6 +213,23 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                     key={card.id}
                     className={quantity === 0 ? styles.rowMissing : undefined}
                   >
+                    <td className={styles.thumbnailCol}>
+                      <img
+                        src={`/api/cards/${card.id}/image`}
+                        alt=""
+                        className={styles.thumbnail}
+                        // Not every card has an image yet - image coverage
+                        // fills in incrementally via process-set
+                        // --images-dir, so a 404 here is an ordinary,
+                        // expected state. Hiding the element on error
+                        // leaves a blank cell instead of a broken-image icon.
+                        onError={(event) => {
+                          event.currentTarget.style.visibility = 'hidden';
+                        }}
+                        onMouseEnter={showPreview(card.id)}
+                        onMouseLeave={hidePreview}
+                      />
+                    </td>
                     <td className={styles.code}>{card.code}</td>
                     <td>{card.name}</td>
                     <td>{card.rarity}</td>
@@ -176,11 +240,33 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                         <span className={styles.missing}>Missing</span>
                       )}
                     </td>
+                    <td>
+                      {quantity > 0 && ownedPrices[card.id] != null ? (
+                        <span className={styles.price}>
+                          ${(ownedPrices[card.id] / 100).toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className={styles.missing}>—</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {preview && (
+        <div
+          className={styles.preview}
+          style={{ top: preview.top, left: preview.left }}
+        >
+          <img
+            src={`/api/cards/${preview.cardId}/image`}
+            alt=""
+            className={styles.previewImage}
+          />
         </div>
       )}
     </div>

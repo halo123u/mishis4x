@@ -169,7 +169,11 @@ func (d *Data) ListOwnedCardsForSet(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]api.OwnedCardInput, 0, len(owned))
 	for _, oc := range owned {
-		resp = append(resp, api.OwnedCardInput{CardID: oc.CardID, Quantity: oc.Quantity})
+		resp = append(resp, api.OwnedCardInput{
+			CardID:         oc.CardID,
+			Quantity:       oc.Quantity,
+			PricePaidCents: oc.PricePaidCents,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -217,7 +221,11 @@ func (d *Data) SetOwnedCardsForSet(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, "One of these cards doesn't belong to this set.")
 			return
 		}
-		cards = append(cards, persist.CardQuantity{CardID: c.CardID, Quantity: c.Quantity})
+		cards = append(cards, persist.CardQuantity{
+			CardID:         c.CardID,
+			Quantity:       c.Quantity,
+			PricePaidCents: c.PricePaidCents,
+		})
 	}
 
 	if err := d.P.SetOwnedCards(ctx, userID, cards); err != nil {
@@ -268,6 +276,40 @@ func (d *Data) ListCardsForSet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// GetCardImage streams the stored reference image for the card named by
+// the {cardID} path variable. 404s (as a plain "Image not found.", not
+// JSON - this endpoint's success response isn't JSON either) if cardID has
+// no image yet, which is an ordinary, expected state rather than an error -
+// image coverage is populated incrementally via process-set --images-dir,
+// not guaranteed for every card.
+func (d *Data) GetCardImage(w http.ResponseWriter, r *http.Request) {
+	cardID := mux.Vars(r)["cardID"]
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	image, contentType, err := d.P.GetCardImage(ctx, cardID)
+	if err != nil {
+		if errors.Is(err, persist.ErrCardImageNotFound) {
+			http.Error(w, "Image not found.", http.StatusNotFound)
+			return
+		}
+		log.Error().Err(err).Str("cardID", cardID).Msg("error getting card image")
+		http.Error(w, "Something went wrong.", http.StatusInternalServerError)
+		return
+	}
+
+	// Reference art doesn't change once imported - safe to let browsers
+	// and any intermediate cache hold onto it rather than re-fetching the
+	// same bytes on every page load.
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(image); err != nil {
+		log.Error().Err(err).Str("cardID", cardID).Msg("error writing card image response")
+	}
 }
 
 // writeJSON marshals v and writes it as the response body with status.

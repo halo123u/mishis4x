@@ -17,10 +17,11 @@ type OwnedSet struct {
 }
 
 type OwnedCard struct {
-	UserID    int
-	CardID    string
-	Quantity  int
-	UpdatedAt time.Time
+	UserID         int
+	CardID         string
+	Quantity       int
+	PricePaidCents *int
+	UpdatedAt      time.Time
 }
 
 // SetOwnedSet marks setID as onboarded for userID. Idempotent - calling it
@@ -136,29 +137,35 @@ func (p *Persist) SetCardQuantity(ctx context.Context, userID int, cardID string
 	return err
 }
 
-// CardQuantity pairs a card with a quantity - the unit SetOwnedCards
-// operates on in bulk, as opposed to SetCardQuantity's one-card-at-a-time
-// form.
+// CardQuantity pairs a card with a quantity (and optionally what it cost) -
+// the unit SetOwnedCards operates on in bulk, as opposed to
+// SetCardQuantity's one-card-at-a-time form. PricePaidCents is nil when
+// unknown, distinct from a real $0 - and like Quantity, whatever's passed
+// here fully replaces the stored value, nil included. A caller that wants
+// to leave an already-recorded price alone has to read it first and pass
+// it back, the same diff-then-resubmit shape the onboard/edit form already
+// uses for quantity itself (see OnboardCards.tsx's handleSave).
 type CardQuantity struct {
-	CardID   string
-	Quantity int
+	CardID         string
+	Quantity       int
+	PricePaidCents *int
 }
 
-// SetOwnedCards upserts quantity for every entry in cards in a single
-// statement - the bulk form of SetCardQuantity, used by the onboarding
-// flow's card-selection step, where a user submits many cards' ownership
-// at once rather than one at a time. A nil/empty cards is a no-op, not an
-// error - it never runs an empty INSERT.
+// SetOwnedCards upserts quantity and price for every entry in cards in a
+// single statement - the bulk form of SetCardQuantity, used by the
+// onboarding flow's card-selection step, where a user submits many cards'
+// ownership at once rather than one at a time. A nil/empty cards is a
+// no-op, not an error - it never runs an empty INSERT.
 func (p *Persist) SetOwnedCards(ctx context.Context, userID int, cards []CardQuantity) error {
 	if len(cards) == 0 {
 		return nil
 	}
 
 	insert := sq.Insert("owned_cards").
-		Columns("user_id", "card_id", "quantity").
-		Suffix("ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)")
+		Columns("user_id", "card_id", "quantity", "price_paid_cents").
+		Suffix("ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), price_paid_cents = VALUES(price_paid_cents)")
 	for _, c := range cards {
-		insert = insert.Values(userID, c.CardID, c.Quantity)
+		insert = insert.Values(userID, c.CardID, c.Quantity, c.PricePaidCents)
 	}
 
 	_, err := insert.RunWith(p.DB).ExecContext(ctx)
@@ -172,7 +179,7 @@ func (p *Persist) SetOwnedCards(ctx context.Context, userID int, cards []CardQua
 // from "never interacted" the same way GetOwnedCard does for a single card.
 // A card with no row at all simply doesn't appear in the result.
 func (p *Persist) ListOwnedCardsBySet(ctx context.Context, userID int, setID string) ([]CardQuantity, error) {
-	rows, err := sq.Select("oc.card_id", "oc.quantity").
+	rows, err := sq.Select("oc.card_id", "oc.quantity", "oc.price_paid_cents").
 		From("owned_cards oc").
 		Join("cards c ON c.id = oc.card_id").
 		Where(sq.Eq{"oc.user_id": userID, "c.set_id": setID}).
@@ -190,8 +197,13 @@ func (p *Persist) ListOwnedCardsBySet(ctx context.Context, userID int, setID str
 	var owned []CardQuantity
 	for rows.Next() {
 		var cq CardQuantity
-		if err := rows.Scan(&cq.CardID, &cq.Quantity); err != nil {
+		var priceCents sql.NullInt64
+		if err := rows.Scan(&cq.CardID, &cq.Quantity, &priceCents); err != nil {
 			return nil, err
+		}
+		if priceCents.Valid {
+			cents := int(priceCents.Int64)
+			cq.PricePaidCents = &cents
 		}
 		owned = append(owned, cq)
 	}
@@ -204,19 +216,24 @@ func (p *Persist) ListOwnedCardsBySet(ctx context.Context, userID int, setID str
 // returns a zero-quantity OwnedCard rather than an error - "not owned" is
 // an ordinary state here, not an exceptional one.
 func (p *Persist) GetOwnedCard(ctx context.Context, userID int, cardID string) (OwnedCard, error) {
-	row := sq.Select("user_id", "card_id", "quantity", "updated_at").
+	row := sq.Select("user_id", "card_id", "quantity", "price_paid_cents", "updated_at").
 		From("owned_cards").
 		Where(sq.Eq{"user_id": userID, "card_id": cardID}).
 		RunWith(p.DB).
 		QueryRowContext(ctx)
 
 	var oc OwnedCard
-	err := row.Scan(&oc.UserID, &oc.CardID, &oc.Quantity, &oc.UpdatedAt)
+	var priceCents sql.NullInt64
+	err := row.Scan(&oc.UserID, &oc.CardID, &oc.Quantity, &priceCents, &oc.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return OwnedCard{UserID: userID, CardID: cardID, Quantity: 0}, nil
 		}
 		return OwnedCard{}, err
+	}
+	if priceCents.Valid {
+		cents := int(priceCents.Int64)
+		oc.PricePaidCents = &cents
 	}
 
 	return oc, nil

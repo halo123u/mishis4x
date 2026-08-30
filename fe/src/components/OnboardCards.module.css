@@ -61,6 +61,32 @@
   cursor: not-allowed;
 }
 
+.priceCol {
+  width: 7rem;
+  text-align: center;
+}
+
+.priceInputWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.priceCurrency {
+  color: var(--ash);
+  font-size: var(--text-sm);
+}
+
+.priceInput {
+  width: 5rem;
+  text-align: right;
+}
+
+.priceInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

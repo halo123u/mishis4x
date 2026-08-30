@@ -202,19 +202,19 @@ func TestUpsertCard(t *testing.T) {
 	})
 
 	code := "BRD/W139-999S"
-	require.NoError(t, p.UpsertCard(t.Context(), setID, "Original Name", code, "SR 1-star"))
-
-	cards, err := p.ListCardsBySet(t.Context(), setID)
+	firstCardID, err := p.UpsertCard(t.Context(), setID, "Original Name", code, "SR 1-star")
 	require.NoError(t, err)
-	require.Len(t, cards, 1)
-	firstCardID := cards[0].ID
+	require.NotEmpty(t, firstCardID)
 
 	// Re-running against the same (set_id, code) - the exact scenario of
 	// re-importing an updated CSV - must update in place, not insert a
-	// second row, and must leave the original id untouched.
-	require.NoError(t, p.UpsertCard(t.Context(), setID, "Corrected Name", code, "SR 2-star"))
+	// second row, and must leave the original id untouched (and return it,
+	// not a newly-generated one).
+	secondCardID, err := p.UpsertCard(t.Context(), setID, "Corrected Name", code, "SR 2-star")
+	require.NoError(t, err)
+	require.Equal(t, firstCardID, secondCardID, "must return the existing row's id, not a freshly-generated one")
 
-	cards, err = p.ListCardsBySet(t.Context(), setID)
+	cards, err := p.ListCardsBySet(t.Context(), setID)
 	require.NoError(t, err)
 	require.Len(t, cards, 1, "must update in place, not insert a second row")
 	require.Equal(t, firstCardID, cards[0].ID, "existing row's id must be left untouched")
@@ -335,6 +335,108 @@ func TestDeleteCardsForSet_FailsIfACardIsOwned(t *testing.T) {
 
 	err = p.DeleteCardsForSet(t.Context(), setID)
 	require.Error(t, err, "must fail loudly via the FK constraint, not silently orphan owned_cards")
+}
+
+func TestDeleteCardsForSetExceptCodes_DeletesOnlyMissingCodes(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+
+	name := "DeleteCardsForSetExceptCodes Test Set"
+	setID, err := p.CreateSet(t.Context(), name, 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	_, err = p.CreateCard(t.Context(), setID, "Kept One", "BRD/W139-901S", "SR 1-star")
+	require.NoError(t, err)
+	_, err = p.CreateCard(t.Context(), setID, "Kept Two", "BRD/W139-902S", "SR 1-star")
+	require.NoError(t, err)
+	_, err = p.CreateCard(t.Context(), setID, "Gone", "BRD/W139-903S", "SR 1-star")
+	require.NoError(t, err)
+
+	require.NoError(t, p.DeleteCardsForSetExceptCodes(t.Context(), setID, []string{"BRD/W139-901S", "BRD/W139-902S"}))
+
+	cards, err := p.ListCardsBySet(t.Context(), setID)
+	require.NoError(t, err)
+	codes := make([]string, len(cards))
+	for i, c := range cards {
+		codes[i] = c.Code
+	}
+	require.ElementsMatch(t, []string{"BRD/W139-901S", "BRD/W139-902S"}, codes, "only the code missing from keepCodes must be removed")
+}
+
+func TestDeleteCardsForSetExceptCodes_DoesNotTouchOwnedCardThatIsKept(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	name := "DeleteCardsForSetExceptCodes Kept-Owned Test Set"
+	setID, err := p.CreateSet(t.Context(), name, 1, nil, "pending")
+	require.NoError(t, err)
+
+	ownedCardID, err := p.CreateCard(t.Context(), setID, "Owned But Kept", "BRD/W139-904S", "SR 1-star")
+	require.NoError(t, err)
+	require.NoError(t, p.SetCardQuantity(t.Context(), userID, ownedCardID, 1))
+	_, err = p.CreateCard(t.Context(), setID, "Unowned And Gone", "BRD/W139-905S", "SR 1-star")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	// This is the whole point of the fix: an owned card whose code is
+	// still in the new CSV must never be a candidate for deletion in the
+	// first place - unlike DeleteCardsForSet, whose single blanket DELETE
+	// would have failed here even though the owned card isn't the one
+	// actually being removed.
+	require.NoError(t, p.DeleteCardsForSetExceptCodes(t.Context(), setID, []string{"BRD/W139-904S"}))
+
+	cards, err := p.ListCardsBySet(t.Context(), setID)
+	require.NoError(t, err)
+	require.Len(t, cards, 1)
+	require.Equal(t, "BRD/W139-904S", cards[0].Code, "the kept, owned card must survive untouched")
+
+	oc, err := p.GetOwnedCard(t.Context(), userID, ownedCardID)
+	require.NoError(t, err)
+	require.Equal(t, 1, oc.Quantity, "ownership on the kept card must be completely undisturbed")
+}
+
+func TestDeleteCardsForSetExceptCodes_FailsIfARemovedCardIsOwned(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	name := "DeleteCardsForSetExceptCodes Removed-Owned Test Set"
+	setID, err := p.CreateSet(t.Context(), name, 1, nil, "pending")
+	require.NoError(t, err)
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Owned But Being Removed", "BRD/W139-906S", "SR 1-star")
+	require.NoError(t, err)
+	require.NoError(t, p.SetCardQuantity(t.Context(), userID, cardID, 1))
+
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	// A card genuinely being removed (its code isn't in keepCodes at all)
+	// that happens to be owned is a real, unavoidable conflict - this must
+	// still fail loudly, same protection as DeleteCardsForSet always had.
+	err = p.DeleteCardsForSetExceptCodes(t.Context(), setID, []string{"BRD/W139-some-other-code"})
+	require.Error(t, err, "must fail loudly via the FK constraint when a card actually being removed is owned")
+}
+
+func TestDeleteCardsForSetExceptCodes_EmptyKeepCodesErrors(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+
+	err := p.DeleteCardsForSetExceptCodes(t.Context(), "anything", nil)
+	require.Error(t, err, "an empty keepCodes must refuse to run rather than delete the whole set")
 }
 
 func TestSortCardsForDisplay(t *testing.T) {

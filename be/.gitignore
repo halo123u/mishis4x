@@ -1,5 +1,13 @@
 __debug_bin
 /db/misc
+# fe/dist copied here for `go run main.go http` to serve directly without
+# the full Dockerfile build - not part of the normal dev workflow, but
+# harmless to ignore if it exists.
+/dist
+# Reserved local spot for process-set --images-dir - card image files
+# themselves are never committed. Pointing --images-dir somewhere entirely
+# outside the repo works just as well; this is just a convenience default.
+/db/images
 
 # One-off real credentials for running prod DB commands (e.g. migrations)
 # manually from a laptop - never committed, see infra/envs/prod/.env.local.
