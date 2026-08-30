@@ -17,6 +17,29 @@
   background: var(--surface);
 }
 
+/* Same footprint as .thumbnail (card-shaped, not a square) so a row
+   doesn't visually jump once its real image shows up later - image
+   coverage fills in incrementally via process-set --images-dir, so this
+   is an ordinary, expected state, not an error. */
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  aspect-ratio: 63 / 88;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px dashed var(--hairline);
+}
+
+.placeholderLabel {
+  font-size: 0.5rem;
+  line-height: 1.2;
+  color: var(--ash);
+  text-align: center;
+  padding: 0 var(--space-1);
+}
+
 .dimOverlay {
   position: absolute;
   inset: 0;
