@@ -34,7 +34,43 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Set while hovering a thumbnail - drives the larger floating preview.
+  // position: fixed (not absolute) deliberately, so the preview escapes
+  // .tableWrap's overflow-x: auto instead of getting clipped by it (per
+  // the CSS overflow spec, setting overflow on one axis makes the other
+  // axis clip too, not just scroll horizontally).
+  const [preview, setPreview] = useState<{
+    cardId: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const navigate = useNavigate();
+
+  // previewWidth/Height must match .preview's CSS - used here purely to
+  // keep the preview on-screen, never to size it (that's CSS's job).
+  const previewWidth = 260;
+  const previewHeight = (previewWidth * 88) / 63;
+
+  const showPreview =
+    (cardId: string) => (event: React.MouseEvent<HTMLImageElement>) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const gap = 12;
+
+      let left = rect.right + gap;
+      if (left + previewWidth > window.innerWidth) {
+        left = rect.left - gap - previewWidth;
+      }
+
+      let top = rect.top;
+      if (top + previewHeight > window.innerHeight) {
+        top = window.innerHeight - previewHeight - gap;
+      }
+      top = Math.max(gap, top);
+
+      setPreview({ cardId, top, left });
+    };
+
+  const hidePreview = () => setPreview(null);
 
   useEffect(() => {
     if (!setID) {
@@ -190,6 +226,8 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                         onError={(event) => {
                           event.currentTarget.style.visibility = 'hidden';
                         }}
+                        onMouseEnter={showPreview(card.id)}
+                        onMouseLeave={hidePreview}
                       />
                     </td>
                     <td className={styles.code}>{card.code}</td>
@@ -216,6 +254,19 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {preview && (
+        <div
+          className={styles.preview}
+          style={{ top: preview.top, left: preview.left }}
+        >
+          <img
+            src={`/api/cards/${preview.cardId}/image`}
+            alt=""
+            className={styles.previewImage}
+          />
         </div>
       )}
     </div>
