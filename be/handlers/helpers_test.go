@@ -64,33 +64,18 @@ func testSessionCookieConfig() SessionCookieConfig {
 }
 
 // newTestData builds a real, fully-wired Data (real DB, real rate limiter)
-// for tests to spin up a router from. CollectionOwnerUserID is 0 (nobody) -
-// tests that need collection-tracker routes to actually authorize someone
-// should use newTestDataWithOwner instead.
+// for tests to spin up a router from. CollectionOwnerUserID/
+// CollectionAllowAllUsers are unset - not relevant here since no route
+// currently checks them (see CollectionOwnerUserID's doc comment); a test
+// exercising canAccessCollection/ownerOnlyMiddleware directly constructs its
+// own Data{...} instead (see owner_only_test.go).
 func newTestData(db *sql.DB) *Data {
-	return newTestDataWithOwner(db, 0)
-}
-
-func newTestDataWithOwner(db *sql.DB, ownerUserID int) *Data {
-	return NewData(
-		persist.Persist{DB: db},
-		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
-		testSessionCookieConfig(),
-		ownerUserID,
-		false,
-	)
-}
-
-// newTestDataAllowAllUsers builds a Data with CollectionAllowAllUsers set,
-// for tests covering that explicit opt-out rather than the default
-// strict/fail-closed behavior newTestData/newTestDataWithOwner exercise.
-func newTestDataAllowAllUsers(db *sql.DB) *Data {
 	return NewData(
 		persist.Persist{DB: db},
 		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
 		testSessionCookieConfig(),
 		0,
-		true,
+		false,
 	)
 }
 
