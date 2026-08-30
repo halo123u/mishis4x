@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Card, OwnedCardInput } from '../types';
 import Button from './ui/Button';
+import CardThumbnail from './ui/CardThumbnail';
 import QuantityStepper from './ui/QuantityStepper';
 import styles from './OnboardCards.module.css';
 
@@ -224,16 +225,7 @@ const OnboardCards = () => {
                 return (
                   <tr key={card.id}>
                     <td className={styles.thumbnailCol}>
-                      <img
-                        src={`/api/cards/${card.id}/image`}
-                        alt=""
-                        className={styles.thumbnail}
-                        // Not every card has an image yet - same tolerance
-                        // as SetDetail's thumbnail, see its onError comment.
-                        onError={(event) => {
-                          event.currentTarget.style.visibility = 'hidden';
-                        }}
-                      />
+                      <CardThumbnail cardId={card.id} />
                     </td>
                     <td className={styles.code}>{card.code}</td>
                     <td>{card.name}</td>

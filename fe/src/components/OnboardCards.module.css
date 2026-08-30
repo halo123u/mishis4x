@@ -45,18 +45,6 @@
   width: 3.75rem;
 }
 
-.thumbnail {
-  display: block;
-  width: 3.5rem;
-  /* Real trading-card proportions (63mm x 88mm), not a square - see
-     SetDetail.module.css's identical rule for why. */
-  aspect-ratio: 63 / 88;
-  height: auto;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
-
 .quantityCol {
   width: 5rem;
   text-align: center;
