@@ -41,6 +41,9 @@ const OnboardCards = () => {
   // a row that's momentarily hidden.
   const [search, setSearch] = useState('');
   const [rarityFilter, setRarityFilter] = useState('all');
+  const [ownershipFilter, setOwnershipFilter] = useState<
+    'all' | 'owned' | 'missing'
+  >('all');
   const navigate = useNavigate();
 
   // Arrived via SetDetail's "Edit collection" button - go back there
@@ -205,6 +208,13 @@ const OnboardCards = () => {
     if (rarityFilter !== 'all' && card.rarity !== rarityFilter) {
       return false;
     }
+    const isOwned = (quantities[card.id] ?? 0) > 0;
+    if (ownershipFilter === 'owned' && !isOwned) {
+      return false;
+    }
+    if (ownershipFilter === 'missing' && isOwned) {
+      return false;
+    }
     if (!normalizedSearch) {
       return true;
     }
@@ -257,6 +267,20 @@ const OnboardCards = () => {
                 {rarity}
               </option>
             ))}
+          </select>
+          <select
+            aria-label="Filter by ownership"
+            className={styles.raritySelect}
+            value={ownershipFilter}
+            onChange={(event) =>
+              setOwnershipFilter(
+                event.target.value as 'all' | 'owned' | 'missing',
+              )
+            }
+          >
+            <option value="all">Owned + missing</option>
+            <option value="owned">Owned only</option>
+            <option value="missing">Missing only</option>
           </select>
         </div>
       )}

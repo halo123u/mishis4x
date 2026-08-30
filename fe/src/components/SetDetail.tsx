@@ -39,6 +39,9 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // onboarding/edit screen's filter bar.
   const [search, setSearch] = useState('');
   const [rarityFilter, setRarityFilter] = useState('all');
+  const [ownershipFilter, setOwnershipFilter] = useState<
+    'all' | 'owned' | 'missing'
+  >('all');
   const navigate = useNavigate();
 
   // Sum of every owned card's known price - ownedPrices is already scoped
@@ -128,6 +131,13 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   const normalizedSearch = search.trim().toLowerCase();
   const visibleCards = (cards ?? []).filter((card) => {
     if (rarityFilter !== 'all' && card.rarity !== rarityFilter) {
+      return false;
+    }
+    const isOwned = (owned?.[card.id] ?? 0) > 0;
+    if (ownershipFilter === 'owned' && !isOwned) {
+      return false;
+    }
+    if (ownershipFilter === 'missing' && isOwned) {
       return false;
     }
     if (!normalizedSearch) {
@@ -238,6 +248,20 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                 {rarity}
               </option>
             ))}
+          </select>
+          <select
+            aria-label="Filter by ownership"
+            className={styles.raritySelect}
+            value={ownershipFilter}
+            onChange={(event) =>
+              setOwnershipFilter(
+                event.target.value as 'all' | 'owned' | 'missing',
+              )
+            }
+          >
+            <option value="all">Owned + missing</option>
+            <option value="owned">Owned only</option>
+            <option value="missing">Missing only</option>
           </select>
         </div>
       )}
