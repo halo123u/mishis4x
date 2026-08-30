@@ -10,7 +10,7 @@
 
 .tableWrap {
   width: 100%;
-  max-width: 40rem;
+  max-width: 46rem;
   overflow-x: auto;
 }
 
@@ -58,35 +58,8 @@
 }
 
 .quantityCol {
-  width: 8rem;
+  width: 5rem;
   text-align: center;
-}
-
-.stepper {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.stepperBtn {
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  font-size: var(--text-base);
-}
-
-.quantityInput {
-  width: 2.75rem;
-  text-align: center;
-}
-
-.quantityInput:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .priceCol {

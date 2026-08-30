@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Card, OwnedCardInput } from '../types';
 import Button from './ui/Button';
+import QuantityStepper from './ui/QuantityStepper';
 import styles from './OnboardCards.module.css';
 
 // The "which cards do you own" step - reused for two entry points, told
@@ -87,15 +88,11 @@ const OnboardCards = () => {
       });
   }, [setID]);
 
-  // Used by both the +/- stepper and typing directly into the quantity
+  // Used by both QuantityStepper's arrows and typing directly into its
   // field - either way, 0 is a real, valid value (not owned), just never
   // negative.
   const setQuantityDirect = (cardID: string, quantity: number) => {
     setQuantities((prev) => ({ ...prev, [cardID]: Math.max(0, quantity) }));
-  };
-
-  const changeQuantity = (cardID: string, delta: number) => {
-    setQuantityDirect(cardID, (quantities[cardID] ?? 0) + delta);
   };
 
   const setPrice = (cardID: string, value: string) => {
@@ -242,40 +239,12 @@ const OnboardCards = () => {
                     <td>{card.name}</td>
                     <td>{card.rarity}</td>
                     <td className={styles.quantityCol}>
-                      <div className={styles.stepper}>
-                        <Button
-                          variant="ghost"
-                          className={styles.stepperBtn}
-                          aria-label={`Decrease quantity of ${card.name}`}
-                          onClick={() => changeQuantity(card.id, -1)}
-                          disabled={submitting || quantity === 0}
-                        >
-                          −
-                        </Button>
-                        <input
-                          type="number"
-                          min={0}
-                          aria-label={`Quantity of ${card.name}`}
-                          className={styles.quantityInput}
-                          value={quantity}
-                          onChange={(event) =>
-                            setQuantityDirect(
-                              card.id,
-                              Number(event.target.value),
-                            )
-                          }
-                          disabled={submitting}
-                        />
-                        <Button
-                          variant="ghost"
-                          className={styles.stepperBtn}
-                          aria-label={`Increase quantity of ${card.name}`}
-                          onClick={() => changeQuantity(card.id, 1)}
-                          disabled={submitting}
-                        >
-                          +
-                        </Button>
-                      </div>
+                      <QuantityStepper
+                        value={quantity}
+                        onChange={(next) => setQuantityDirect(card.id, next)}
+                        ariaLabel={`quantity of ${card.name}`}
+                        disabled={submitting}
+                      />
                     </td>
                     <td className={styles.priceCol}>
                       <span className={styles.priceInputWrap}>
