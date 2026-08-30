@@ -8,6 +8,29 @@
   text-decoration: underline;
 }
 
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 46rem;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.raritySelect {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
 .tableWrap {
   width: 100%;
   max-width: 46rem;
