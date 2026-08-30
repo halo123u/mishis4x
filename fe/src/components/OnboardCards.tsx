@@ -258,7 +258,7 @@ const OnboardCards = () => {
                           type="number"
                           min={0}
                           step="0.01"
-                          placeholder="Optional"
+                          placeholder="0"
                           aria-label={`Price paid for ${card.name}`}
                           className={styles.priceInput}
                           value={prices[card.id] ?? ''}
