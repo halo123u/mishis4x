@@ -68,9 +68,7 @@ const AddSet = () => {
             <li key={set.id} className={styles.setCard}>
               <div>
                 <span className={styles.setName}>{set.name}</span>
-                <span className={styles.setMeta}>
-                  {set.card_count} cards · {set.status}
-                </span>
+                <span className={styles.setMeta}>{set.card_count} cards</span>
               </div>
               <Button onClick={() => handleAdd(set.id)}>Add</Button>
             </li>

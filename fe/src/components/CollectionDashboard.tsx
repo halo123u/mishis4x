@@ -21,7 +21,7 @@ const CollectionDashboard = () => {
     Promise.all([fetch('/api/owned-sets'), fetch('/api/sets')])
       .then(async ([ownedRes, allRes]) => {
         if (ownedRes.status !== 200 || allRes.status !== 200) {
-          setError('Could not load your sets. Please try again.');
+          setError('Could not load sets. Please try again.');
           return;
         }
 
@@ -66,9 +66,7 @@ const CollectionDashboard = () => {
             <li key={set.id}>
               <Link to={`/collection/${set.id}`} className={styles.setCard}>
                 <span className={styles.setName}>{set.name}</span>
-                <span className={styles.setMeta}>
-                  {set.card_count} cards · {set.status}
-                </span>
+                <span className={styles.setMeta}>{set.card_count} cards</span>
               </Link>
             </li>
           ))}
