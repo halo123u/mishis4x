@@ -36,6 +36,11 @@ const OnboardCards = () => {
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Filtering only affects which rows render below - quantities/prices stay
+  // keyed by card.id regardless, so toggling a filter never loses input on
+  // a row that's momentarily hidden.
+  const [search, setSearch] = useState('');
+  const [rarityFilter, setRarityFilter] = useState('all');
   const navigate = useNavigate();
 
   // Arrived via SetDetail's "Edit collection" button - go back there
@@ -185,6 +190,30 @@ const OnboardCards = () => {
     );
   };
 
+  // In first-appearance order rather than alphabetically - that already
+  // matches the set's own rarity progression (1-star before 2-star before
+  // 3-star, etc.), so the dropdown reads the same way the table is sorted.
+  const rarities: string[] = [];
+  for (const card of cards ?? []) {
+    if (!rarities.includes(card.rarity)) {
+      rarities.push(card.rarity);
+    }
+  }
+
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleCards = (cards ?? []).filter((card) => {
+    if (rarityFilter !== 'all' && card.rarity !== rarityFilter) {
+      return false;
+    }
+    if (!normalizedSearch) {
+      return true;
+    }
+    return (
+      card.code.toLowerCase().includes(normalizedSearch) ||
+      card.name.toLowerCase().includes(normalizedSearch)
+    );
+  });
+
   return (
     <div className="stack">
       <Link to={backTo} className={styles.back}>
@@ -207,6 +236,36 @@ const OnboardCards = () => {
       {!error && cards === null && <p className="muted">Loading cards…</p>}
 
       {cards && cards.length > 0 && (
+        <div className={styles.filters}>
+          <input
+            type="search"
+            placeholder="Search by code or name"
+            aria-label="Search by code or name"
+            className={styles.searchInput}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <select
+            aria-label="Filter by rarity"
+            className={styles.raritySelect}
+            value={rarityFilter}
+            onChange={(event) => setRarityFilter(event.target.value)}
+          >
+            <option value="all">All rarities</option>
+            {rarities.map((rarity) => (
+              <option key={rarity} value={rarity}>
+                {rarity}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {cards && cards.length > 0 && visibleCards.length === 0 && (
+        <p className="muted">No cards match your filter.</p>
+      )}
+
+      {cards && cards.length > 0 && visibleCards.length > 0 && (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
@@ -220,7 +279,7 @@ const OnboardCards = () => {
               </tr>
             </thead>
             <tbody>
-              {cards.map((card) => {
+              {visibleCards.map((card) => {
                 const quantity = quantities[card.id] ?? 0;
                 return (
                   <tr key={card.id}>

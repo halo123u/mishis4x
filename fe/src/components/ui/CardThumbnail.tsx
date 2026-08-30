@@ -28,6 +28,22 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
     top: number;
     left: number;
   } | null>(null);
+  // No image uploaded for this card yet is an ordinary, expected state
+  // (coverage fills in incrementally via process-set --images-dir), not an
+  // error to alarm over - imageFailed swaps the <img> for a real "coming
+  // soon" placeholder box instead of just hiding a broken image and
+  // leaving blank space. Reset per cardId via the "adjust state during
+  // render" pattern (not an effect - react-hooks/set-state-in-effect flags
+  // calling setState synchronously inside one) so a component instance
+  // reused across different cards, rather than remounted, doesn't keep
+  // showing a stale placeholder for a card whose image actually loads
+  // fine.
+  const [imageFailed, setImageFailed] = useState(false);
+  const [lastCardId, setLastCardId] = useState(cardId);
+  if (cardId !== lastCardId) {
+    setLastCardId(cardId);
+    setImageFailed(false);
+  }
 
   // position: fixed (not absolute) deliberately, so the preview escapes
   // whatever scrollable .tableWrap it's rendered inside instead of
@@ -55,23 +71,23 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
   return (
     <>
       <span className={styles.wrapper}>
-        <img
-          src={`/api/cards/${cardId}/image`}
-          alt=""
-          className={styles.thumbnail}
-          // Not every card has an image yet - image coverage fills in
-          // incrementally via process-set --images-dir, so a 404 here is
-          // an ordinary, expected state. Hiding the element on error
-          // leaves a blank space instead of a broken-image icon.
-          onError={(event) => {
-            event.currentTarget.style.visibility = 'hidden';
-          }}
-          onMouseEnter={showPreview}
-          onMouseLeave={hidePreview}
-        />
+        {imageFailed ? (
+          <span className={styles.placeholder} aria-hidden="true">
+            <span className={styles.placeholderLabel}>Coming soon</span>
+          </span>
+        ) : (
+          <img
+            src={`/api/cards/${cardId}/image`}
+            alt=""
+            className={styles.thumbnail}
+            onError={() => setImageFailed(true)}
+            onMouseEnter={showPreview}
+            onMouseLeave={hidePreview}
+          />
+        )}
         {dimmed && <span className={styles.dimOverlay} aria-hidden="true" />}
       </span>
-      {preview && (
+      {preview && !imageFailed && (
         <div
           className={styles.preview}
           style={{ top: preview.top, left: preview.left }}
