@@ -37,6 +37,14 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  // Sum of every owned card's known price - ownedPrices is already scoped
+  // to owned (quantity > 0) cards with a recorded price, so this is exactly
+  // "what you've actually logged spending on this set," not an estimate.
+  const totalPaidCents = Object.values(ownedPrices).reduce(
+    (sum, cents) => sum + cents,
+    0,
+  );
+
   useEffect(() => {
     if (!setID) {
       return;
@@ -155,6 +163,15 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
 
       {cards && cards.length === 0 && (
         <p className="muted">This set doesn't have any cards yet.</p>
+      )}
+
+      {cards && cards.length > 0 && (
+        <p className={styles.summary}>
+          Total paid:{' '}
+          <span className={styles.summaryValue}>
+            ${(totalPaidCents / 100).toFixed(2)}
+          </span>
+        </p>
       )}
 
       {cards && cards.length > 0 && (

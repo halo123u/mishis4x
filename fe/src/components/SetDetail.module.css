@@ -43,6 +43,17 @@
   gap: var(--space-3);
 }
 
+.summary {
+  font-size: var(--text-sm);
+  color: var(--ash);
+}
+
+.summaryValue {
+  color: var(--teal);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .tableWrap {
   width: 100%;
   max-width: 40rem;
