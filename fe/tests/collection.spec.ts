@@ -59,7 +59,12 @@ test("card manager: widget -> dashboard -> set detail -> back", async ({
   await page.getByText("Brown Dust 2").click();
 
   await expect(page).toHaveURL(/\/collection\/[^/]+$/);
-  await expect(page.getByText("BRD/W139-001S")).toBeVisible();
+  // exact: true - the real catalog also has "BRD/W139-001SSP", and a plain
+  // substring match on "BRD/W139-001S" now hits both, which Playwright
+  // (rightly) refuses to resolve to a single element.
+  await expect(
+    page.getByText("BRD/W139-001S", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Poolside Fairy Refithea")).toBeVisible();
 
   await page.getByText("Back to sets").click();

@@ -6,30 +6,32 @@ import styles from './OnboardCards.module.css';
 
 // The "which cards do you own" step - reused for two entry points, told
 // apart by how we got here (see backTo below): AddSet's "Add" click for a
-// brand new set, where every row starts unchecked, and SetDetail's "Edit
-// collection" button for a set already onboarded, where rows pre-fill from
-// GET /api/owned-sets/{setID}/cards. Either way, submitting onboards the
-// set itself (POST /api/owned-sets, idempotent) alongside recording card
-// ownership, so an abandoned form never leaves a set marked owned with no
-// card data.
+// brand new set, where every row starts at quantity 0, and SetDetail's
+// "Edit collection" button for a set already onboarded, where rows
+// pre-fill from GET /api/owned-sets/{setID}/cards. Either way, submitting
+// onboards the set itself (POST /api/owned-sets, idempotent) alongside
+// recording card ownership, so an abandoned form never leaves a set
+// marked owned with no card data.
 const OnboardCards = () => {
   const { setID } = useParams<{ setID: string }>();
   const location = useLocation();
   const [cards, setCards] = useState<Card[] | null>(null);
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  // card_id -> quantity is the *only* ownership state now - there's no
+  // separate checkbox to keep in sync with it. A card's presence in this
+  // map (not its value) is what decides whether it gets submitted at all:
+  // populated on load from every row the server already has (including an
+  // explicit 0 one, if a previous edit left it that way), and added to
+  // lazily the first time this session's stepper touches a card the
+  // server never had a row for. 0 just means "not owned," submitted the
+  // same way any other quantity would be - no separate "explicitly
+  // cleared" case to track, because there's no longer a second piece of
+  // state that could drift from it.
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   // Dollar-amount text as typed, not cents - kept as a string (rather than
   // a number) so a card with no known price is a genuinely empty input,
   // not a "0" the user would have to delete first, and so mid-edit text
   // like "12." isn't clobbered by re-parsing on every keystroke.
   const [prices, setPrices] = useState<Record<string, string>>({});
-  // The quantities we loaded on mount, for cards with quantity > 0 only -
-  // used on save to tell "unchecked, was never owned" (nothing to submit)
-  // apart from "unchecked, but WAS owned" (must submit an explicit 0 to
-  // actually clear it - see handleSave).
-  const [initiallyOwned, setInitiallyOwned] = useState<Record<string, number>>(
-    {},
-  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
@@ -63,24 +65,20 @@ const OnboardCards = () => {
         }
 
         const owned: OwnedCardInput[] = await ownedRes.json();
+        // Every returned row seeds the quantities map, including an
+        // explicit 0 one - it still needs to be "touched" so re-saving
+        // without changing it submits that same 0 again, not silently
+        // drops the row from the request entirely.
         const ownedNow: Record<string, number> = {};
-        const initiallySelected: Record<string, boolean> = {};
         const initialPrices: Record<string, string> = {};
         for (const oc of owned) {
-          if (oc.quantity > 0) {
-            ownedNow[oc.card_id] = oc.quantity;
-            initiallySelected[oc.card_id] = true;
-            if (oc.price_paid_cents != null) {
-              initialPrices[oc.card_id] = (oc.price_paid_cents / 100).toFixed(
-                2,
-              );
-            }
+          ownedNow[oc.card_id] = oc.quantity;
+          if (oc.quantity > 0 && oc.price_paid_cents != null) {
+            initialPrices[oc.card_id] = (oc.price_paid_cents / 100).toFixed(2);
           }
         }
-        setInitiallyOwned(ownedNow);
         setQuantities(ownedNow);
         setPrices(initialPrices);
-        setSelected(initiallySelected);
 
         setCards(await cardsRes.json());
       })
@@ -89,13 +87,15 @@ const OnboardCards = () => {
       });
   }, [setID]);
 
-  const toggleCard = (cardID: string) => {
-    setSelected((prev) => ({ ...prev, [cardID]: !prev[cardID] }));
-    setQuantities((prev) => (prev[cardID] ? prev : { ...prev, [cardID]: 1 }));
+  // Used by both the +/- stepper and typing directly into the quantity
+  // field - either way, 0 is a real, valid value (not owned), just never
+  // negative.
+  const setQuantityDirect = (cardID: string, quantity: number) => {
+    setQuantities((prev) => ({ ...prev, [cardID]: Math.max(0, quantity) }));
   };
 
-  const setQuantity = (cardID: string, quantity: number) => {
-    setQuantities((prev) => ({ ...prev, [cardID]: Math.max(1, quantity) }));
+  const changeQuantity = (cardID: string, delta: number) => {
+    setQuantityDirect(cardID, (quantities[cardID] ?? 0) + delta);
   };
 
   const setPrice = (cardID: string, value: string) => {
@@ -119,8 +119,9 @@ const OnboardCards = () => {
 
   // Onboards the set (idempotent either way) and, if any cards are passed,
   // records their ownership in the same submit. "Skip for now" calls this
-  // with an empty list regardless of what's checked or was previously
-  // owned - it never touches card ownership, only the set itself.
+  // with an empty list regardless of what quantities are set or were
+  // previously owned - it never touches card ownership, only the set
+  // itself.
   const submit = (
     selectedCards: {
       card_id: string;
@@ -165,25 +166,23 @@ const OnboardCards = () => {
       });
   };
 
-  // Checked cards submit their quantity (and price, if entered) as usual.
-  // A card that WAS owned (initiallyOwned) but is no longer checked has to
-  // be submitted too, explicitly at quantity 0 - otherwise SetOwnedCards
-  // never hears about it and the old ownership row just sits there
-  // unchanged. A card that was never owned and stays unchecked is left out
-  // entirely, same as before - no need to create a "never interacted" row
-  // for it. Price is only ever sent for checked cards - an unchecked card
-  // being cleared to quantity 0 has no meaningful price to keep either.
+  // A card only gets submitted if it's actually in the quantities map -
+  // one the server already had a row for, or one this session's stepper
+  // touched. A card nobody has ever interacted with (never owned, never
+  // clicked this session) is left out entirely, same as before - no need
+  // to create a "never interacted" row for it. Price is only ever sent
+  // alongside a real (>0) quantity - a card sitting at 0 has no meaningful
+  // price to keep either.
   const handleSave = () => {
     const toSubmit = cards ?? [];
     submit(
       toSubmit
-        .filter((card) => selected[card.id] || initiallyOwned[card.id])
+        .filter((card) => card.id in quantities)
         .map((card) => ({
           card_id: card.id,
-          quantity: selected[card.id] ? (quantities[card.id] ?? 1) : 0,
-          price_paid_cents: selected[card.id]
-            ? priceCentsFor(card.id)
-            : undefined,
+          quantity: quantities[card.id],
+          price_paid_cents:
+            quantities[card.id] > 0 ? priceCentsFor(card.id) : undefined,
         })),
     );
   };
@@ -197,8 +196,8 @@ const OnboardCards = () => {
       <h1>Which cards do you own?</h1>
       <p className="muted">
         {isEditing
-          ? 'Check off the cards you have and how many.'
-          : 'Check off the cards you have and how many, or skip this for now and add them later.'}
+          ? 'Set how many of each you have.'
+          : 'Set how many of each you have, or skip this for now and add them later.'}
       </p>
 
       {error && (
@@ -214,7 +213,7 @@ const OnboardCards = () => {
           <table className={styles.table}>
             <thead>
               <tr>
-                <th className={styles.checkboxCol}>Owned</th>
+                <th className={styles.thumbnailCol}></th>
                 <th>Code</th>
                 <th>Name</th>
                 <th>Rarity</th>
@@ -223,55 +222,87 @@ const OnboardCards = () => {
               </tr>
             </thead>
             <tbody>
-              {cards.map((card) => (
-                <tr key={card.id}>
-                  <td className={styles.checkboxCol}>
-                    <input
-                      type="checkbox"
-                      aria-label={`I own ${card.name}`}
-                      checked={!!selected[card.id]}
-                      onChange={() => toggleCard(card.id)}
-                      disabled={submitting}
-                    />
-                  </td>
-                  <td className={styles.code}>{card.code}</td>
-                  <td>{card.name}</td>
-                  <td>{card.rarity}</td>
-                  <td className={styles.quantityCol}>
-                    <input
-                      type="number"
-                      min={1}
-                      aria-label={`Quantity of ${card.name}`}
-                      className={styles.quantityInput}
-                      value={quantities[card.id] ?? 1}
-                      onChange={(event) =>
-                        setQuantity(card.id, Number(event.target.value))
-                      }
-                      disabled={!selected[card.id] || submitting}
-                    />
-                  </td>
-                  <td className={styles.priceCol}>
-                    <span className={styles.priceInputWrap}>
-                      <span className={styles.priceCurrency} aria-hidden="true">
-                        $
-                      </span>
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        placeholder="Optional"
-                        aria-label={`Price paid for ${card.name}`}
-                        className={styles.priceInput}
-                        value={prices[card.id] ?? ''}
-                        onChange={(event) =>
-                          setPrice(card.id, event.target.value)
-                        }
-                        disabled={!selected[card.id] || submitting}
+              {cards.map((card) => {
+                const quantity = quantities[card.id] ?? 0;
+                return (
+                  <tr key={card.id}>
+                    <td className={styles.thumbnailCol}>
+                      <img
+                        src={`/api/cards/${card.id}/image`}
+                        alt=""
+                        className={styles.thumbnail}
+                        // Not every card has an image yet - same tolerance
+                        // as SetDetail's thumbnail, see its onError comment.
+                        onError={(event) => {
+                          event.currentTarget.style.visibility = 'hidden';
+                        }}
                       />
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className={styles.code}>{card.code}</td>
+                    <td>{card.name}</td>
+                    <td>{card.rarity}</td>
+                    <td className={styles.quantityCol}>
+                      <div className={styles.stepper}>
+                        <Button
+                          variant="ghost"
+                          className={styles.stepperBtn}
+                          aria-label={`Decrease quantity of ${card.name}`}
+                          onClick={() => changeQuantity(card.id, -1)}
+                          disabled={submitting || quantity === 0}
+                        >
+                          −
+                        </Button>
+                        <input
+                          type="number"
+                          min={0}
+                          aria-label={`Quantity of ${card.name}`}
+                          className={styles.quantityInput}
+                          value={quantity}
+                          onChange={(event) =>
+                            setQuantityDirect(
+                              card.id,
+                              Number(event.target.value),
+                            )
+                          }
+                          disabled={submitting}
+                        />
+                        <Button
+                          variant="ghost"
+                          className={styles.stepperBtn}
+                          aria-label={`Increase quantity of ${card.name}`}
+                          onClick={() => changeQuantity(card.id, 1)}
+                          disabled={submitting}
+                        >
+                          +
+                        </Button>
+                      </div>
+                    </td>
+                    <td className={styles.priceCol}>
+                      <span className={styles.priceInputWrap}>
+                        <span
+                          className={styles.priceCurrency}
+                          aria-hidden="true"
+                        >
+                          $
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder="Optional"
+                          aria-label={`Price paid for ${card.name}`}
+                          className={styles.priceInput}
+                          value={prices[card.id] ?? ''}
+                          onChange={(event) =>
+                            setPrice(card.id, event.target.value)
+                          }
+                          disabled={quantity === 0 || submitting}
+                        />
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
