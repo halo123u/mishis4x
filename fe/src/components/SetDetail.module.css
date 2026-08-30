@@ -43,6 +43,15 @@
   gap: var(--space-3);
 }
 
+.summaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 40rem;
+}
+
 .summary {
   font-size: var(--text-sm);
   color: var(--ash);

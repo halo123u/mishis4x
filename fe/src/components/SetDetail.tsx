@@ -39,15 +39,10 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // onboarding/edit screen's filter bar.
   const [search, setSearch] = useState('');
   const [rarityFilter, setRarityFilter] = useState('all');
+  const [ownershipFilter, setOwnershipFilter] = useState<
+    'all' | 'owned' | 'missing'
+  >('all');
   const navigate = useNavigate();
-
-  // Sum of every owned card's known price - ownedPrices is already scoped
-  // to owned (quantity > 0) cards with a recorded price, so this is exactly
-  // "what you've actually logged spending on this set," not an estimate.
-  const totalPaidCents = Object.values(ownedPrices).reduce(
-    (sum, cents) => sum + cents,
-    0,
-  );
 
   useEffect(() => {
     if (!setID) {
@@ -119,8 +114,14 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     }
   }
 
+  // Rarity + search only, not the owned/missing toggle - this is the
+  // denominator for the summary stats below, so filtering by rarity (e.g.
+  // "SP") correctly shrinks "Owned: X / Y" to that rarity's own count.
+  // Deliberately excludes ownershipFilter: applying that too would make
+  // "Owned" mode always read "X / X" and "Missing" mode always "0 / X" -
+  // a summary that's trivially true isn't useful information.
   const normalizedSearch = search.trim().toLowerCase();
-  const visibleCards = (cards ?? []).filter((card) => {
+  const rarityAndSearchFilteredCards = (cards ?? []).filter((card) => {
     if (rarityFilter !== 'all' && card.rarity !== rarityFilter) {
       return false;
     }
@@ -132,6 +133,31 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       card.name.toLowerCase().includes(normalizedSearch)
     );
   });
+
+  // Adds the owned/missing toggle on top, for what the table itself shows.
+  const visibleCards = rarityAndSearchFilteredCards.filter((card) => {
+    const isOwned = (owned?.[card.id] ?? 0) > 0;
+    if (ownershipFilter === 'owned' && !isOwned) {
+      return false;
+    }
+    if (ownershipFilter === 'missing' && isOwned) {
+      return false;
+    }
+    return true;
+  });
+
+  // Sum of every owned card's known price, and a distinct-card completion
+  // count (not a copy count - owning 3x the same card still only counts
+  // once) - both scoped to rarityAndSearchFilteredCards so they track
+  // whatever rarity/search filter is active, per the same logic above.
+  const totalPaidCents = rarityAndSearchFilteredCards.reduce(
+    (sum, card) => sum + (ownedPrices[card.id] ?? 0),
+    0,
+  );
+  const ownedCount = rarityAndSearchFilteredCards.filter(
+    (card) => (owned?.[card.id] ?? 0) > 0,
+  ).length;
+  const totalCount = rarityAndSearchFilteredCards.length;
 
   return (
     <div className="stack">
@@ -194,12 +220,20 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       )}
 
       {cards && cards.length > 0 && (
-        <p className={styles.summary}>
-          Total paid:{' '}
-          <span className={styles.summaryValue}>
-            ${(totalPaidCents / 100).toFixed(2)}
-          </span>
-        </p>
+        <div className={styles.summaryRow}>
+          <p className={styles.summary}>
+            Owned:{' '}
+            <span className={styles.summaryValue}>
+              {ownedCount} / {totalCount}
+            </span>
+          </p>
+          <p className={styles.summary}>
+            Total paid:{' '}
+            <span className={styles.summaryValue}>
+              ${(totalPaidCents / 100).toFixed(2)}
+            </span>
+          </p>
+        </div>
       )}
 
       {cards && cards.length > 0 && (
@@ -224,6 +258,20 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                 {rarity}
               </option>
             ))}
+          </select>
+          <select
+            aria-label="Filter by ownership"
+            className={styles.raritySelect}
+            value={ownershipFilter}
+            onChange={(event) =>
+              setOwnershipFilter(
+                event.target.value as 'all' | 'owned' | 'missing',
+              )
+            }
+          >
+            <option value="all">All</option>
+            <option value="owned">Owned</option>
+            <option value="missing">Missing</option>
           </select>
         </div>
       )}

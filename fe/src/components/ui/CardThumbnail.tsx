@@ -80,6 +80,13 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
             src={`/api/cards/${cardId}/image`}
             alt=""
             className={styles.thumbnail}
+            // Sets running 100+ cards render every thumbnail at once - the
+            // browser's native lazy-loading defers each image's actual
+            // network request until it's near the viewport, instead of
+            // firing off every row's fetch on initial page load. Not
+            // applied to .previewImage below - that one only ever renders
+            // on hover, so it's already as lazy as it can get.
+            loading="lazy"
             onError={() => setImageFailed(true)}
             onMouseEnter={showPreview}
             onMouseLeave={hidePreview}
