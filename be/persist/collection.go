@@ -244,11 +244,15 @@ func (p *Persist) DeleteSetCascade(ctx context.Context, name string) error {
 // UpsertCard inserts a card, or updates its name/rarity in place if one
 // already exists for the same (set_id, code) - the catalog importer's whole
 // point is being safe to re-run against an updated CSV without duplicating
-// rows. The existing row's id is left untouched on update.
-func (p *Persist) UpsertCard(ctx context.Context, setID, name, code, rarity string) error {
+// rows. The existing row's id is left untouched on update. Returns the
+// card's id either way - on a duplicate-key update the id generated below
+// is never actually used (the existing row's original id wins), so it's
+// looked up explicitly afterward rather than assumed, for callers (e.g.
+// process-set attaching an image) that need the real id.
+func (p *Persist) UpsertCard(ctx context.Context, setID, name, code, rarity string) (string, error) {
 	id, err := NewUUIDv7()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	_, err = sq.Insert("cards").
@@ -257,8 +261,30 @@ func (p *Persist) UpsertCard(ctx context.Context, setID, name, code, rarity stri
 		Suffix("ON DUPLICATE KEY UPDATE name = VALUES(name), rarity = VALUES(rarity)").
 		RunWith(p.DB).
 		ExecContext(ctx)
+	if err != nil {
+		return "", err
+	}
 
-	return err
+	return p.getCardIDByCode(ctx, setID, code)
+}
+
+// getCardIDByCode looks up a card's id by (set_id, code) - the natural key
+// UpsertCard matches on, but not something callers can assume they already
+// know the id for (that's the whole reason UpsertCard exists instead of a
+// plain insert).
+func (p *Persist) getCardIDByCode(ctx context.Context, setID, code string) (string, error) {
+	row := sq.Select("id").
+		From("cards").
+		Where(sq.Eq{"set_id": setID, "code": code}).
+		RunWith(p.DB).
+		QueryRowContext(ctx)
+
+	var id string
+	if err := row.Scan(&id); err != nil {
+		return "", err
+	}
+
+	return id, nil
 }
 
 // codePattern splits a card code into everything before its trailing

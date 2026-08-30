@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"example.com/mishis4x/logger"
@@ -20,12 +23,19 @@ func init() {
 	processSetCMD.Flags().StringVarP(&processSetFile, "file", "f", "", "CSV file to import")
 	processSetCMD.Flags().StringVarP(&processSetMetaFile, "set-file", "s", "", "Optional JSON file with the set's real metadata (name, card_count, release_date, status)")
 	processSetCMD.Flags().BoolVarP(&processSetRefresh, "refresh", "r", false, "Wipe the set named in --set-file before reimporting, instead of upserting on top of it (requires --set-file)")
+	processSetCMD.Flags().StringVarP(&processSetImagesDir, "images-dir", "i", "", "Optional local directory of card images to import alongside the CSV - never committed, see the flag's help in --help output for the filename convention")
 	processSetCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to connect to")
 }
 
 var processSetFile string
 var processSetMetaFile string
 var processSetRefresh bool
+var processSetImagesDir string
+
+// imageExtensions are tried in this order for each card code - first match
+// wins. Deliberately not configurable; these cover every format a card
+// scan/photo would realistically show up in.
+var imageExtensions = []string{".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 var processSetCMD = &cobra.Command{
 	Use:   "process-set",
@@ -53,10 +63,22 @@ else runs. Use this when card codes in the CSV changed shape (e.g.
 normalizing "001S" to "BRD/W139-001S") - UpsertCard's (set_id, code) match
 won't recognize the old rows as the same cards, so re-running without
 --refresh would leave old and new duplicates side by side instead of
-replacing them.`,
+replacing them.
+
+--images-dir optionally attaches a reference image to each card as it's
+imported, read from local files - never committed to the repo (same
+convention as be/db/misc). A card's file is matched by its code with "/"
+replaced by "_" (cards.code often contains a literal "/", e.g.
+"BRD/W139-001S" -> looks for "BRD_W139-001S.jpg", trying .jpg/.jpeg/.png/
+.webp/.gif in that order). A card with no matching file simply gets no
+image - not an error, since image coverage is expected to fill in
+incrementally, not all at once. Since --refresh reassigns fresh card ids
+on every reimport (card_images cascades on delete, unlike owned_cards),
+re-supply --images-dir on any --refresh run too, or previously-attached
+images are gone along with the old rows.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		logger.Init(env)
-		processSet(processSetFile, processSetMetaFile, processSetRefresh)
+		processSet(processSetFile, processSetMetaFile, processSetImagesDir, processSetRefresh)
 	},
 }
 
@@ -83,7 +105,7 @@ func readSetMetadata(file string) (setMetadata, error) {
 	return meta, nil
 }
 
-func processSet(file, setFile string, refresh bool) {
+func processSet(file, setFile, imagesDir string, refresh bool) {
 	if file == "" {
 		log.Fatal().Msg("process-set requires --file")
 	}
@@ -165,7 +187,7 @@ func processSet(file, setFile string, refresh bool) {
 		}
 	}
 
-	var imported, skipped int
+	var imported, skipped, imagesAttached int
 	for {
 		row, err := r.Read()
 		if errors.Is(err, io.EOF) {
@@ -190,13 +212,61 @@ func processSet(file, setFile string, refresh bool) {
 		// clean) shouldn't abort the whole import; log it and move on so
 		// the rest of the file still gets imported.
 		code := row[col["card_number"]]
-		if err := p.UpsertCard(ctx, setID, row[col["name_japanese"]], code, row[col["rarity"]]); err != nil {
+		cardID, err := p.UpsertCard(ctx, setID, row[col["name_japanese"]], code, row[col["rarity"]])
+		if err != nil {
 			log.Error().Err(err).Str("code", code).Msg("error upserting card, skipping row")
 			skipped++
 			continue
 		}
 		imported++
+
+		if imagesDir != "" && attachCardImage(ctx, p, imagesDir, cardID, code) {
+			imagesAttached++
+		}
 	}
 
-	log.Info().Int("cards", imported).Int("skipped", skipped).Int("sets", len(setIDs)).Msg("process-set finished")
+	log.Info().Int("cards", imported).Int("skipped", skipped).Int("images", imagesAttached).Int("sets", len(setIDs)).Msg("process-set finished")
+}
+
+// attachCardImage looks for a local image file matching code in imagesDir
+// and, if found, stores it against cardID. Returns false (not an error -
+// logged instead, same tolerance as a malformed CSV row) both when no
+// matching file exists at all (the ordinary, expected case for a card
+// whose image hasn't been sourced yet) and when a matching file exists but
+// couldn't be read.
+func attachCardImage(ctx context.Context, p *persist.Persist, imagesDir, cardID, code string) bool {
+	path, found := findImageFile(imagesDir, code)
+	if !found {
+		return false
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Error().Err(err).Str("code", code).Str("path", path).Msg("error reading card image, skipping")
+		return false
+	}
+
+	contentType := http.DetectContentType(data)
+	if err := p.UpsertCardImage(ctx, cardID, data, contentType); err != nil {
+		log.Error().Err(err).Str("code", code).Msg("error storing card image, skipping")
+		return false
+	}
+
+	return true
+}
+
+// findImageFile looks for a file named after code (with "/" replaced by
+// "_", since a literal "/" in code would otherwise be read as a
+// subdirectory) in dir, trying each of imageExtensions in order. Returns
+// ("", false) if none exist - not an error, just no image for this card
+// yet.
+func findImageFile(dir, code string) (string, bool) {
+	base := strings.ReplaceAll(code, "/", "_")
+	for _, ext := range imageExtensions {
+		path := filepath.Join(dir, base+ext)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, true
+		}
+	}
+	return "", false
 }

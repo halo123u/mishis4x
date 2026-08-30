@@ -161,6 +161,7 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
           <table className={styles.table}>
             <thead>
               <tr>
+                <th className={styles.thumbnailCol}></th>
                 <th>Code</th>
                 <th>Name</th>
                 <th>Rarity</th>
@@ -176,6 +177,21 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                     key={card.id}
                     className={quantity === 0 ? styles.rowMissing : undefined}
                   >
+                    <td className={styles.thumbnailCol}>
+                      <img
+                        src={`/api/cards/${card.id}/image`}
+                        alt=""
+                        className={styles.thumbnail}
+                        // Not every card has an image yet - image coverage
+                        // fills in incrementally via process-set
+                        // --images-dir, so a 404 here is an ordinary,
+                        // expected state. Hiding the element on error
+                        // leaves a blank cell instead of a broken-image icon.
+                        onError={(event) => {
+                          event.currentTarget.style.visibility = 'hidden';
+                        }}
+                      />
+                    </td>
                     <td className={styles.code}>{card.code}</td>
                     <td>{card.name}</td>
                     <td>{card.rarity}</td>

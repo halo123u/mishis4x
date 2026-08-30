@@ -202,19 +202,19 @@ func TestUpsertCard(t *testing.T) {
 	})
 
 	code := "BRD/W139-999S"
-	require.NoError(t, p.UpsertCard(t.Context(), setID, "Original Name", code, "SR 1-star"))
-
-	cards, err := p.ListCardsBySet(t.Context(), setID)
+	firstCardID, err := p.UpsertCard(t.Context(), setID, "Original Name", code, "SR 1-star")
 	require.NoError(t, err)
-	require.Len(t, cards, 1)
-	firstCardID := cards[0].ID
+	require.NotEmpty(t, firstCardID)
 
 	// Re-running against the same (set_id, code) - the exact scenario of
 	// re-importing an updated CSV - must update in place, not insert a
-	// second row, and must leave the original id untouched.
-	require.NoError(t, p.UpsertCard(t.Context(), setID, "Corrected Name", code, "SR 2-star"))
+	// second row, and must leave the original id untouched (and return it,
+	// not a newly-generated one).
+	secondCardID, err := p.UpsertCard(t.Context(), setID, "Corrected Name", code, "SR 2-star")
+	require.NoError(t, err)
+	require.Equal(t, firstCardID, secondCardID, "must return the existing row's id, not a freshly-generated one")
 
-	cards, err = p.ListCardsBySet(t.Context(), setID)
+	cards, err := p.ListCardsBySet(t.Context(), setID)
 	require.NoError(t, err)
 	require.Len(t, cards, 1, "must update in place, not insert a second row")
 	require.Equal(t, firstCardID, cards[0].ID, "existing row's id must be left untouched")

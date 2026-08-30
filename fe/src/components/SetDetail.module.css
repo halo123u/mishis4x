@@ -69,6 +69,19 @@
   border-bottom: 1px solid var(--hairline);
 }
 
+.thumbnailCol {
+  width: 2.5rem;
+}
+
+.thumbnail {
+  display: block;
+  width: 2.25rem;
+  height: 2.25rem;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
 .code {
   font-family: var(--font-mono);
   font-size: var(--text-sm);

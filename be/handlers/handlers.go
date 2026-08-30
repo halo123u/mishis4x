@@ -152,6 +152,16 @@ func (d *Data) NewRouter() *mux.Router {
 	collection.HandleFunc("", d.ListSets).Methods("GET")
 	collection.HandleFunc("/{setID}/cards", d.ListCardsForSet).Methods("GET")
 
+	// Card images are gated the same as the rest of the catalog/ownership
+	// data under /sets and /owned-sets, not because the images themselves
+	// are eBay-sourced (they're not, currently), but for consistency - the
+	// card metadata they're attached to is already restricted, and there's
+	// no reason for the one endpoint that returns a picture of the same
+	// card to be the unguarded exception.
+	cardImages := api.PathPrefix("/cards").Subrouter()
+	cardImages.Use(d.ownerOnlyMiddleware)
+	cardImages.HandleFunc("/{cardID}/image", d.GetCardImage).Methods("GET")
+
 	ownedSets := api.PathPrefix("/owned-sets").Subrouter()
 	ownedSets.Use(d.ownerOnlyMiddleware)
 	ownedSets.HandleFunc("", d.ListOwnedSets).Methods("GET")
