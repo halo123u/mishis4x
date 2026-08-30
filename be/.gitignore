@@ -4,10 +4,14 @@ __debug_bin
 # the full Dockerfile build - not part of the normal dev workflow, but
 # harmless to ignore if it exists.
 /dist
-# Reserved local spot for process-set --images-dir - card image files
-# themselves are never committed. Pointing --images-dir somewhere entirely
-# outside the repo works just as well; this is just a convenience default.
-/db/images
+# Standardized local home for card-catalog data: one subfolder per set,
+# named for whatever's being tracked, each holding {catalog.csv,set.json,
+# images/} - exactly what `process-set --file --set-file --images-dir`
+# needs, so re-running an import doesn't depend on re-locating files
+# scattered across a scratchpad. Never committed - card images specifically
+# shouldn't go to a public GitHub repo; may move to a separate private repo
+# later. Lives on whichever machine actually runs process-set for now.
+/sets
 
 # One-off real credentials for running prod DB commands (e.g. migrations)
 # manually from a laptop - never committed, see infra/envs/prod/.env.local.
