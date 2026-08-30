@@ -23,8 +23,12 @@
   border-radius: var(--radius-sm);
   /* --paper's own RGB values (#0f1215) at partial opacity, rather than an
      unrelated gray - a semi-transparent tint of the page's own background
-     reads as "faded into the background," not just an arbitrary darkening. */
-  background: rgba(15, 18, 21, 0.6);
+     reads as "faded into the background," not just an arbitrary darkening.
+     0.6 was tried first and confirmed (via direct DOM experimentation) to
+     be too weak to read as "dimmed" against these bright, saturated card
+     images at thumbnail size - 0.75 is the lowest value that still looked
+     clearly muted without fully obscuring the art underneath. */
+  background: rgba(15, 18, 21, 0.75);
   pointer-events: none;
 }
 
