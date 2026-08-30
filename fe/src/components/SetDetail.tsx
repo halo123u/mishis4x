@@ -259,9 +259,9 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
               )
             }
           >
-            <option value="all">Owned + missing</option>
-            <option value="owned">Owned only</option>
-            <option value="missing">Missing only</option>
+            <option value="all">All</option>
+            <option value="owned">Owned</option>
+            <option value="missing">Missing</option>
           </select>
         </div>
       )}
