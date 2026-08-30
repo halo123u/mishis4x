@@ -43,6 +43,17 @@
   gap: var(--space-3);
 }
 
+.summary {
+  font-size: var(--text-sm);
+  color: var(--ash);
+}
+
+.summaryValue {
+  color: var(--teal);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .tableWrap {
   width: 100%;
   max-width: 40rem;
@@ -73,20 +84,6 @@
   width: 3.75rem;
 }
 
-.thumbnail {
-  display: block;
-  width: 3.5rem;
-  /* Real trading-card proportions (63mm x 88mm), not a square - the
-     source images are already this ratio (286x400px); forcing them into
-     a square via a fixed height just crops them into an unrecognizable
-     blob instead of a card shape. */
-  aspect-ratio: 63 / 88;
-  height: auto;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
-
 .code {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
@@ -94,7 +91,14 @@
   white-space: nowrap;
 }
 
-.rowMissing {
+/* Not applied to the whole <tr>: opacity on an ancestor composites its
+   entire subtree as one semi-transparent layer, which would also dim the
+   thumbnail's position: fixed hover-preview (fixed positioning escapes
+   overflow clipping, but not an ancestor's opacity). The thumbnail cell
+   gets its own dimming via CardThumbnail's `dimmed` prop instead, which
+   overlays just the small thumbnail and leaves the floating preview
+   untouched. */
+.rowMissing > td:not(.thumbnailCol) {
   opacity: 0.55;
 }
 
@@ -115,38 +119,4 @@
 
 .error {
   color: var(--bad);
-}
-
-.preview {
-  position: fixed;
-  z-index: 100;
-  pointer-events: none;
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.45));
-  animation: previewIn 0.15s ease-out;
-}
-
-.previewImage {
-  display: block;
-  width: 260px;
-  aspect-ratio: 63 / 88;
-  height: auto;
-  object-fit: cover;
-  border-radius: var(--radius-md);
-}
-
-@keyframes previewIn {
-  from {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .preview {
-    animation: none;
-  }
 }

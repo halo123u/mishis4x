@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Card, OwnedCardInput } from '../types';
 import Button from './ui/Button';
+import CardThumbnail from './ui/CardThumbnail';
 import styles from './SetDetail.module.css';
 
 // Thin wrapper so navigating directly between two sets (/collection/A ->
@@ -34,43 +35,15 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Set while hovering a thumbnail - drives the larger floating preview.
-  // position: fixed (not absolute) deliberately, so the preview escapes
-  // .tableWrap's overflow-x: auto instead of getting clipped by it (per
-  // the CSS overflow spec, setting overflow on one axis makes the other
-  // axis clip too, not just scroll horizontally).
-  const [preview, setPreview] = useState<{
-    cardId: string;
-    top: number;
-    left: number;
-  } | null>(null);
   const navigate = useNavigate();
 
-  // previewWidth/Height must match .preview's CSS - used here purely to
-  // keep the preview on-screen, never to size it (that's CSS's job).
-  const previewWidth = 260;
-  const previewHeight = (previewWidth * 88) / 63;
-
-  const showPreview =
-    (cardId: string) => (event: React.MouseEvent<HTMLImageElement>) => {
-      const rect = event.currentTarget.getBoundingClientRect();
-      const gap = 12;
-
-      let left = rect.right + gap;
-      if (left + previewWidth > window.innerWidth) {
-        left = rect.left - gap - previewWidth;
-      }
-
-      let top = rect.top;
-      if (top + previewHeight > window.innerHeight) {
-        top = window.innerHeight - previewHeight - gap;
-      }
-      top = Math.max(gap, top);
-
-      setPreview({ cardId, top, left });
-    };
-
-  const hidePreview = () => setPreview(null);
+  // Sum of every owned card's known price - ownedPrices is already scoped
+  // to owned (quantity > 0) cards with a recorded price, so this is exactly
+  // "what you've actually logged spending on this set," not an estimate.
+  const totalPaidCents = Object.values(ownedPrices).reduce(
+    (sum, cents) => sum + cents,
+    0,
+  );
 
   useEffect(() => {
     if (!setID) {
@@ -193,6 +166,15 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       )}
 
       {cards && cards.length > 0 && (
+        <p className={styles.summary}>
+          Total paid:{' '}
+          <span className={styles.summaryValue}>
+            ${(totalPaidCents / 100).toFixed(2)}
+          </span>
+        </p>
+      )}
+
+      {cards && cards.length > 0 && (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
@@ -214,21 +196,7 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                     className={quantity === 0 ? styles.rowMissing : undefined}
                   >
                     <td className={styles.thumbnailCol}>
-                      <img
-                        src={`/api/cards/${card.id}/image`}
-                        alt=""
-                        className={styles.thumbnail}
-                        // Not every card has an image yet - image coverage
-                        // fills in incrementally via process-set
-                        // --images-dir, so a 404 here is an ordinary,
-                        // expected state. Hiding the element on error
-                        // leaves a blank cell instead of a broken-image icon.
-                        onError={(event) => {
-                          event.currentTarget.style.visibility = 'hidden';
-                        }}
-                        onMouseEnter={showPreview(card.id)}
-                        onMouseLeave={hidePreview}
-                      />
+                      <CardThumbnail cardId={card.id} dimmed={quantity === 0} />
                     </td>
                     <td className={styles.code}>{card.code}</td>
                     <td>{card.name}</td>
@@ -254,19 +222,6 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
               })}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {preview && (
-        <div
-          className={styles.preview}
-          style={{ top: preview.top, left: preview.left }}
-        >
-          <img
-            src={`/api/cards/${preview.cardId}/image`}
-            alt=""
-            className={styles.previewImage}
-          />
         </div>
       )}
     </div>

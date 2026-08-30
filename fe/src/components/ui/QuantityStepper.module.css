@@ -1,0 +1,68 @@
+.stepper {
+  display: inline-flex;
+  align-items: stretch;
+  height: 2rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.value {
+  width: 2.25rem;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  /* Hides the native up/down spinner - the custom arrows replace it,
+     having two side by side would just be confusing/redundant. */
+  appearance: textfield;
+}
+
+.value::-webkit-outer-spin-button,
+.value::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.value:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.arrows {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--hairline);
+}
+
+.arrow {
+  flex: 1;
+  width: 1.25rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--ash);
+  font-size: 0.55rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.arrow:not(:last-child) {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.arrow:hover:not(:disabled) {
+  color: var(--teal);
+}
+
+.arrow:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

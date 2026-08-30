@@ -10,7 +10,7 @@
 
 .tableWrap {
   width: 100%;
-  max-width: 40rem;
+  max-width: 46rem;
   overflow-x: auto;
 }
 
@@ -41,24 +41,13 @@
   white-space: nowrap;
 }
 
-.checkboxCol {
-  width: 1%;
-  text-align: center;
+.thumbnailCol {
+  width: 3.75rem;
 }
 
 .quantityCol {
   width: 5rem;
   text-align: center;
-}
-
-.quantityInput {
-  width: 4rem;
-  text-align: center;
-}
-
-.quantityInput:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .priceCol {
