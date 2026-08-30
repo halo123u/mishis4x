@@ -48,6 +48,12 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     (sum, cents) => sum + cents,
     0,
   );
+  // Distinct cards owned (any quantity > 0), out of the set's full card
+  // count - a completion count, not a copy count, so owning 3x the same
+  // card still only counts once here. Deliberately computed over the full
+  // set regardless of the filter bar below, same as totalPaidCents.
+  const ownedCount = Object.keys(owned ?? {}).length;
+  const totalCount = cards?.length ?? 0;
 
   useEffect(() => {
     if (!setID) {
@@ -194,12 +200,20 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       )}
 
       {cards && cards.length > 0 && (
-        <p className={styles.summary}>
-          Total paid:{' '}
-          <span className={styles.summaryValue}>
-            ${(totalPaidCents / 100).toFixed(2)}
-          </span>
-        </p>
+        <div className={styles.summaryRow}>
+          <p className={styles.summary}>
+            Owned:{' '}
+            <span className={styles.summaryValue}>
+              {ownedCount} / {totalCount}
+            </span>
+          </p>
+          <p className={styles.summary}>
+            Total paid:{' '}
+            <span className={styles.summaryValue}>
+              ${(totalPaidCents / 100).toFixed(2)}
+            </span>
+          </p>
+        </div>
       )}
 
       {cards && cards.length > 0 && (
