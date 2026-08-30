@@ -17,6 +17,43 @@ test("card manager: widget -> dashboard -> set detail -> back", async ({
   await page.getByRole("heading", { name: "Card Manager" }).click();
 
   await expect(page).toHaveURL(/\/collection$/);
+
+  // The dashboard only lists onboarded (owned) sets, not the full catalog -
+  // a fresh account starts empty here even though the catalog doesn't (see
+  // CollectionDashboard's own comment). Onboard "Brown Dust 2" via the real
+  // Add-a-set flow if it isn't already: CI always starts from a fresh seed,
+  // but a repeat run against a persistent local `make run_db` volume won't,
+  // and the fixture only has this one set to onboard either way.
+  // isVisible() alone would race the dashboard's own async fetch (it
+  // checks the DOM synchronously, before either outcome has necessarily
+  // rendered yet) - wait for whichever of the two real end states actually
+  // shows up instead of guessing at the state before data has loaded.
+  const alreadyOwned = await Promise.race([
+    page
+      .getByText("Brown Dust 2")
+      .waitFor({ state: "visible" })
+      .then(() => true),
+    page
+      .getByRole("button", { name: "Add a set" })
+      .waitFor({ state: "visible" })
+      .then(() => false),
+  ]);
+
+  if (!alreadyOwned) {
+    await page.getByRole("button", { name: "Add a set" }).click();
+    await expect(page).toHaveURL(/\/collection\/add$/);
+    await page.getByRole("button", { name: "Add" }).click();
+
+    // Onboarding doesn't require checking any cards - "Skip for now"
+    // onboards the set itself and lands straight on its detail page.
+    await expect(page).toHaveURL(/\/collection\/[^/]+\/onboard$/);
+    await page.getByRole("button", { name: "Skip for now" }).click();
+    await expect(page).toHaveURL(/\/collection\/[^/]+$/);
+
+    await page.getByText("Back to sets").click();
+    await expect(page).toHaveURL(/\/collection$/);
+  }
+
   await expect(page.getByText("Brown Dust 2")).toBeVisible();
 
   await page.getByText("Brown Dust 2").click();
