@@ -9,13 +9,21 @@ const GAP = 12;
 
 type CardThumbnailProps = {
   cardId: string;
+  // Renders a solid gray layer over just the small thumbnail - e.g. for a
+  // "missing" row - deliberately NOT implemented as a wrapping opacity:
+  // opacity on an ancestor composites its entire subtree as one
+  // semi-transparent layer, which would make the floating preview see-
+  // through too (position: fixed escapes overflow clipping, but not an
+  // ancestor's opacity). A real overlay layer only covers the thumbnail
+  // itself, so the preview stays fully opaque regardless.
+  dimmed?: boolean;
 };
 
 // A small card-shaped thumbnail that floats a larger version of the same
 // image next to the cursor on hover - shared by every card list/table so
 // the hover behavior (and its positioning math) exists in exactly one
 // place, not copied into each screen that shows card art.
-const CardThumbnail = ({ cardId }: CardThumbnailProps) => {
+const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
   const [preview, setPreview] = useState<{
     top: number;
     left: number;
@@ -46,20 +54,23 @@ const CardThumbnail = ({ cardId }: CardThumbnailProps) => {
 
   return (
     <>
-      <img
-        src={`/api/cards/${cardId}/image`}
-        alt=""
-        className={styles.thumbnail}
-        // Not every card has an image yet - image coverage fills in
-        // incrementally via process-set --images-dir, so a 404 here is an
-        // ordinary, expected state. Hiding the element on error leaves a
-        // blank space instead of a broken-image icon.
-        onError={(event) => {
-          event.currentTarget.style.visibility = 'hidden';
-        }}
-        onMouseEnter={showPreview}
-        onMouseLeave={hidePreview}
-      />
+      <span className={styles.wrapper}>
+        <img
+          src={`/api/cards/${cardId}/image`}
+          alt=""
+          className={styles.thumbnail}
+          // Not every card has an image yet - image coverage fills in
+          // incrementally via process-set --images-dir, so a 404 here is
+          // an ordinary, expected state. Hiding the element on error
+          // leaves a blank space instead of a broken-image icon.
+          onError={(event) => {
+            event.currentTarget.style.visibility = 'hidden';
+          }}
+          onMouseEnter={showPreview}
+          onMouseLeave={hidePreview}
+        />
+        {dimmed && <span className={styles.dimOverlay} aria-hidden="true" />}
+      </span>
       {preview && (
         <div
           className={styles.preview}

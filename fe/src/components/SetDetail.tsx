@@ -179,7 +179,7 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                     className={quantity === 0 ? styles.rowMissing : undefined}
                   >
                     <td className={styles.thumbnailCol}>
-                      <CardThumbnail cardId={card.id} />
+                      <CardThumbnail cardId={card.id} dimmed={quantity === 0} />
                     </td>
                     <td className={styles.code}>{card.code}</td>
                     <td>{card.name}</td>

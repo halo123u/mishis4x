@@ -1,3 +1,8 @@
+.wrapper {
+  position: relative;
+  display: inline-block;
+}
+
 .thumbnail {
   display: block;
   width: 3.5rem;
@@ -10,6 +15,17 @@
   object-fit: cover;
   border-radius: var(--radius-sm);
   background: var(--surface);
+}
+
+.dimOverlay {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-sm);
+  /* --paper's own RGB values (#0f1215) at partial opacity, rather than an
+     unrelated gray - a semi-transparent tint of the page's own background
+     reads as "faded into the background," not just an arbitrary darkening. */
+  background: rgba(15, 18, 21, 0.6);
+  pointer-events: none;
 }
 
 .preview {

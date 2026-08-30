@@ -80,7 +80,14 @@
   white-space: nowrap;
 }
 
-.rowMissing {
+/* Not applied to the whole <tr>: opacity on an ancestor composites its
+   entire subtree as one semi-transparent layer, which would also dim the
+   thumbnail's position: fixed hover-preview (fixed positioning escapes
+   overflow clipping, but not an ancestor's opacity). The thumbnail cell
+   gets its own dimming via CardThumbnail's `dimmed` prop instead, which
+   overlays just the small thumbnail and leaves the floating preview
+   untouched. */
+.rowMissing > td:not(.thumbnailCol) {
   opacity: 0.55;
 }
 
