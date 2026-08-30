@@ -70,13 +70,18 @@
 }
 
 .thumbnailCol {
-  width: 2.5rem;
+  width: 3.75rem;
 }
 
 .thumbnail {
   display: block;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 3.5rem;
+  /* Real trading-card proportions (63mm x 88mm), not a square - the
+     source images are already this ratio (286x400px); forcing them into
+     a square via a fixed height just crops them into an unrecognizable
+     blob instead of a card shape. */
+  aspect-ratio: 63 / 88;
+  height: auto;
   object-fit: cover;
   border-radius: var(--radius-sm);
   background: var(--surface);
