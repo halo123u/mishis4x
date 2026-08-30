@@ -81,6 +81,9 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
             alt=""
             className={styles.previewImage}
           />
+          {dimmed && (
+            <span className={styles.previewDimOverlay} aria-hidden="true" />
+          )}
         </div>
       )}
     </>

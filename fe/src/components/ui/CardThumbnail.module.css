@@ -49,6 +49,19 @@
   border-radius: var(--radius-md);
 }
 
+/* Same technique as .dimOverlay (a real layer, not opacity on .preview
+   itself) - .preview is position: fixed, which already establishes a
+   containing block for this absolutely-positioned child, so no extra
+   wrapper is needed the way .thumbnail required .wrapper. Sized to match
+   .previewImage's own radius rather than .dimOverlay's --radius-sm. */
+.previewDimOverlay {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  background: rgba(15, 18, 21, 0.75);
+  pointer-events: none;
+}
+
 @keyframes previewIn {
   from {
     opacity: 0;
