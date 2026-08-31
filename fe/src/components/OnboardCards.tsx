@@ -123,6 +123,23 @@ const OnboardCards = () => {
     return Math.round(dollars * 100);
   };
 
+  // Normalizes the displayed text to a real "dollars.cents" shape (e.g.
+  // "12" -> "12.00", "12.5" -> "12.50") once the user's done editing a
+  // field, rather than fighting them mid-keystroke - re-formatting on
+  // every change would clobber typing something like "12." before the
+  // second decimal digit exists yet. Built on priceCentsFor's own
+  // rounding rather than a separate toFixed(2) on the raw string, so
+  // what's displayed after blur always matches exactly what submitting
+  // would actually send. Leaves an empty/invalid field alone - blank
+  // means "no price entered," not "$0.00".
+  const formatPriceOnBlur = (cardID: string) => {
+    const cents = priceCentsFor(cardID);
+    if (cents == null) {
+      return;
+    }
+    setPrices((prev) => ({ ...prev, [cardID]: (cents / 100).toFixed(2) }));
+  };
+
   // Onboards the set (idempotent either way) and, if any cards are passed,
   // records their ownership in the same submit. "Skip for now" calls this
   // with an empty list regardless of what quantities are set or were
@@ -322,6 +339,7 @@ const OnboardCards = () => {
                         onChange={(event) =>
                           setPrice(card.id, event.target.value)
                         }
+                        onBlur={() => formatPriceOnBlur(card.id)}
                         disabled={quantity === 0 || submitting}
                       />
                     </span>
