@@ -1,11 +1,12 @@
 .wrapper {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
 }
 
 .thumbnail {
   display: block;
-  width: 3.5rem;
+  width: 100%;
   /* Real trading-card proportions (63mm x 88mm), not a square - source
      images are already this ratio (286x400px); forcing them into a
      square via a fixed height just crops them into an unrecognizable
@@ -13,11 +14,11 @@
   aspect-ratio: 63 / 88;
   height: auto;
   object-fit: cover;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
-/* Same footprint as .thumbnail (card-shaped, not a square) so a row
+/* Same footprint as .thumbnail (card-shaped, not a square) so a tile
    doesn't visually jump once its real image shows up later - image
    coverage fills in incrementally via process-set --images-dir, so this
    is an ordinary, expected state, not an error. */
@@ -25,25 +26,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 3.5rem;
+  width: 100%;
   aspect-ratio: 63 / 88;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--surface);
   border: 1px dashed var(--hairline);
 }
 
 .placeholderLabel {
-  font-size: 0.5rem;
+  font-size: var(--text-xs);
   line-height: 1.2;
   color: var(--ash);
   text-align: center;
-  padding: 0 var(--space-1);
+  padding: 0 var(--space-2);
 }
 
 .dimOverlay {
   position: absolute;
   inset: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   /* --paper's own RGB values (#0f1215) at partial opacity, rather than an
      unrelated gray - a semi-transparent tint of the page's own background
      reads as "faded into the background," not just an arbitrary darkening.

@@ -5,7 +5,7 @@
   justify-content: space-between;
   gap: var(--space-4);
   width: 100%;
-  max-width: 40rem;
+  max-width: 56rem;
 }
 
 .back {
@@ -31,7 +31,7 @@
   align-items: flex-start;
   gap: var(--space-3);
   width: 100%;
-  max-width: 40rem;
+  max-width: 56rem;
   padding: var(--space-4);
   background: var(--surface);
   border: 1px solid var(--ember);
@@ -49,7 +49,7 @@
   justify-content: space-between;
   gap: var(--space-3);
   width: 100%;
-  max-width: 40rem;
+  max-width: 56rem;
 }
 
 .summary {
@@ -68,7 +68,7 @@
   flex-wrap: wrap;
   gap: var(--space-3);
   width: 100%;
-  max-width: 40rem;
+  max-width: 56rem;
 }
 
 .searchInput {
@@ -86,51 +86,71 @@
   padding: var(--space-3);
 }
 
-.tableWrap {
+.gridWrap {
   width: 100%;
-  max-width: 40rem;
-  overflow-x: auto;
+  max-width: 56rem;
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--space-4);
 }
 
-.table th {
-  text-align: left;
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ash);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--hairline);
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
 }
 
-.table td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--hairline);
-}
-
-.thumbnailCol {
-  width: 3.75rem;
-}
-
-.code {
-  font-family: var(--font-mono);
+.tileName {
   font-size: var(--text-sm);
-  color: var(--ash);
-  white-space: nowrap;
+  font-weight: 600;
+  margin-top: var(--space-2);
 }
 
-/* Not applied to the whole <tr>: opacity on an ancestor composites its
-   entire subtree as one semi-transparent layer, which would also dim the
-   thumbnail's position: fixed hover-preview (fixed positioning escapes
-   overflow clipping, but not an ancestor's opacity). The thumbnail cell
-   gets its own dimming via CardThumbnail's `dimmed` prop instead, which
-   overlays just the small thumbnail and leaves the floating preview
-   untouched. */
-.rowMissing > td:not(.thumbnailCol) {
+.tileCode {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ash);
+}
+
+.rarityChip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ash);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  padding: 0.1rem var(--space-2);
+  white-space: nowrap;
+  margin-top: var(--space-1);
+}
+
+.tileStats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* Scoped to just the text elements, not the whole .tile - CardThumbnail's
+   preview is a DOM sibling of its own thumbnail wrapper (both live inside
+   .tile), and opacity on an ancestor composites its entire subtree as one
+   semi-transparent layer, which would dim the position: fixed hover-preview
+   too. CardThumbnail's own `dimmed` prop already handles the thumbnail
+   itself via a real overlay layer - this only needs to dim the caption. */
+.tileMissing .tileName,
+.tileMissing .tileCode,
+.tileMissing .rarityChip,
+.tileMissing .tileStats {
   opacity: 0.55;
 }
 
@@ -147,6 +167,7 @@
 
 .price {
   font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
 }
 
 .error {

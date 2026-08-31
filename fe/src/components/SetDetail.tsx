@@ -281,53 +281,39 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       )}
 
       {cards && cards.length > 0 && visibleCards.length > 0 && (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th className={styles.thumbnailCol}></th>
-                <th>Code</th>
-                <th>Name</th>
-                <th>Rarity</th>
-                <th>Owned</th>
-                <th>Price paid</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleCards.map((card) => {
-                const quantity = owned?.[card.id] ?? 0;
-                return (
-                  <tr
-                    key={card.id}
-                    className={quantity === 0 ? styles.rowMissing : undefined}
-                  >
-                    <td className={styles.thumbnailCol}>
-                      <CardThumbnail cardId={card.id} dimmed={quantity === 0} />
-                    </td>
-                    <td className={styles.code}>{card.code}</td>
-                    <td>{card.name}</td>
-                    <td>{card.rarity}</td>
-                    <td>
-                      {quantity > 0 ? (
-                        <span className={styles.owned}>×{quantity}</span>
-                      ) : (
-                        <span className={styles.missing}>Missing</span>
-                      )}
-                    </td>
-                    <td>
-                      {quantity > 0 && ownedPrices[card.id] != null ? (
-                        <span className={styles.price}>
-                          ${(ownedPrices[card.id] / 100).toFixed(2)}
-                        </span>
-                      ) : (
-                        <span className={styles.missing}>—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className={styles.gridWrap}>
+          <div className={styles.grid}>
+            {visibleCards.map((card) => {
+              const quantity = owned?.[card.id] ?? 0;
+              return (
+                <div
+                  key={card.id}
+                  className={
+                    quantity === 0
+                      ? `${styles.tile} ${styles.tileMissing}`
+                      : styles.tile
+                  }
+                >
+                  <CardThumbnail cardId={card.id} dimmed={quantity === 0} />
+                  <div className={styles.tileName}>{card.name}</div>
+                  <div className={styles.tileCode}>{card.code}</div>
+                  <span className={styles.rarityChip}>{card.rarity}</span>
+                  <div className={styles.tileStats}>
+                    {quantity > 0 ? (
+                      <span className={styles.owned}>×{quantity}</span>
+                    ) : (
+                      <span className={styles.missing}>Missing</span>
+                    )}
+                    {quantity > 0 && ownedPrices[card.id] != null && (
+                      <span className={styles.price}>
+                        ${(ownedPrices[card.id] / 100).toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
