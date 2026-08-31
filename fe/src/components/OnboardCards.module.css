@@ -87,19 +87,33 @@
   margin-top: var(--space-2);
 }
 
+/* One unified pill (same technique as QuantityStepper's .stepper) rather
+   than a floating "$" beside a separately-bordered input - the currency
+   sign reads as part of the control, not a label next to it. */
 .priceInputWrap {
   display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+  align-items: stretch;
+  height: 2.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
 }
 
 .priceCurrency {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
   color: var(--ash);
   font-size: var(--text-sm);
+  border-right: 1px solid var(--hairline);
 }
 
 .priceInput {
-  width: 4.5rem;
+  width: 6rem;
+  border: none;
+  background: transparent;
+  padding: 0 var(--space-2);
   text-align: right;
 }
 

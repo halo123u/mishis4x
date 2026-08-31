@@ -16,6 +16,20 @@
   object-fit: cover;
   border-radius: var(--radius-md);
   background: var(--surface);
+  transition: filter 0.15s ease;
+}
+
+/* A brightness lift signals "hovering this does something" without
+   overpromising the way cursor: pointer would - there's no click here,
+   only hover (it floats the preview), so a hand cursor would imply an
+   action that doesn't exist. Scoped to real hover-capable devices
+   (matches CardThumbnail.tsx's own supportsHover check) so this never
+   applies on touch, where :hover can linger oddly after a tap instead of
+   cleanly following a cursor. */
+@media (hover: hover) and (pointer: fine) {
+  .thumbnail:hover {
+    filter: brightness(1.08);
+  }
 }
 
 /* Same footprint as .thumbnail (card-shaped, not a square) so a tile
@@ -97,8 +111,75 @@
   }
 }
 
+/* Full-screen tap-to-preview for touch devices (see CardThumbnail.tsx's
+   supportsHover check) - fills the viewport rather than floating near a
+   cursor position that doesn't exist on touch, and needs its own explicit
+   dismiss control since there's no mouseleave equivalent to hide it
+   automatically the way the hover .preview does. */
+.fullscreenOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* --paper's own RGB at high opacity, same tinting convention as
+     .dimOverlay - a near-opaque scrim rather than a flat black. */
+  background: rgba(15, 18, 21, 0.9);
+  padding: var(--space-6) var(--space-4);
+  animation: previewIn 0.15s ease-out;
+}
+
+.fullscreenImageWrap {
+  position: relative;
+  display: inline-block;
+}
+
+.fullscreenImage {
+  display: block;
+  width: min(85vw, 22rem);
+  aspect-ratio: 63 / 88;
+  height: auto;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+/* Same technique as .dimOverlay/.previewDimOverlay - a real layer sized to
+   just the image via .fullscreenImageWrap, not opacity on the full-screen
+   overlay itself (which would also fade the scrim behind it). */
+.fullscreenDimOverlay {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+  background: rgba(15, 18, 21, 0.75);
+  pointer-events: none;
+}
+
+.fullscreenClose {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+
+.fullscreenClose:hover {
+  color: var(--teal);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .preview {
+  .preview,
+  .fullscreenOverlay {
     animation: none;
   }
 }

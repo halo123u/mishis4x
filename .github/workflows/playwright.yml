@@ -61,7 +61,11 @@ jobs:
           cd fe
           npm ci
           npx playwright install --with-deps
-          npx playwright test
+          # Mobile Chrome/Mobile Safari projects also exist in
+          # playwright.config.ts (local-only for now) - pinned here so
+          # enabling them doesn't silently triple this job's test matrix
+          # and runtime without a deliberate decision to add them to CI too.
+          npx playwright test --project=chromium
 
       - uses: actions/upload-artifact@v7
         if: always()

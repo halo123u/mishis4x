@@ -1,7 +1,7 @@
 .stepper {
   display: inline-flex;
   align-items: stretch;
-  height: 2rem;
+  height: 2.25rem;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -9,16 +9,18 @@
 }
 
 .value {
-  width: 2.25rem;
+  width: 2.75rem;
   border: none;
+  border-left: 1px solid var(--hairline);
+  border-right: 1px solid var(--hairline);
   background: transparent;
   color: var(--ink);
   text-align: center;
   font-family: var(--font-body);
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
-  /* Hides the native up/down spinner - the custom arrows replace it,
-     having two side by side would just be confusing/redundant. */
+  /* Hides the native up/down spinner - the side buttons replace it, having
+     two side by side would just be confusing/redundant. */
   appearance: textfield;
 }
 
@@ -33,15 +35,13 @@
   cursor: not-allowed;
 }
 
-.arrows {
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--hairline);
-}
-
-.arrow {
-  flex: 1;
-  width: 1.25rem;
+/* A real tap target (2.25rem square, close to the ~2.75rem/44px platform
+   guidelines) rather than the ~20x16px half-height arrows this replaced -
+   those read fine with a mouse but were genuinely hard to hit precisely on
+   a touchscreen. */
+.side {
+  width: 2.25rem;
+  min-width: 2.25rem;
   padding: 0;
   display: flex;
   align-items: center;
@@ -49,20 +49,16 @@
   border: none;
   background: transparent;
   color: var(--ash);
-  font-size: 0.55rem;
+  font-size: var(--text-lg);
   line-height: 1;
   cursor: pointer;
 }
 
-.arrow:not(:last-child) {
-  border-bottom: 1px solid var(--hairline);
-}
-
-.arrow:hover:not(:disabled) {
+.side:hover:not(:disabled) {
   color: var(--teal);
 }
 
-.arrow:disabled {
+.side:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
