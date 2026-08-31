@@ -4,6 +4,7 @@ import type { Card, OwnedCardInput, Set as SetT } from '../types';
 import Button from './ui/Button';
 import CardThumbnail from './ui/CardThumbnail';
 import QuantityStepper from './ui/QuantityStepper';
+import EbayIcon from './ui/EbayIcon';
 import { ebaySearchUrl } from '../ebay';
 import styles from './OnboardCards.module.css';
 
@@ -363,8 +364,9 @@ const OnboardCards = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles.ebayLink}
+                    aria-label={`Search eBay for ${card.name}`}
                   >
-                    Search eBay ↗
+                    <EbayIcon />
                   </a>
                 </div>
               );

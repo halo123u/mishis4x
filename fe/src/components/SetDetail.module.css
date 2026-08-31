@@ -145,14 +145,14 @@
    link is arguably the most relevant action on that tile (go find it),
    so it stays fully readable regardless of ownership. */
 .ebayLink {
-  font-size: var(--text-xs);
+  display: inline-flex;
+  align-items: center;
   color: var(--teal);
-  text-decoration: none;
   margin-top: var(--space-1);
 }
 
 .ebayLink:hover {
-  text-decoration: underline;
+  filter: brightness(1.3);
 }
 
 /* Scoped to just the text elements, not the whole .tile - CardThumbnail's

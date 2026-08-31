@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Card, OwnedCardInput, Set as SetT } from '../types';
 import Button from './ui/Button';
 import CardThumbnail from './ui/CardThumbnail';
+import EbayIcon from './ui/EbayIcon';
 import { ebaySearchUrl } from '../ebay';
 import styles from './SetDetail.module.css';
 
@@ -329,8 +330,9 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles.ebayLink}
+                    aria-label={`Search eBay for ${card.name}`}
                   >
-                    Search eBay ↗
+                    <EbayIcon />
                   </a>
                 </div>
               );
