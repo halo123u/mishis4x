@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Card, OwnedCardInput } from '../types';
+import { Card, OwnedCardInput, Set as SetT } from '../types';
 import Button from './ui/Button';
 import CardThumbnail from './ui/CardThumbnail';
+import EbayIcon from './ui/EbayIcon';
+import { ebaySearchUrl } from '../ebay';
 import styles from './SetDetail.module.css';
 
 // Thin wrapper so navigating directly between two sets (/collection/A ->
@@ -17,6 +19,10 @@ const SetDetail = () => {
 
 const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [cards, setCards] = useState<Card[] | null>(null);
+  // Only needed for the eBay quick-link's search query - GET /api/sets is
+  // the full catalog list, not just this one set, but there's no
+  // single-set lookup endpoint and the list itself is small/cheap.
+  const [setName, setSetName] = useState<string | null>(null);
   // card_id -> quantity, only for cards with a quantity > 0 owned_cards
   // row - a card missing from this map reads as "not owned" whether that's
   // because there's no row at all or an explicit quantity-0 one, which is
@@ -52,8 +58,9 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     Promise.all([
       fetch(`/api/sets/${setID}/cards`),
       fetch(`/api/owned-sets/${setID}/cards`),
+      fetch('/api/sets'),
     ])
-      .then(async ([cardsRes, ownedRes]) => {
+      .then(async ([cardsRes, ownedRes, allSetsRes]) => {
         if (cardsRes.status === 404) {
           setError('This set could not be found.');
           return;
@@ -77,6 +84,14 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
         setOwned(ownedMap);
         setOwnedPrices(pricesMap);
         setCards(await cardsRes.json());
+
+        // Not fatal if this one fails - the eBay link just falls back to
+        // omitting the set name from its query rather than blocking the
+        // whole page over a non-essential extra.
+        if (allSetsRes.status === 200) {
+          const allSets: SetT[] = await allSetsRes.json();
+          setSetName(allSets.find((s) => s.id === setID)?.name ?? null);
+        }
       })
       .catch(() => {
         setError('Could not reach the server. Please try again.');
@@ -310,6 +325,15 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                       </span>
                     )}
                   </div>
+                  <a
+                    href={ebaySearchUrl(setName, card.code)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.ebayLink}
+                    aria-label={`Search eBay for ${card.name}`}
+                  >
+                    <EbayIcon />
+                  </a>
                 </div>
               );
             })}
