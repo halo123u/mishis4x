@@ -22,6 +22,8 @@ func init() {
 	processSetCMD.Flags().StringVarP(&processSetMetaFile, "set-file", "s", "", "Optional JSON file with the set's real metadata (name, card_count, release_date, status)")
 	processSetCMD.Flags().BoolVarP(&processSetRefresh, "refresh", "r", false, "Wipe the set named in --set-file before reimporting, instead of upserting on top of it (requires --set-file)")
 	processSetCMD.Flags().StringVarP(&processSetImagesDir, "images-dir", "i", "", "Optional local directory of card images to import alongside the CSV - never committed, see the flag's help in --help output for the filename convention")
+	processSetCMD.Flags().StringVarP(&processSetName, "name", "n", "", "Shorthand for a set stored under the standard sets/<name>/ layout (see be/.gitignore) - derives --file, --set-file, and --images-dir from sets/<name>/{catalog.csv,set.json,images}. Mutually exclusive with those three flags - use them directly instead for anything not following that layout.")
+	processSetCMD.Flags().BoolVar(&processSetSkipImages, "skip-images", false, "Don't attach images even if --images-dir (or --name's derived images/ folder) would otherwise supply them - e.g. for a quick catalog-only resync")
 	processSetCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to connect to")
 }
 
@@ -29,6 +31,8 @@ var processSetFile string
 var processSetMetaFile string
 var processSetRefresh bool
 var processSetImagesDir string
+var processSetName string
+var processSetSkipImages bool
 
 // imageExtensions are tried in this order for each card code - first match
 // wins. Deliberately not configurable; these cover every format a card
@@ -84,11 +88,48 @@ replaced by "_" (cards.code often contains a literal "/", e.g.
 image - not an error, since image coverage is expected to fill in
 incrementally, not all at once. A card whose code is unchanged across a
 --refresh keeps its existing image too (its id never changes); only a
-code that's actually new needs --images-dir to supply one.`,
+code that's actually new needs --images-dir to supply one.
+
+--name is shorthand for a set stored under sets/<name>/ (the standard
+local layout - see be/.gitignore): --file, --set-file, and --images-dir
+are derived as sets/<name>/catalog.csv, sets/<name>/set.json, and
+sets/<name>/images, so a full run is just:
+
+  process-set --name brown-dust-2 --refresh
+
+Combining --name with any of --file/--set-file/--images-dir is refused
+rather than silently picking one - use the explicit flags directly for
+anything not following the standard layout.
+
+--skip-images does the run without touching images at all, even if
+--images-dir (or --name's derived images/ folder) would otherwise
+supply them - useful for a quick catalog-only resync.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		logger.Init(env)
-		processSet(processSetFile, processSetMetaFile, processSetImagesDir, processSetRefresh)
+
+		file, setFile, imagesDir := resolveProcessSetPaths(processSetName, processSetFile, processSetMetaFile, processSetImagesDir)
+		if processSetSkipImages {
+			imagesDir = ""
+		}
+
+		processSet(file, setFile, imagesDir, processSetRefresh)
 	},
+}
+
+// resolveProcessSetPaths applies --name's shorthand, or passes file/setFile/
+// imagesDir through unchanged if --name is empty. Refuses (rather than
+// silently picking one) if --name is combined with any of the three
+// explicit flags, since it's not obvious which should win.
+func resolveProcessSetPaths(name, file, setFile, imagesDir string) (string, string, string) {
+	if name == "" {
+		return file, setFile, imagesDir
+	}
+	if file != "" || setFile != "" || imagesDir != "" {
+		log.Fatal().Msg("--name can't be combined with --file/--set-file/--images-dir - pick one or the other")
+	}
+
+	base := filepath.Join("sets", name)
+	return filepath.Join(base, "catalog.csv"), filepath.Join(base, "set.json"), filepath.Join(base, "images")
 }
 
 // setMetadata is the shape expected in --set-file. release_date is a plain
