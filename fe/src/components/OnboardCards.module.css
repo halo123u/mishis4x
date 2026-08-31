@@ -13,7 +13,7 @@
   flex-wrap: wrap;
   gap: var(--space-3);
   width: 100%;
-  max-width: 46rem;
+  max-width: 56rem;
 }
 
 .searchInput {
@@ -31,51 +31,60 @@
   padding: var(--space-3);
 }
 
-.tableWrap {
+.gridWrap {
   width: 100%;
-  max-width: 46rem;
-  overflow-x: auto;
+  max-width: 56rem;
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--space-4);
 }
 
-.table th {
-  text-align: left;
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ash);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--hairline);
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
 }
 
-.table td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--hairline);
-}
-
-.code {
-  font-family: var(--font-mono);
+.tileName {
   font-size: var(--text-sm);
+  font-weight: 600;
+  margin-top: var(--space-2);
+}
+
+.tileCode {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
   color: var(--ash);
+}
+
+.rarityChip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ash);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  padding: 0.1rem var(--space-2);
   white-space: nowrap;
+  margin-top: var(--space-1);
 }
 
-.thumbnailCol {
-  width: 3.75rem;
-}
-
-.quantityCol {
-  width: 5rem;
-  text-align: center;
-}
-
-.priceCol {
-  width: 7rem;
-  text-align: center;
+.tileControls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .priceInputWrap {
@@ -90,7 +99,7 @@
 }
 
 .priceInput {
-  width: 5rem;
+  width: 4.5rem;
   text-align: right;
 }
 

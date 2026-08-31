@@ -290,65 +290,46 @@ const OnboardCards = () => {
       )}
 
       {cards && cards.length > 0 && visibleCards.length > 0 && (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th className={styles.thumbnailCol}></th>
-                <th>Code</th>
-                <th>Name</th>
-                <th>Rarity</th>
-                <th className={styles.quantityCol}>Qty</th>
-                <th className={styles.priceCol}>Price paid</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleCards.map((card) => {
-                const quantity = quantities[card.id] ?? 0;
-                return (
-                  <tr key={card.id}>
-                    <td className={styles.thumbnailCol}>
-                      <CardThumbnail cardId={card.id} />
-                    </td>
-                    <td className={styles.code}>{card.code}</td>
-                    <td>{card.name}</td>
-                    <td>{card.rarity}</td>
-                    <td className={styles.quantityCol}>
-                      <QuantityStepper
-                        value={quantity}
-                        onChange={(next) => setQuantityDirect(card.id, next)}
-                        ariaLabel={`quantity of ${card.name}`}
-                        disabled={submitting}
-                      />
-                    </td>
-                    <td className={styles.priceCol}>
-                      <span className={styles.priceInputWrap}>
-                        <span
-                          className={styles.priceCurrency}
-                          aria-hidden="true"
-                        >
-                          $
-                        </span>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          placeholder="0"
-                          aria-label={`Price paid for ${card.name}`}
-                          className={styles.priceInput}
-                          value={prices[card.id] ?? ''}
-                          onChange={(event) =>
-                            setPrice(card.id, event.target.value)
-                          }
-                          disabled={quantity === 0 || submitting}
-                        />
+        <div className={styles.gridWrap}>
+          <div className={styles.grid}>
+            {visibleCards.map((card) => {
+              const quantity = quantities[card.id] ?? 0;
+              return (
+                <div key={card.id} className={styles.tile}>
+                  <CardThumbnail cardId={card.id} />
+                  <div className={styles.tileName}>{card.name}</div>
+                  <div className={styles.tileCode}>{card.code}</div>
+                  <span className={styles.rarityChip}>{card.rarity}</span>
+                  <div className={styles.tileControls}>
+                    <QuantityStepper
+                      value={quantity}
+                      onChange={(next) => setQuantityDirect(card.id, next)}
+                      ariaLabel={`quantity of ${card.name}`}
+                      disabled={submitting}
+                    />
+                    <span className={styles.priceInputWrap}>
+                      <span className={styles.priceCurrency} aria-hidden="true">
+                        $
                       </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        placeholder="0"
+                        aria-label={`Price paid for ${card.name}`}
+                        className={styles.priceInput}
+                        value={prices[card.id] ?? ''}
+                        onChange={(event) =>
+                          setPrice(card.id, event.target.value)
+                        }
+                        disabled={quantity === 0 || submitting}
+                      />
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
