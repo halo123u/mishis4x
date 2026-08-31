@@ -87,6 +87,17 @@
   margin-top: var(--space-2);
 }
 
+.ebayLink {
+  font-size: var(--text-xs);
+  color: var(--teal);
+  text-decoration: none;
+  margin-top: var(--space-2);
+}
+
+.ebayLink:hover {
+  text-decoration: underline;
+}
+
 /* One unified pill (same technique as QuantityStepper's .stepper) rather
    than a floating "$" beside a separately-bordered input - the currency
    sign reads as part of the control, not a label next to it. */

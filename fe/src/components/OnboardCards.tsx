@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Card, OwnedCardInput } from '../types';
+import type { Card, OwnedCardInput, Set as SetT } from '../types';
 import Button from './ui/Button';
 import CardThumbnail from './ui/CardThumbnail';
 import QuantityStepper from './ui/QuantityStepper';
+import { ebaySearchUrl } from '../ebay';
 import styles from './OnboardCards.module.css';
 
 // The "which cards do you own" step - reused for two entry points, told
@@ -18,6 +19,10 @@ const OnboardCards = () => {
   const { setID } = useParams<{ setID: string }>();
   const location = useLocation();
   const [cards, setCards] = useState<Card[] | null>(null);
+  // Only needed for the eBay quick-link's search query - see SetDetail's
+  // same field for why this is its own fetch rather than a single-set
+  // lookup endpoint.
+  const [setName, setSetName] = useState<string | null>(null);
   // card_id -> quantity is the *only* ownership state now - there's no
   // separate checkbox to keep in sync with it. A card's presence in this
   // map (not its value) is what decides whether it gets submitted at all:
@@ -63,8 +68,9 @@ const OnboardCards = () => {
     Promise.all([
       fetch(`/api/sets/${setID}/cards`),
       fetch(`/api/owned-sets/${setID}/cards`),
+      fetch('/api/sets'),
     ])
-      .then(async ([cardsRes, ownedRes]) => {
+      .then(async ([cardsRes, ownedRes, allSetsRes]) => {
         if (cardsRes.status === 404) {
           setError('This set could not be found.');
           return;
@@ -91,6 +97,14 @@ const OnboardCards = () => {
         setPrices(initialPrices);
 
         setCards(await cardsRes.json());
+
+        // Not fatal if this one fails - the eBay link just falls back to
+        // omitting the set name from its query rather than blocking the
+        // whole page over a non-essential extra.
+        if (allSetsRes.status === 200) {
+          const allSets: SetT[] = await allSetsRes.json();
+          setSetName(allSets.find((s) => s.id === setID)?.name ?? null);
+        }
       })
       .catch(() => {
         setError('Could not reach the server. Please try again.');
@@ -344,6 +358,14 @@ const OnboardCards = () => {
                       />
                     </span>
                   </div>
+                  <a
+                    href={ebaySearchUrl(setName, card.code)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.ebayLink}
+                  >
+                    Search eBay ↗
+                  </a>
                 </div>
               );
             })}

@@ -141,6 +141,20 @@
   margin-top: var(--space-1);
 }
 
+/* Not included in .tileMissing's dim rule below - a missing card's eBay
+   link is arguably the most relevant action on that tile (go find it),
+   so it stays fully readable regardless of ownership. */
+.ebayLink {
+  font-size: var(--text-xs);
+  color: var(--teal);
+  text-decoration: none;
+  margin-top: var(--space-1);
+}
+
+.ebayLink:hover {
+  text-decoration: underline;
+}
+
 /* Scoped to just the text elements, not the whole .tile - CardThumbnail's
    preview is a DOM sibling of its own thumbnail wrapper (both live inside
    .tile), and opacity on an ancestor composites its entire subtree as one
