@@ -12,11 +12,12 @@ type QuantityStepperProps = {
   disabled?: boolean;
 };
 
-// A compact "how many" control: the number and both arrows read as one
-// input-shaped unit, not three separate elements with gaps between them -
-// arrows stack vertically (▲ over ▼) rather than flanking the number
-// left/right, which is what actually saves the horizontal space a
-// side-by-side -/+ pair costs in a table cell.
+// A compact "how many" control: the number and both buttons read as one
+// input-shaped unit, not three separate elements with gaps between them.
+// Flanking −/+ buttons (not stacked ▲▼ arrows, an earlier design tuned for
+// a cramped table cell) - both screens now share the wider binder-grid
+// tile layout, so there's room for real tap targets instead of a pair of
+// ~20x16px arrows that were hard to hit precisely on mobile.
 const QuantityStepper: FC<QuantityStepperProps> = ({
   value,
   onChange,
@@ -28,6 +29,15 @@ const QuantityStepper: FC<QuantityStepperProps> = ({
 
   return (
     <span className={styles.stepper}>
+      <button
+        type="button"
+        className={styles.side}
+        aria-label={`Decrease ${ariaLabel}`}
+        onClick={() => onChange(Math.max(min, value - 1))}
+        disabled={!canDecrease}
+      >
+        −
+      </button>
       <input
         type="number"
         min={min}
@@ -39,26 +49,15 @@ const QuantityStepper: FC<QuantityStepperProps> = ({
         }
         disabled={disabled}
       />
-      <span className={styles.arrows}>
-        <button
-          type="button"
-          className={styles.arrow}
-          aria-label={`Increase ${ariaLabel}`}
-          onClick={() => onChange(value + 1)}
-          disabled={disabled}
-        >
-          ▲
-        </button>
-        <button
-          type="button"
-          className={styles.arrow}
-          aria-label={`Decrease ${ariaLabel}`}
-          onClick={() => onChange(Math.max(min, value - 1))}
-          disabled={!canDecrease}
-        >
-          ▼
-        </button>
-      </span>
+      <button
+        type="button"
+        className={styles.side}
+        aria-label={`Increase ${ariaLabel}`}
+        onClick={() => onChange(value + 1)}
+        disabled={disabled}
+      >
+        +
+      </button>
     </span>
   );
 };
