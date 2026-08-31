@@ -15,9 +15,9 @@ import (
 
 // createAndLoginTestUser creates a user and logs the client in through the
 // real login endpoint (not a direct DB insert of a session) so these tests
-// exercise AuthMiddleware/ownerOnlyMiddleware exactly as a real request
-// would. Returns the created user's ID, since ownerOnlyMiddleware tests
-// need to know it before deciding who the server's owner is.
+// exercise AuthMiddleware exactly as a real request would. Returns the
+// created user's ID for tests that need it (e.g. cleaning up owned_cards
+// rows, or asserting ownership was recorded against the right user).
 func createAndLoginTestUser(t *testing.T, db *sql.DB, client *http.Client, baseURL string) int {
 	t.Helper()
 
@@ -35,27 +35,15 @@ func createAndLoginTestUser(t *testing.T, db *sql.DB, client *http.Client, baseU
 
 func TestListSets(t *testing.T) {
 	db := testDB(t)
-	// newTestServer (not WithOwner) here deliberately - see
-	// TestListSets_NotTheOwner for the case this test is contrasted against.
-	// We need the user's ID before building the server, so this test builds
-	// its own server after creating the user rather than using the shared
-	// newTestServer/createAndLoginTestUser pair.
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
 
-	res, err = client.Get(ts.URL + "/api/sets")
+	res, err := client.Get(ts.URL + "/api/sets")
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -84,63 +72,10 @@ func TestListSets_Unauthenticated(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
 
-func TestListSets_NotTheOwner(t *testing.T) {
-	db := testDB(t)
-
-	// Server's owner is some other, unrelated user ID - never a real row,
-	// which is exactly the point: an ordinary logged-in user must not pass
-	// just by virtue of being authenticated. This is the default
-	// (CollectionAllowAllUsers unset/false) - see TestListSets_AllowAllUsers
-	// for the explicit opt-out.
-	ts, client := newTestServerWithOwner(t, db, -1)
-	createAndLoginTestUser(t, db, client, ts.URL)
-
-	res, err := client.Get(ts.URL + "/api/sets")
-	require.NoError(t, err)
-	defer func() { _ = res.Body.Close() }()
-	require.Equal(t, http.StatusForbidden, res.StatusCode, "logged in but not the configured owner must be 403 by default, not 200")
-}
-
-func TestListSets_OwnerUnset(t *testing.T) {
-	db := testDB(t)
-
-	// CollectionOwnerUserID unset (0) must fail closed by default - nobody
-	// passes, including a real, valid, logged-in user - not fail open.
-	ts, client := newTestServer(t, db)
-	createAndLoginTestUser(t, db, client, ts.URL)
-
-	res, err := client.Get(ts.URL + "/api/sets")
-	require.NoError(t, err)
-	defer func() { _ = res.Body.Close() }()
-	require.Equal(t, http.StatusForbidden, res.StatusCode)
-}
-
-func TestListSets_AllowAllUsers(t *testing.T) {
-	db := testDB(t)
-
-	// CollectionAllowAllUsers is the explicit opt-out (see its doc comment)
-	// - with it set, an ordinary logged-in user who isn't the configured
-	// owner (there isn't one here at all) must pass, not be blocked.
-	ts, client := newTestServerAllowAllUsers(t, db)
-	createAndLoginTestUser(t, db, client, ts.URL)
-
-	res, err := client.Get(ts.URL + "/api/sets")
-	require.NoError(t, err)
-	defer func() { _ = res.Body.Close() }()
-	require.Equal(t, http.StatusOK, res.StatusCode, "CollectionAllowAllUsers must let any authenticated user through")
-}
-
 func TestListCardsForSet(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
@@ -156,7 +91,7 @@ func TestListCardsForSet(t *testing.T) {
 	_, err = p.CreateCard(t.Context(), setID, "Pool Party Angelica", "BRD/W139-003S", "SR 2-star")
 	require.NoError(t, err)
 
-	res, err = client.Get(ts.URL + "/api/sets/" + setID + "/cards")
+	res, err := client.Get(ts.URL + "/api/sets/" + setID + "/cards")
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -171,28 +106,10 @@ func TestListCardsForSet(t *testing.T) {
 	require.Equal(t, "BRD/W139-001S", cards[1].Code)
 }
 
-func TestListCardsForSet_NotTheOwner(t *testing.T) {
-	db := testDB(t)
-	ts, client := newTestServerWithOwner(t, db, -1)
-	createAndLoginTestUser(t, db, client, ts.URL)
-
-	res, err := client.Get(ts.URL + "/api/sets/anything/cards")
-	require.NoError(t, err)
-	defer func() { _ = res.Body.Close() }()
-	require.Equal(t, http.StatusForbidden, res.StatusCode, "must be blocked before even reaching the set-lookup logic")
-}
-
 func TestListCardsForSet_NotFound(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
 
 	res, err := client.Get(ts.URL + "/api/sets/does-not-exist/cards")
 	require.NoError(t, err)
@@ -202,15 +119,8 @@ func TestListCardsForSet_NotFound(t *testing.T) {
 
 func TestGetCardImage_ReturnsStoredImage(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
@@ -224,7 +134,7 @@ func TestGetCardImage_ReturnsStoredImage(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, p.UpsertCardImage(t.Context(), cardID, []byte("test image bytes"), "image/jpeg"))
 
-	res, err = client.Get(ts.URL + "/api/cards/" + cardID + "/image")
+	res, err := client.Get(ts.URL + "/api/cards/" + cardID + "/image")
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -236,15 +146,8 @@ func TestGetCardImage_ReturnsStoredImage(t *testing.T) {
 
 func TestGetCardImage_NoneStoredIsNotFound(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
@@ -257,7 +160,7 @@ func TestGetCardImage_NoneStoredIsNotFound(t *testing.T) {
 	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
 	require.NoError(t, err)
 
-	res, err = client.Get(ts.URL + "/api/cards/" + cardID + "/image")
+	res, err := client.Get(ts.URL + "/api/cards/" + cardID + "/image")
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusNotFound, res.StatusCode)
@@ -273,35 +176,17 @@ func TestGetCardImage_Unauthenticated(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
 
-func TestGetCardImage_NotTheOwner(t *testing.T) {
-	db := testDB(t)
-	ts, client := newTestServerWithOwner(t, db, -1)
-	createAndLoginTestUser(t, db, client, ts.URL)
-
-	res, err := client.Get(ts.URL + "/api/cards/anything/image")
-	require.NoError(t, err)
-	defer func() { _ = res.Body.Close() }()
-	require.Equal(t, http.StatusForbidden, res.StatusCode)
-}
-
 func TestListCardsForSet_EmptySet(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Empty Set", 0, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
 
-	res, err = client.Get(ts.URL + "/api/sets/" + setID + "/cards")
+	res, err := client.Get(ts.URL + "/api/sets/" + setID + "/cards")
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusOK, res.StatusCode, "a real set with no cards yet is not a 404")
@@ -313,15 +198,8 @@ func TestListCardsForSet_EmptySet(t *testing.T) {
 
 func TestListOwnedSets_StartsEmpty(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
 
 	// A set existing in the catalog isn't enough - a fresh user's dashboard
 	// starts empty until they onboard something, even though ListSets
@@ -331,7 +209,7 @@ func TestListOwnedSets_StartsEmpty(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
 
-	res, err = client.Get(ts.URL + "/api/owned-sets")
+	res, err := client.Get(ts.URL + "/api/owned-sets")
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -353,15 +231,8 @@ func TestListOwnedSets_Unauthenticated(t *testing.T) {
 
 func TestAddOwnedSet_ThenListedAsOwned(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
@@ -371,7 +242,7 @@ func TestAddOwnedSet_ThenListedAsOwned(t *testing.T) {
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
 
-	res = postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": setID})
+	res := postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": setID})
 	require.Equal(t, http.StatusNoContent, res.StatusCode)
 
 	// Onboarding the same set twice must not error or duplicate it.
@@ -391,27 +262,11 @@ func TestAddOwnedSet_ThenListedAsOwned(t *testing.T) {
 
 func TestAddOwnedSet_UnknownSetIsNotFound(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
-
-	res = postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": "does-not-exist"})
-	require.Equal(t, http.StatusNotFound, res.StatusCode, "must not silently onboard a garbage set_id")
-}
-
-func TestAddOwnedSet_NotTheOwner(t *testing.T) {
-	db := testDB(t)
-	ts, client := newTestServerWithOwner(t, db, -1)
+	ts, client := newTestServer(t, db)
 	createAndLoginTestUser(t, db, client, ts.URL)
 
-	res := postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": "anything"})
-	require.Equal(t, http.StatusForbidden, res.StatusCode, "must be blocked before even reaching the set-lookup logic")
+	res := postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": "does-not-exist"})
+	require.Equal(t, http.StatusNotFound, res.StatusCode, "must not silently onboard a garbage set_id")
 }
 
 // postSetOwnedCards POSTs input to /api/owned-sets/{setID}/cards. Not built
@@ -432,15 +287,8 @@ func postSetOwnedCards(t *testing.T, client *http.Client, baseURL, setID string,
 
 func TestDeleteOwnedSet_RemovesSetAndCards(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
@@ -455,7 +303,7 @@ func TestDeleteOwnedSet_RemovesSetAndCards(t *testing.T) {
 	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
 	require.NoError(t, err)
 
-	res = postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": setID})
+	res := postJSON(t, client, ts.URL+"/api/owned-sets", map[string]string{"set_id": setID})
 	require.Equal(t, http.StatusNoContent, res.StatusCode)
 	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []persist.CardQuantity{{CardID: cardID, Quantity: 1}}))
 
@@ -490,30 +338,10 @@ func TestDeleteOwnedSet_Unauthenticated(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
 
-func TestDeleteOwnedSet_NotTheOwner(t *testing.T) {
-	db := testDB(t)
-	ts, client := newTestServerWithOwner(t, db, -1)
-	createAndLoginTestUser(t, db, client, ts.URL)
-
-	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/api/owned-sets/anything", nil)
-	require.NoError(t, err)
-	res, err := client.Do(req)
-	require.NoError(t, err)
-	defer func() { _ = res.Body.Close() }()
-	require.Equal(t, http.StatusForbidden, res.StatusCode)
-}
-
 func TestListOwnedCardsForSet(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
@@ -528,7 +356,7 @@ func TestListOwnedCardsForSet(t *testing.T) {
 	require.NoError(t, err)
 
 	// Nothing owned yet - must be an empty list, not an error.
-	res, err = client.Get(ts.URL + "/api/owned-sets/" + setID + "/cards")
+	res, err := client.Get(ts.URL + "/api/owned-sets/" + setID + "/cards")
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -556,28 +384,10 @@ func TestListOwnedCardsForSet_Unauthenticated(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
 
-func TestListOwnedCardsForSet_NotTheOwner(t *testing.T) {
-	db := testDB(t)
-	ts, client := newTestServerWithOwner(t, db, -1)
-	createAndLoginTestUser(t, db, client, ts.URL)
-
-	res, err := client.Get(ts.URL + "/api/owned-sets/anything/cards")
-	require.NoError(t, err)
-	defer func() { _ = res.Body.Close() }()
-	require.Equal(t, http.StatusForbidden, res.StatusCode)
-}
-
 func TestSetOwnedCardsForSet_RecordsOwnership(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
@@ -593,7 +403,7 @@ func TestSetOwnedCardsForSet_RecordsOwnership(t *testing.T) {
 	cardTwo, err := p.CreateCard(t.Context(), setID, "Michaela", "BRD/W139-009S", "SR 1-star")
 	require.NoError(t, err)
 
-	res = postSetOwnedCards(t, client, ts.URL, setID, api.SetOwnedCardsInput{
+	res := postSetOwnedCards(t, client, ts.URL, setID, api.SetOwnedCardsInput{
 		Cards: []api.OwnedCardInput{
 			{CardID: cardOne, Quantity: 2},
 			{CardID: cardTwo, Quantity: 1},
@@ -611,15 +421,8 @@ func TestSetOwnedCardsForSet_RecordsOwnership(t *testing.T) {
 
 func TestSetOwnedCardsForSet_RecordsPricePaid(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
@@ -634,7 +437,7 @@ func TestSetOwnedCardsForSet_RecordsPricePaid(t *testing.T) {
 	require.NoError(t, err)
 
 	priceCents := 1633
-	res = postSetOwnedCards(t, client, ts.URL, setID, api.SetOwnedCardsInput{
+	res := postSetOwnedCards(t, client, ts.URL, setID, api.SetOwnedCardsInput{
 		Cards: []api.OwnedCardInput{
 			{CardID: cardID, Quantity: 1, PricePaidCents: &priceCents},
 		},
@@ -652,15 +455,8 @@ func TestSetOwnedCardsForSet_RecordsPricePaid(t *testing.T) {
 
 func TestSetOwnedCardsForSet_UnknownCardIsRejected(t *testing.T) {
 	db := testDB(t)
-	username := testUsername(t, db)
-	userID := createTestUser(t, db, username, "correctpass123")
-
-	ts, client := newTestServerWithOwner(t, db, userID)
-	res := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
-		"username": username,
-		"password": "correctpass123",
-	})
-	require.Equal(t, http.StatusOK, res.StatusCode)
+	ts, client := newTestServer(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
@@ -670,7 +466,7 @@ func TestSetOwnedCardsForSet_UnknownCardIsRejected(t *testing.T) {
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
 
-	res = postSetOwnedCards(t, client, ts.URL, setID, api.SetOwnedCardsInput{
+	res := postSetOwnedCards(t, client, ts.URL, setID, api.SetOwnedCardsInput{
 		Cards: []api.OwnedCardInput{{CardID: "does-not-exist", Quantity: 1}},
 	})
 	require.Equal(t, http.StatusBadRequest, res.StatusCode, "must not silently attribute ownership of a card that isn't in this set")
@@ -682,13 +478,4 @@ func TestSetOwnedCardsForSet_Unauthenticated(t *testing.T) {
 
 	res := postSetOwnedCards(t, client, ts.URL, "anything", api.SetOwnedCardsInput{})
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
-}
-
-func TestSetOwnedCardsForSet_NotTheOwner(t *testing.T) {
-	db := testDB(t)
-	ts, client := newTestServerWithOwner(t, db, -1)
-	createAndLoginTestUser(t, db, client, ts.URL)
-
-	res := postSetOwnedCards(t, client, ts.URL, "anything", api.SetOwnedCardsInput{})
-	require.Equal(t, http.StatusForbidden, res.StatusCode, "must be blocked before even reaching the card-validation logic")
 }

@@ -36,7 +36,6 @@ func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 			Username: user.Username,
 			Status:   user.Status,
 		},
-		CollectionAccess: d.canAccessCollection(userID),
 	}
 
 	jsonData, err := json.Marshal(resp)

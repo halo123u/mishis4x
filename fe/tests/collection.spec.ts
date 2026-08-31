@@ -62,9 +62,7 @@ test("card manager: widget -> dashboard -> set detail -> back", async ({
   // exact: true - the real catalog also has "BRD/W139-001SSP", and a plain
   // substring match on "BRD/W139-001S" now hits both, which Playwright
   // (rightly) refuses to resolve to a single element.
-  await expect(
-    page.getByText("BRD/W139-001S", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("BRD/W139-001S", { exact: true })).toBeVisible();
   await expect(page.getByText("Poolside Fairy Refithea")).toBeVisible();
 
   await page.getByText("Back to sets").click();
@@ -80,15 +78,16 @@ test("card manager: unknown set shows a not-found message, not a crash", async (
   await expect(page.getByText("This set could not be found.")).toBeVisible();
 });
 
-test("card manager: a real but non-owner account is blocked, not shown the data", async ({
+test("card manager: a real non-owner account can access it too", async ({
   page,
 }) => {
-  // The seeded "test" user (id 1) is the configured COLLECTION_OWNER_USER_ID
-  // for this stack (see compose.yaml) - any other real, fully-authenticated
-  // account must still be denied by default (COLLECTION_ALLOW_ALL_USERS
-  // isn't set for this stack). This is the actual security property
-  // ownerOnlyMiddleware exists for (see handlers.Data.CollectionOwnerUserID)
-  // - "logged in" alone must not be enough.
+  // The collection tracker isn't eBay-sourced data (catalog/images come
+  // from TCG Republic, ownership/price-paid is the user's own), so it's
+  // open to any authenticated user - not just the seeded "test" user (id
+  // 1), which used to be the configured COLLECTION_OWNER_USER_ID for this
+  // stack. See handlers.Data.CollectionOwnerUserID's doc comment: that
+  // restriction is kept around for a future market-rate feature instead of
+  // gating the whole tracker.
   await page.goto("http://localhost:8091/login");
   await page.click('a[href="/sign-up"]');
   await page.fill('input[name="username"]', nanoid());
@@ -97,10 +96,17 @@ test("card manager: a real but non-owner account is blocked, not shown the data"
   await page.waitForURL("http://localhost:8091/");
 
   await page.goto("http://localhost:8091/collection");
+  // A brand new account starts with nothing onboarded - "Add a set" (not
+  // an error) is the correct empty state, same as any account would see.
   await expect(
     page.getByText("Could not load sets. Please try again."),
-  ).toBeVisible();
-  await expect(page.getByText("Brown Dust 2")).not.toBeVisible();
+  ).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Add a set" })).toBeVisible();
+
+  // Confirms GET /api/sets itself succeeds for this account too, not just
+  // /api/owned-sets - the catalog picker is where that would show up.
+  await page.getByRole("button", { name: "Add a set" }).click();
+  await expect(page.getByText("Brown Dust 2")).toBeVisible();
 });
 
 const login = async (page: Page, username: string, password: string) => {

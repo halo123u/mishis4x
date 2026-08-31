@@ -81,25 +81,20 @@ type Data struct {
 	// real login for that account, and vice versa.
 	LoginLimiter  *attemptLimiter
 	SignupLimiter *attemptLimiter
-	// CollectionOwnerUserID gates every collection-tracker route (see
-	// ownerOnlyMiddleware) to exactly this one user ID, unless
-	// CollectionAllowAllUsers overrides it. This isn't a general admin/role
-	// system - it exists because eBay's API License Agreement requires
-	// eBay's express prior written consent for any "Public Display" of data
-	// from their APIs, and this app has open signup. 0 means unset, which
-	// fails closed (nobody, including this account, passes) rather than
-	// failing open.
+	// CollectionOwnerUserID and CollectionAllowAllUsers back
+	// canAccessCollection/ownerOnlyMiddleware (see their doc comments) -
+	// not currently wired into any route. They gated the whole collection
+	// tracker to one account, because eBay's API License Agreement
+	// requires eBay's express prior written consent for any "Public
+	// Display" of data from their APIs, and this app has open signup. That
+	// restriction never actually applied to the tracker itself though -
+	// the catalog/images are TCG Republic-sourced and ownership/price-paid
+	// is the user's own data, not eBay's. Kept in place (not deleted) for
+	// the planned per-user market-rate/price-sync feature, which *will*
+	// touch real eBay data and will need exactly this kind of gate -
+	// reused there instead of guarding the general tracker.
 	CollectionOwnerUserID int
-	// CollectionAllowAllUsers, when true, makes ownerOnlyMiddleware pass any
-	// authenticated user regardless of CollectionOwnerUserID - an explicit
-	// opt-out (COLLECTION_ALLOW_ALL_USERS env var, see loadCollectionAllowAllUsers
-	// in cmd/http.go), not the default. Exists because nothing served through
-	// these routes is eBay-sourced data yet (issue #74, eBay API
-	// registration, is still unstarted) - a personal, manually-transcribed
-	// CSV catalog doesn't need the eBay ToS restriction enforced while it's
-	// the only thing these routes serve. Defaults to false (strict) so any
-	// environment that doesn't explicitly set the var keeps the original
-	// fail-closed behavior.
+	// See CollectionOwnerUserID above.
 	CollectionAllowAllUsers bool
 }
 
@@ -143,27 +138,27 @@ func (d *Data) NewRouter() *mux.Router {
 	api.HandleFunc("/lobbies", d.ListLobbies)
 	api.HandleFunc("/lobbies/create", d.CreateLobby)
 
-	// Collection-tracker routes: authenticated (via the api subrouter's
-	// AuthMiddleware) is not enough on its own here - see
-	// CollectionOwnerUserID's doc comment for why every one of these also
-	// needs ownerOnlyMiddleware.
+	// Collection-tracker routes: open to any authenticated user (via the
+	// api subrouter's AuthMiddleware alone) - not gated by
+	// ownerOnlyMiddleware. That gate existed for the eBay ToS reason
+	// documented on CollectionOwnerUserID, but nothing served through
+	// these routes is eBay-sourced (catalog/images come from TCG Republic,
+	// ownership/price-paid is the user's own self-reported data), so there
+	// was never actually a reason to restrict this to one account.
+	// ownerOnlyMiddleware/canAccessCollection are deliberately left intact
+	// and unused here rather than deleted - the plan is to reuse them
+	// as-is for the future per-user market-rate/price-sync feature (eBay
+	// data proper), gating that specifically instead of the whole tracker.
 	collection := api.PathPrefix("/sets").Subrouter()
-	collection.Use(d.ownerOnlyMiddleware)
 	collection.HandleFunc("", d.ListSets).Methods("GET")
 	collection.HandleFunc("/{setID}/cards", d.ListCardsForSet).Methods("GET")
 
-	// Card images are gated the same as the rest of the catalog/ownership
-	// data under /sets and /owned-sets, not because the images themselves
-	// are eBay-sourced (they're not, currently), but for consistency - the
-	// card metadata they're attached to is already restricted, and there's
-	// no reason for the one endpoint that returns a picture of the same
-	// card to be the unguarded exception.
+	// Card images: same reasoning as above - not eBay-sourced, open to any
+	// authenticated user.
 	cardImages := api.PathPrefix("/cards").Subrouter()
-	cardImages.Use(d.ownerOnlyMiddleware)
 	cardImages.HandleFunc("/{cardID}/image", d.GetCardImage).Methods("GET")
 
 	ownedSets := api.PathPrefix("/owned-sets").Subrouter()
-	ownedSets.Use(d.ownerOnlyMiddleware)
 	ownedSets.HandleFunc("", d.ListOwnedSets).Methods("GET")
 	ownedSets.HandleFunc("", d.AddOwnedSet).Methods("POST")
 	ownedSets.HandleFunc("/{setID}", d.DeleteOwnedSet).Methods("DELETE")
@@ -346,13 +341,12 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// canAccessCollection is the actual rule ownerOnlyMiddleware enforces,
-// pulled out so GetGlobalData can expose the same answer to the frontend
-// (see api.GlobalData.CollectionAccess) - the frontend hides the Card
-// Manager widget entirely for a user this returns false for, rather than
-// showing it and letting them click through to a 403. Single source of
-// truth: this function is the only place either has to reason about
-// CollectionOwnerUserID/CollectionAllowAllUsers's interaction.
+// canAccessCollection is the rule ownerOnlyMiddleware enforces: does userID
+// match CollectionOwnerUserID, or is CollectionAllowAllUsers set. Not
+// currently called by any route - see CollectionOwnerUserID's doc comment
+// for why this is kept rather than deleted (the planned market-rate
+// feature will reuse it, gating that specifically instead of the whole
+// collection tracker).
 func (d Data) canAccessCollection(userID int) bool {
 	return d.CollectionAllowAllUsers || (d.CollectionOwnerUserID != 0 && userID == d.CollectionOwnerUserID)
 }
@@ -360,7 +354,8 @@ func (d Data) canAccessCollection(userID int) bool {
 // ownerOnlyMiddleware restricts a route to whoever canAccessCollection
 // allows. Must run after AuthMiddleware (relies on userIDFromContext
 // already being set) - 401 still means "not logged in at all", this
-// returns 403 for "logged in, but not allowed to see this".
+// returns 403 for "logged in, but not allowed to see this". Not currently
+// attached to any route - see canAccessCollection.
 func (d Data) ownerOnlyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := userIDFromContext(r)
