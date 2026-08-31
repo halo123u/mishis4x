@@ -7,6 +7,18 @@ const PREVIEW_WIDTH = 260;
 const PREVIEW_HEIGHT = (PREVIEW_WIDTH * 88) / 63;
 const GAP = 12;
 
+// Touch devices have no real hover state - mouseenter/mouseleave either
+// never fire, or fire in a way that can leave the floating preview stuck
+// open with no cursor that was ever really "there" to move away and
+// trigger mouseleave. (hover: hover) is the standard way to ask "does this
+// input mechanism support hovering at all" rather than guessing from
+// viewport width, which conflates screen size with input type (a touch
+// laptop at desktop width still has no real hover). Computed once at
+// module load - input capability doesn't change mid-session.
+const supportsHover =
+  typeof window !== 'undefined' &&
+  window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
 type CardThumbnailProps = {
   cardId: string;
   // Renders a solid gray layer over just the small thumbnail - e.g. for a
@@ -19,15 +31,19 @@ type CardThumbnailProps = {
   dimmed?: boolean;
 };
 
-// A small card-shaped thumbnail that floats a larger version of the same
-// image next to the cursor on hover - shared by every card list/table so
-// the hover behavior (and its positioning math) exists in exactly one
-// place, not copied into each screen that shows card art.
+// A small card-shaped thumbnail that shows a larger version of the same
+// image on interaction - shared by every card list/table so the
+// interaction (and its positioning math) exists in exactly one place, not
+// copied into each screen that shows card art. Hovering floats a preview
+// next to the cursor on devices with real hover; tapping opens a
+// full-screen preview instead on touch devices, where there's no cursor
+// position to float a small box near anyway.
 const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
   const [preview, setPreview] = useState<{
     top: number;
     left: number;
   } | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
   // No image uploaded for this card yet is an ordinary, expected state
   // (coverage fills in incrementally via process-set --images-dir), not an
   // error to alarm over - imageFailed swaps the <img> for a real "coming
@@ -84,16 +100,19 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
             // browser's native lazy-loading defers each image's actual
             // network request until it's near the viewport, instead of
             // firing off every row's fetch on initial page load. Not
-            // applied to .previewImage below - that one only ever renders
-            // on hover, so it's already as lazy as it can get.
+            // applied to .previewImage/.fullscreenImage below - those only
+            // ever render on interaction, so they're already as lazy as it
+            // gets.
             loading="lazy"
             onError={() => setImageFailed(true)}
-            onMouseEnter={showPreview}
-            onMouseLeave={hidePreview}
+            onMouseEnter={supportsHover ? showPreview : undefined}
+            onMouseLeave={supportsHover ? hidePreview : undefined}
+            onClick={supportsHover ? undefined : () => setFullscreen(true)}
           />
         )}
         {dimmed && <span className={styles.dimOverlay} aria-hidden="true" />}
       </span>
+
       {preview && !imageFailed && (
         <div
           className={styles.preview}
@@ -107,6 +126,42 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
           {dimmed && (
             <span className={styles.previewDimOverlay} aria-hidden="true" />
           )}
+        </div>
+      )}
+
+      {fullscreen && !imageFailed && (
+        <div
+          className={styles.fullscreenOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Card preview"
+          // Tapping anywhere on the overlay dismisses it, including the
+          // image itself - the whole screen is the dismiss target, the
+          // standard mobile lightbox pattern, rather than requiring a
+          // precise tap on a small close control.
+          onClick={() => setFullscreen(false)}
+        >
+          <button
+            type="button"
+            className={styles.fullscreenClose}
+            aria-label="Close preview"
+            onClick={() => setFullscreen(false)}
+          >
+            ✕
+          </button>
+          <span className={styles.fullscreenImageWrap}>
+            <img
+              src={`/api/cards/${cardId}/image`}
+              alt=""
+              className={styles.fullscreenImage}
+            />
+            {dimmed && (
+              <span
+                className={styles.fullscreenDimOverlay}
+                aria-hidden="true"
+              />
+            )}
+          </span>
         </div>
       )}
     </>
