@@ -16,6 +16,17 @@ type Card struct {
 	Name   string `json:"name"`
 	Code   string `json:"code"`
 	Rarity string `json:"rarity"`
+	// MarketPriceCents is the most recently scraped price for this card
+	// (see card_price_history), in cents like PricePaidCents. Omitted
+	// entirely - not zero - when there's no current price to show, same
+	// nil-means-unknown convention as PricePaidCents.
+	MarketPriceCents *int `json:"market_price_cents,omitempty"`
+	// MarketCheckedAt is when this card's price was last actually checked,
+	// regardless of whether that check found a price - present with
+	// MarketPriceCents absent means "checked, nothing available" (e.g. out
+	// of stock); absent entirely means this card has never been checked at
+	// all (no price source configured, or not synced yet).
+	MarketCheckedAt *time.Time `json:"market_checked_at,omitempty"`
 }
 
 // AddOwnedSetInput is the POST /api/owned-sets request body - onboards

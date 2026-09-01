@@ -156,6 +156,16 @@ func (p *Persist) getSetIDByName(ctx context.Context, name string) (string, erro
 	return id, nil
 }
 
+// GetSetIDByName is the exported counterpart to getSetIDByName, for
+// callers outside this package that need to resolve an existing set by
+// name without creating a placeholder if it's missing (see
+// set-price-sources, cmd/set_price_sources.go) - unlike
+// GetOrCreateSetByName below, which is for the catalog importer's very
+// different assumption that a set might not exist yet.
+func (p *Persist) GetSetIDByName(ctx context.Context, name string) (string, error) {
+	return p.getSetIDByName(ctx, name)
+}
+
 // GetOrCreateSetByName looks up a set by name, creating it (with a
 // placeholder card_count/status) if no row matches yet. Used by the
 // process-set job, where the CSV only knows a set's name, not its ID.
@@ -307,6 +317,27 @@ func (p *Persist) getCardIDByCode(ctx context.Context, setID, code string) (stri
 
 	var id string
 	if err := row.Scan(&id); err != nil {
+		return "", err
+	}
+
+	return id, nil
+}
+
+// ErrCardNotFound is returned by GetCardIDByCode when no card matches -
+// e.g. set-price-sources hitting a code that's no longer (or not yet) in
+// the catalog.
+var ErrCardNotFound = errors.New("card not found")
+
+// GetCardIDByCode is the exported counterpart to getCardIDByCode, for
+// callers outside this package that need to resolve a code to an id
+// without assuming it exists the way UpsertCard's own call-site can (see
+// set-price-sources, cmd/set_price_sources.go).
+func (p *Persist) GetCardIDByCode(ctx context.Context, setID, code string) (string, error) {
+	id, err := p.getCardIDByCode(ctx, setID, code)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrCardNotFound
+		}
 		return "", err
 	}
 

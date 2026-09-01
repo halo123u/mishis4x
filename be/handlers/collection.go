@@ -264,15 +264,29 @@ func (d *Data) ListCardsForSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Not fatal if this fails - market price is a nice-to-have overlay on
+	// top of the catalog, not something the page can't function without;
+	// worth logging but not worth failing the whole card list over.
+	marketPrices, err := d.P.GetLatestMarketPricesForSet(ctx, setID)
+	if err != nil {
+		log.Error().Err(err).Str("setID", setID).Msg("error getting market prices")
+		marketPrices = nil
+	}
+
 	resp := make([]api.Card, 0, len(cards))
 	for _, c := range cards {
-		resp = append(resp, api.Card{
+		card := api.Card{
 			ID:     c.ID,
 			SetID:  c.SetID,
 			Name:   c.Name,
 			Code:   c.Code,
 			Rarity: c.Rarity,
-		})
+		}
+		if mp, ok := marketPrices[c.ID]; ok {
+			card.MarketPriceCents = mp.PriceCents
+			card.MarketCheckedAt = mp.CheckedAt
+		}
+		resp = append(resp, card)
 	}
 
 	writeJSON(w, http.StatusOK, resp)

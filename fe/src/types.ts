@@ -22,6 +22,8 @@ export interface Card {
   name: string;
   code: string;
   rarity: string;
+  market_price_cents?: number;
+  market_checked_at?: Time;
 }
 export interface AddOwnedSetInput {
   set_id: string;

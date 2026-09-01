@@ -7,6 +7,14 @@ import EbayIcon from './ui/EbayIcon';
 import { ebaySearchUrl } from '../ebay';
 import styles from './SetDetail.module.css';
 
+// market_checked_at being set (regardless of market_price_cents) means the
+// sync job has actually looked at this card before and found nothing to
+// report - "Out of Stock" is an honest read of that. Its absence means no
+// price source has ever been checked for this card at all - a different,
+// less specific state worth saying plainly rather than guessing.
+const marketUnavailableLabel = (card: Card): string =>
+  card.market_checked_at != null ? 'Out of Stock' : 'Not tracked yet';
+
 // Thin wrapper so navigating directly between two sets (/collection/A ->
 // /collection/B) fully remounts SetDetailContent via the key change,
 // resetting its state naturally instead of needing to reset it by hand
@@ -325,6 +333,75 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                       </span>
                     )}
                   </div>
+                  {quantity > 0
+                    ? // Owned: paid vs. market, when there's something to
+                      // compare - a card the user hasn't priced yet, or one
+                      // with no current market data, just shows what it does
+                      // have rather than a misleading delta.
+                      (ownedPrices[card.id] != null ||
+                        card.market_price_cents != null) && (
+                        <div className={styles.compareRow}>
+                          {card.market_price_cents != null ? (
+                            <>
+                              <div className={styles.compareLine}>
+                                <span>Market</span>
+                                <span>
+                                  ${(card.market_price_cents / 100).toFixed(2)}
+                                </span>
+                              </div>
+                              {ownedPrices[card.id] != null &&
+                                (() => {
+                                  const deltaCents =
+                                    ownedPrices[card.id] -
+                                    card.market_price_cents!;
+                                  if (deltaCents === 0) {
+                                    return (
+                                      <div
+                                        className={`${styles.delta} ${styles.deltaMuted}`}
+                                      >
+                                        At market price
+                                      </div>
+                                    );
+                                  }
+                                  const under = deltaCents < 0;
+                                  return (
+                                    <div
+                                      className={`${styles.delta} ${under ? styles.deltaGood : styles.deltaBad}`}
+                                    >
+                                      {under ? '▼' : '▲'} $
+                                      {(Math.abs(deltaCents) / 100).toFixed(2)}{' '}
+                                      {under ? 'under' : 'over'} market
+                                    </div>
+                                  );
+                                })()}
+                            </>
+                          ) : (
+                            <div
+                              className={`${styles.delta} ${styles.deltaMuted}`}
+                            >
+                              {marketUnavailableLabel(card)}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    : // Missing: no "paid" to compare against, so just the
+                      // raw market price (or why there isn't one) - nothing
+                      // extra when this card has never been tracked at all,
+                      // "Missing" above already says enough for that case.
+                      (card.market_price_cents != null ||
+                        card.market_checked_at != null) && (
+                        <div
+                          className={
+                            card.market_price_cents != null
+                              ? styles.marketPill
+                              : `${styles.marketPill} ${styles.marketPillMuted}`
+                          }
+                        >
+                          {card.market_price_cents != null
+                            ? `Market $${(card.market_price_cents / 100).toFixed(2)}`
+                            : marketUnavailableLabel(card)}
+                        </div>
+                      )}
                   <a
                     href={ebaySearchUrl(setName, card.code)}
                     target="_blank"
