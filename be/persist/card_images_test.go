@@ -20,7 +20,7 @@ func TestGetCardImage_NoneStoredReturnsNotFound(t *testing.T) {
 	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
 	require.NoError(t, err)
 
-	_, _, err = p.GetCardImage(t.Context(), cardID)
+	_, _, _, err = p.GetCardImage(t.Context(), cardID)
 	require.ErrorIs(t, err, ErrCardImageNotFound, "a card with no image yet must not be an error, but must be distinguishable from a real one")
 }
 
@@ -43,20 +43,28 @@ func TestUpsertCardImage_StoreAndUpdate(t *testing.T) {
 	original := []byte("not a real jpeg, just test bytes")
 	require.NoError(t, p.UpsertCardImage(t.Context(), cardID, original, "image/jpeg"))
 
-	image, contentType, err := p.GetCardImage(t.Context(), cardID)
+	image, contentType, firstUpdatedAt, err := p.GetCardImage(t.Context(), cardID)
 	require.NoError(t, err)
 	require.Equal(t, original, image)
 	require.Equal(t, "image/jpeg", contentType)
+	require.False(t, firstUpdatedAt.IsZero())
 
 	// Re-running (e.g. re-processing the same set with --images-dir)
 	// must replace in place, not error or leave the old bytes.
 	updated := []byte("a different, updated image")
 	require.NoError(t, p.UpsertCardImage(t.Context(), cardID, updated, "image/png"))
 
-	image, contentType, err = p.GetCardImage(t.Context(), cardID)
+	image, contentType, secondUpdatedAt, err := p.GetCardImage(t.Context(), cardID)
 	require.NoError(t, err)
 	require.Equal(t, updated, image)
 	require.Equal(t, "image/png", contentType)
+	// Not a strict "after" check - updated_at has only second granularity,
+	// so two upserts in the same test can legitimately land on the same
+	// timestamp. What matters here is that it's never *older*, which
+	// would mean ON UPDATE CURRENT_TIMESTAMP silently isn't firing - the
+	// exact thing GetCardImage's Last-Modified/conditional-request
+	// support (handlers.Data.GetCardImage) depends on.
+	require.False(t, secondUpdatedAt.Before(firstUpdatedAt))
 }
 
 func TestCardImage_CascadesOnCardDelete(t *testing.T) {
@@ -81,6 +89,6 @@ func TestCardImage_CascadesOnCardDelete(t *testing.T) {
 	// ON DELETE CASCADE, not linger as an orphaned row.
 	require.NoError(t, p.DeleteCardsForSet(t.Context(), setID))
 
-	_, _, err = p.GetCardImage(t.Context(), cardID)
+	_, _, _, err = p.GetCardImage(t.Context(), cardID)
 	require.ErrorIs(t, err, ErrCardImageNotFound, "the image must be gone once its card is, not orphaned")
 }

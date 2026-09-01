@@ -24,6 +24,7 @@ export interface Card {
   rarity: string;
   market_price_cents?: number;
   market_checked_at?: Time;
+  market_url?: string;
 }
 export interface AddOwnedSetInput {
   set_id: string;

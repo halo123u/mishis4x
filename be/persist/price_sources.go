@@ -117,6 +117,13 @@ func (p *Persist) ListPriceSourcesForURL(ctx context.Context, url string) ([]Pri
 type MarketPrice struct {
 	PriceCents *int
 	CheckedAt  *time.Time
+	// URL is card_price_sources' own scrape-source url - the category
+	// listing page a TCG Republic card was found on, not a page dedicated
+	// to that one card (see set-price-sources's doc comment for why). Good
+	// enough for a "see this on TCG Republic" link even though it isn't
+	// card-specific; always set whenever a card has a source row at all,
+	// same condition as CheckedAt/PriceCents being present in the map.
+	URL string
 }
 
 // GetLatestMarketPricesForSet returns market-price standing for every
@@ -145,6 +152,7 @@ func (p *Persist) GetLatestMarketPricesForSet(ctx context.Context, setID string)
 		SELECT
 			card_price_sources.card_id,
 			card_price_sources.last_checked_at,
+			card_price_sources.url,
 			latest.price_cents
 		FROM card_price_sources
 		JOIN cards ON cards.id = card_price_sources.card_id
@@ -173,12 +181,13 @@ func (p *Persist) GetLatestMarketPricesForSet(ctx context.Context, setID string)
 	for rows.Next() {
 		var cardID string
 		var checkedAt sql.NullTime
+		var url string
 		var priceCents sql.NullInt64
-		if err := rows.Scan(&cardID, &checkedAt, &priceCents); err != nil {
+		if err := rows.Scan(&cardID, &checkedAt, &url, &priceCents); err != nil {
 			return nil, err
 		}
 
-		mp := MarketPrice{}
+		mp := MarketPrice{URL: url}
 		if checkedAt.Valid {
 			mp.CheckedAt = &checkedAt.Time
 		}

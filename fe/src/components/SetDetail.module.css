@@ -213,6 +213,20 @@
   color: var(--ink);
 }
 
+/* Only the price value links out to card.market_url (see MarketPriceLink
+   in SetDetail.tsx) - underlined so it's clear that's the one clickable
+   part, not the surrounding "Market"/delta text. */
+.marketPriceLink {
+  color: var(--teal);
+  text-decoration: underline;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.marketPriceLink:hover {
+  filter: brightness(1.3);
+}
+
 .delta {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -234,6 +248,7 @@
    price - a plain pill (Option A), matching market-price-mocks' fallback
    for cards with nothing owned to compare against. */
 .marketPill {
+  display: inline-flex;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--ink);

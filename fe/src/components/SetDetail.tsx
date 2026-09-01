@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Card, OwnedCardInput, Set as SetT } from '../types';
 import Button from './ui/Button';
@@ -14,6 +15,34 @@ import styles from './SetDetail.module.css';
 // less specific state worth saying plainly rather than guessing.
 const marketUnavailableLabel = (card: Card): string =>
   card.market_checked_at != null ? 'Out of Stock' : 'Not tracked yet';
+
+// Only the price value itself links out to card.market_url (a TCG
+// Republic category listing page - not a page dedicated to this one card,
+// see api.Card.MarketURL's doc comment) - the surrounding "Market" label
+// and delta text stay plain, non-interactive, so it's clear exactly what's
+// clickable rather than the whole row/pill feeling clickable at once.
+const MarketPriceLink = ({
+  card,
+  children,
+}: {
+  card: Card;
+  children: ReactNode;
+}) => {
+  if (!card.market_url) {
+    return <span>{children}</span>;
+  }
+  return (
+    <a
+      href={card.market_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={styles.marketPriceLink}
+      aria-label={`See ${card.name} on TCG Republic`}
+    >
+      {children}
+    </a>
+  );
+};
 
 // Thin wrapper so navigating directly between two sets (/collection/A ->
 // /collection/B) fully remounts SetDetailContent via the key change,
@@ -56,6 +85,13 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [ownershipFilter, setOwnershipFilter] = useState<
     'all' | 'owned' | 'missing'
   >('all');
+  // Which price affordance the tile shows - TCG's tracked market price
+  // (paid-vs-market comparison) or the eBay quick-search link. Not both at
+  // once: eBay data isn't tracked historically the way TCG's is (no real
+  // eBay API access yet, just the search link), and once real eBay pricing
+  // does exist it'll need its own owner-only gating per eBay's ToS - kept
+  // as a separate mode entirely rather than merged into the same view.
+  const [priceSource, setPriceSource] = useState<'tcg' | 'ebay'>('tcg');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -296,6 +332,17 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
             <option value="owned">Owned</option>
             <option value="missing">Missing</option>
           </select>
+          <select
+            aria-label="Price source"
+            className={styles.raritySelect}
+            value={priceSource}
+            onChange={(event) =>
+              setPriceSource(event.target.value as 'tcg' | 'ebay')
+            }
+          >
+            <option value="tcg">TCG market price</option>
+            <option value="ebay">eBay</option>
+          </select>
         </div>
       )}
 
@@ -333,84 +380,98 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                       </span>
                     )}
                   </div>
-                  {quantity > 0
-                    ? // Owned: paid vs. market, when there's something to
-                      // compare - a card the user hasn't priced yet, or one
-                      // with no current market data, just shows what it does
-                      // have rather than a misleading delta.
-                      (ownedPrices[card.id] != null ||
-                        card.market_price_cents != null) && (
-                        <div className={styles.compareRow}>
-                          {card.market_price_cents != null ? (
-                            <>
-                              <div className={styles.compareLine}>
-                                <span>Market</span>
-                                <span>
-                                  ${(card.market_price_cents / 100).toFixed(2)}
-                                </span>
-                              </div>
-                              {ownedPrices[card.id] != null &&
-                                (() => {
-                                  const deltaCents =
-                                    ownedPrices[card.id] -
-                                    card.market_price_cents!;
-                                  if (deltaCents === 0) {
+                  {priceSource === 'tcg' &&
+                    (quantity > 0
+                      ? // Owned: paid vs. market, when there's something to
+                        // compare - a card the user hasn't priced yet, or one
+                        // with no current market data, just shows what it
+                        // does have rather than a misleading delta.
+                        (ownedPrices[card.id] != null ||
+                          card.market_price_cents != null) && (
+                          <div className={styles.compareRow}>
+                            {card.market_price_cents != null ? (
+                              <>
+                                <div className={styles.compareLine}>
+                                  <span>Market</span>
+                                  <MarketPriceLink card={card}>
+                                    $
+                                    {(card.market_price_cents / 100).toFixed(2)}
+                                  </MarketPriceLink>
+                                </div>
+                                {ownedPrices[card.id] != null &&
+                                  (() => {
+                                    const deltaCents =
+                                      ownedPrices[card.id] -
+                                      card.market_price_cents!;
+                                    if (deltaCents === 0) {
+                                      return (
+                                        <div
+                                          className={`${styles.delta} ${styles.deltaMuted}`}
+                                        >
+                                          At market price
+                                        </div>
+                                      );
+                                    }
+                                    const under = deltaCents < 0;
                                     return (
                                       <div
-                                        className={`${styles.delta} ${styles.deltaMuted}`}
+                                        className={`${styles.delta} ${under ? styles.deltaGood : styles.deltaBad}`}
                                       >
-                                        At market price
+                                        {under ? '▼' : '▲'} $
+                                        {(Math.abs(deltaCents) / 100).toFixed(
+                                          2,
+                                        )}{' '}
+                                        {under ? 'under' : 'over'} market
                                       </div>
                                     );
-                                  }
-                                  const under = deltaCents < 0;
-                                  return (
-                                    <div
-                                      className={`${styles.delta} ${under ? styles.deltaGood : styles.deltaBad}`}
-                                    >
-                                      {under ? '▼' : '▲'} $
-                                      {(Math.abs(deltaCents) / 100).toFixed(2)}{' '}
-                                      {under ? 'under' : 'over'} market
-                                    </div>
-                                  );
-                                })()}
-                            </>
-                          ) : (
-                            <div
-                              className={`${styles.delta} ${styles.deltaMuted}`}
-                            >
-                              {marketUnavailableLabel(card)}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    : // Missing: no "paid" to compare against, so just the
-                      // raw market price (or why there isn't one) - nothing
-                      // extra when this card has never been tracked at all,
-                      // "Missing" above already says enough for that case.
-                      (card.market_price_cents != null ||
-                        card.market_checked_at != null) && (
-                        <div
-                          className={
-                            card.market_price_cents != null
-                              ? styles.marketPill
-                              : `${styles.marketPill} ${styles.marketPillMuted}`
-                          }
-                        >
-                          {card.market_price_cents != null
-                            ? `Market $${(card.market_price_cents / 100).toFixed(2)}`
-                            : marketUnavailableLabel(card)}
-                        </div>
-                      )}
-                  <a
-                    href={ebaySearchUrl(setName, card.code)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.ebayLink}
-                    aria-label={`Search eBay for ${card.name}`}
-                  >
-                    <EbayIcon />
-                  </a>
+                                  })()}
+                              </>
+                            ) : (
+                              <div
+                                className={`${styles.delta} ${styles.deltaMuted}`}
+                              >
+                                {marketUnavailableLabel(card)}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      : // Missing: no "paid" to compare against, so just the
+                        // raw market price (or why there isn't one) - nothing
+                        // extra when this card has never been tracked at
+                        // all, "Missing" above already says enough for that
+                        // case.
+                        (card.market_price_cents != null ||
+                          card.market_checked_at != null) && (
+                          <div
+                            className={
+                              card.market_price_cents != null
+                                ? styles.marketPill
+                                : `${styles.marketPill} ${styles.marketPillMuted}`
+                            }
+                          >
+                            {card.market_price_cents != null ? (
+                              <>
+                                Market{' '}
+                                <MarketPriceLink card={card}>
+                                  ${(card.market_price_cents / 100).toFixed(2)}
+                                </MarketPriceLink>
+                              </>
+                            ) : (
+                              marketUnavailableLabel(card)
+                            )}
+                          </div>
+                        ))}
+                  {priceSource === 'ebay' && (
+                    <a
+                      href={ebaySearchUrl(setName, card.code)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={styles.ebayLink}
+                      aria-label={`Search eBay for ${card.name}`}
+                    >
+                      <EbayIcon />
+                    </a>
+                  )}
                 </div>
               );
             })}

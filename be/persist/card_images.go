@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 )
@@ -27,11 +28,19 @@ func (p *Persist) UpsertCardImage(ctx context.Context, cardID string, image []by
 	return err
 }
 
-// GetCardImage returns the stored image bytes and content type for cardID.
-// Returns ErrCardImageNotFound if cardID has no image yet, rather than an
-// empty result indistinguishable from a real (if unlikely) empty file.
-func (p *Persist) GetCardImage(ctx context.Context, cardID string) ([]byte, string, error) {
-	row := sq.Select("image", "content_type").
+// GetCardImage returns the stored image bytes, content type, and when it
+// was last stored/replaced for cardID. Returns ErrCardImageNotFound if
+// cardID has no image yet, rather than an empty result indistinguishable
+// from a real (if unlikely) empty file.
+//
+// updatedAt exists so callers can serve a real Last-Modified header - see
+// GetCardImage in handlers/collection.go, which uses it for conditional
+// requests (a client that already has the current image gets a cheap 304
+// on revalidation instead of the full bytes again, and a genuinely
+// replaced image - see process-set re-imports - is detected correctly
+// rather than just timing out of a blind cache window).
+func (p *Persist) GetCardImage(ctx context.Context, cardID string) ([]byte, string, time.Time, error) {
+	row := sq.Select("image", "content_type", "updated_at").
 		From("card_images").
 		Where(sq.Eq{"card_id": cardID}).
 		RunWith(p.DB).
@@ -39,12 +48,13 @@ func (p *Persist) GetCardImage(ctx context.Context, cardID string) ([]byte, stri
 
 	var image []byte
 	var contentType string
-	if err := row.Scan(&image, &contentType); err != nil {
+	var updatedAt time.Time
+	if err := row.Scan(&image, &contentType, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, "", ErrCardImageNotFound
+			return nil, "", time.Time{}, ErrCardImageNotFound
 		}
-		return nil, "", err
+		return nil, "", time.Time{}, err
 	}
 
-	return image, contentType, nil
+	return image, contentType, updatedAt, nil
 }
