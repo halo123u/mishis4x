@@ -8,6 +8,31 @@ type OwnedEntry = {
   pricePaidCents?: number;
 };
 
+// Splits the cards missing from a value's coverage into *why* they're
+// missing - "out of stock" (checked, source reported no price - a real,
+// current answer, not a gap) vs. "not tracked yet" (never checked at all,
+// e.g. no card_price_sources row configured). Market Value/Cost to
+// Complete both silently exclude both groups from their sums, which reads
+// as "this card just isn't priced" if left unexplained - this is the
+// breakdown that makes clear which of those two very different reasons
+// applies, matching the same market_checked_at/market_price_cents
+// distinction marketUnavailableLabel uses per-card on SetDetail.
+const coverageBreakdown = (cards: Card[]): string => {
+  const outOfStock = cards.filter(
+    (card) => card.market_checked_at != null && card.market_price_cents == null,
+  ).length;
+  const notTracked = cards.filter(
+    (card) => card.market_checked_at == null,
+  ).length;
+
+  return [
+    outOfStock > 0 ? `${outOfStock} out of stock` : null,
+    notTracked > 0 ? `${notTracked} not tracked yet` : null,
+  ]
+    .filter((s): s is string => s !== null)
+    .join(', ');
+};
+
 // Thin wrapper so navigating directly between two sets' insights pages
 // fully remounts DeckInsightsContent via the key change, same pattern
 // SetDetail uses for the same reason.
@@ -171,7 +196,7 @@ const DeckInsightsContent = ({ setID }: { setID?: string }) => {
             Based on {ownedWithMarket.length} of {ownedCards.length} owned cards
             with current market data
             {ownedCards.length - ownedWithMarket.length > 0 &&
-              ` (${ownedCards.length - ownedWithMarket.length} owned cards aren't tracked yet)`}
+              ` (${coverageBreakdown(ownedCards)})`}
           </p>
 
           <div className={styles.statGrid}>
@@ -227,6 +252,8 @@ const DeckInsightsContent = ({ setID }: { setID?: string }) => {
               <span className={styles.statSub}>
                 {missingWithMarket.length} of {missingCards.length} missing
                 cards priced
+                {missingCards.length - missingWithMarket.length > 0 &&
+                  ` (${coverageBreakdown(missingCards)})`}
               </span>
             </div>
             <div className={styles.statCard}>
