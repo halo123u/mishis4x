@@ -27,6 +27,14 @@ type Card struct {
 	// of stock); absent entirely means this card has never been checked at
 	// all (no price source configured, or not synced yet).
 	MarketCheckedAt *time.Time `json:"market_checked_at,omitempty"`
+	// MarketURL is where this card's price was checked - card_price_sources'
+	// own scrape-source url (a TCG Republic category listing page, not a
+	// page dedicated to this one card - see set-price-sources's doc
+	// comment). Good enough for a "see this on TCG Republic" link even
+	// though it isn't card-specific. Omitted when there's no source
+	// configured for this card at all, same condition as the other
+	// market_* fields.
+	MarketURL string `json:"market_url,omitempty"`
 }
 
 // AddOwnedSetInput is the POST /api/owned-sets request body - onboards

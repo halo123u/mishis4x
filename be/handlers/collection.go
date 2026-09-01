@@ -286,6 +286,7 @@ func (d *Data) ListCardsForSet(w http.ResponseWriter, r *http.Request) {
 		if mp, ok := marketPrices[c.ID]; ok {
 			card.MarketPriceCents = mp.PriceCents
 			card.MarketCheckedAt = mp.CheckedAt
+			card.MarketURL = mp.URL
 		}
 		resp = append(resp, card)
 	}
