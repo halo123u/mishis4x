@@ -184,6 +184,73 @@
   font-size: var(--text-sm);
 }
 
+/* Owned cards: paid-vs-market, per the market-price-mocks artifact's
+   "Option B" - the delta is the useful signal (a bare market price alone
+   doesn't say much without what you paid next to it), colored with the
+   app's semantic good/bad tokens rather than the teal/ember accent pair,
+   which stay reserved for actions. */
+.compareRow {
+  width: 100%;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: var(--text-xs);
+}
+
+.compareLine {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--ash);
+  font-variant-numeric: tabular-nums;
+}
+
+.compareLine span:last-child {
+  font-family: var(--font-mono);
+  color: var(--ink);
+}
+
+.delta {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.deltaGood {
+  color: var(--good);
+}
+
+.deltaBad {
+  color: var(--bad);
+}
+
+.deltaMuted {
+  color: var(--ash);
+}
+
+/* Missing cards: no "paid" to compare against, so just the raw market
+   price - a plain pill (Option A), matching market-price-mocks' fallback
+   for cards with nothing owned to compare against. */
+.marketPill {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  padding: 0.1rem var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* "Out of Stock" / "Not tracked yet" - informational, not a real price, so
+   it reads muted rather than competing visually with an actual number. */
+.marketPillMuted {
+  color: var(--ash);
+  font-family: var(--font-body);
+}
+
 .error {
   color: var(--bad);
 }
