@@ -29,3 +29,13 @@ run_prod_migrations:
 # make run_prod_process_set NAME=<set-slug> [ARGS=--skip-images]
 run_prod_process_set:
 	@cd be && set -a && . infra/envs/prod/.env.local && set +a && go run main.go process-set --env prod --name ${NAME} --refresh ${ARGS}
+
+# make run_prod_set_price_sources NAME=<set-slug>
+run_prod_set_price_sources:
+	@cd be && set -a && . infra/envs/prod/.env.local && set +a && go run main.go set-price-sources --env prod --name ${NAME}
+
+# make run_prod_sync_prices - manual one-shot (see be/cmd/sync_prices.go);
+# there's no background job running this automatically yet, so re-run
+# periodically until that exists.
+run_prod_sync_prices:
+	@cd be && set -a && . infra/envs/prod/.env.local && set +a && go run main.go sync-prices --env prod
