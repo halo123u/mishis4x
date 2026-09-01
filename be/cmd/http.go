@@ -1,15 +1,18 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"example.com/mishis4x/handlers"
 	"example.com/mishis4x/logger"
 	"example.com/mishis4x/matchmaking"
 	persist "example.com/mishis4x/persist"
+	"example.com/mishis4x/pricesync"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -33,6 +36,14 @@ const (
 // rather than a fixed port, so this needs to be configurable, not just a
 // local-dev nicety.
 const defaultPort = 8091
+
+// priceSyncInterval is how often the background job re-checks every
+// configured price source (see pricesync.SyncAll) once enabled. Coarse on
+// purpose - TCG Republic prices don't move fast enough to need more than
+// this, and running it in-process (rather than a separate scheduled
+// process/cron) keeps the whole app self-contained, matching the "one
+// binary" deployment philosophy - no external scheduler to stand up.
+const priceSyncInterval = 12 * time.Hour
 
 func loadPort() int {
 	port, err := parsePort(os.Getenv("PORT"))
@@ -95,6 +106,53 @@ func loadCollectionAllowAllUsers() bool {
 	return allow
 }
 
+// loadEnablePriceSync reads ENABLE_PRICE_SYNC - an explicit opt-in for the
+// background price-sync loop, same fail-closed-by-default convention as
+// loadCollectionAllowAllUsers. Unset/empty returns false: without this,
+// every local `be http` restart or CI's docker-compose e2e run (both run
+// against real infra, not a mock) would otherwise make real, repeated
+// requests against TCG Republic - not something that should happen just
+// because a dev restarted the server or a PR triggered CI.
+func loadEnablePriceSync() bool {
+	raw := os.Getenv("ENABLE_PRICE_SYNC")
+	if raw == "" {
+		return false
+	}
+
+	enable, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Fatal().Err(err).Str("ENABLE_PRICE_SYNC", raw).Msg("invalid ENABLE_PRICE_SYNC")
+	}
+
+	return enable
+}
+
+// runPriceSyncLoop runs pricesync.SyncAll on interval until ctx is
+// canceled (interval is always priceSyncInterval outside tests - taken as
+// a parameter so tests can use a short one instead of actually waiting).
+// Deliberately does NOT run an initial pass immediately at startup:
+// SyncAll re-checks every configured source unconditionally (no per-card
+// staleness filter yet), so an immediate run on every boot would mean a
+// crash-loop (the server repeatedly restarting for some unrelated reason)
+// hammers TCG Republic with a real full sync each time - waiting for the
+// first real tick is the safer default until staleness-aware partial
+// syncing exists.
+func runPriceSyncLoop(ctx context.Context, p *persist.Persist, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := pricesync.SyncAll(ctx, p); err != nil {
+				log.Error().Err(err).Msg("background price sync failed")
+			}
+		}
+	}
+}
+
 func init() {
 	httpCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to run migrations on")
 	rootCMD.AddCommand(httpCMD)
@@ -137,7 +195,26 @@ var httpCMD = &cobra.Command{
 			loadCollectionOwnerUserID(),
 			loadCollectionAllowAllUsers(),
 		)
+
+		// Shares the same DB pool/connection the request handlers already
+		// use, rather than opening a second one just for this - canceled
+		// right after InitializeHttpServer returns (below), before db is
+		// closed, so a sync in progress gets a chance to notice ctx.Done()
+		// between urls rather than racing a closed connection.
+		syncCtx, cancelSync := context.WithCancel(context.Background())
+		var syncWG sync.WaitGroup
+		if loadEnablePriceSync() {
+			syncWG.Add(1)
+			go func() {
+				defer syncWG.Done()
+				runPriceSyncLoop(syncCtx, &persist.Persist{DB: db}, priceSyncInterval)
+			}()
+		}
+
 		h.InitializeHttpServer(port)
+
+		cancelSync()
+		syncWG.Wait()
 
 		if err := db.Close(); err != nil {
 			log.Error().Err(err).Msg("error closing db connection")
