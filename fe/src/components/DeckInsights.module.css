@@ -1,0 +1,171 @@
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 56rem;
+}
+
+.back {
+  font-size: var(--text-sm);
+  color: var(--teal);
+  text-decoration: none;
+}
+
+.back:hover {
+  text-decoration: underline;
+}
+
+.title {
+  margin: 0;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 56rem;
+}
+
+.raritySelect {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.coverageNote {
+  font-size: var(--text-xs);
+  color: var(--ash);
+  width: 100%;
+  max-width: 56rem;
+  margin: 0;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 56rem;
+}
+
+.statCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.statLabel {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ash);
+}
+
+.statValue {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.statSub {
+  font-size: var(--text-xs);
+  color: var(--ash);
+}
+
+.good {
+  color: var(--good);
+}
+
+.bad {
+  color: var(--bad);
+}
+
+.statMuted {
+  color: var(--ash);
+}
+
+.topCards {
+  width: 100%;
+  max-width: 56rem;
+}
+
+.topCardsHeading {
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-3);
+}
+
+.topCardList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.topCardRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+}
+
+.rank {
+  font-family: var(--font-mono);
+  color: var(--ash);
+  font-size: var(--text-sm);
+  width: 1.25rem;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.topCardImage {
+  width: 2.25rem;
+  height: auto;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.topCardName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topCardName span:first-child {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topCardName span:last-child {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ash);
+}
+
+.topCardValue {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.error {
+  color: var(--bad);
+}
