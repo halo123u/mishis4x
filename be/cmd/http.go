@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -146,10 +147,34 @@ func runPriceSyncLoop(ctx context.Context, p *persist.Persist, interval time.Dur
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := pricesync.SyncAll(ctx, p); err != nil {
-				log.Error().Err(err).Msg("background price sync failed")
-			}
+			runPriceSyncTick(ctx, p)
 		}
+	}
+}
+
+// runPriceSyncTick runs one SyncAll pass with the same panic-recovery
+// discipline recoverMiddleware gives every HTTP handler - a goroutine
+// panic that reaches the top of its own stack unrecovered takes down the
+// *entire process*, not just this goroutine, so this needs its own
+// recover() rather than relying on anything HTTP-request-shaped. Between
+// this and SyncAll's own returned-error handling below, nothing this loop
+// can hit should ever be able to crash be http - worst case for now is a
+// logged failure and next tick trying again, on the expectation that
+// someone checks the logs; a real "last successful sync" surfaced in the
+// UI (from the market_checked_at data already returned by the API) is
+// planned as a later, separate step rather than done here.
+func runPriceSyncTick(ctx context.Context, p *persist.Persist) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Error().
+				Interface("panic", rec).
+				Str("stack", string(debug.Stack())).
+				Msg("recovered from panic in background price sync")
+		}
+	}()
+
+	if _, err := pricesync.SyncAll(ctx, p); err != nil {
+		log.Error().Err(err).Msg("background price sync failed")
 	}
 }
 
