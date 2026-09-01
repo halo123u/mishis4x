@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -304,7 +305,7 @@ func (d *Data) GetCardImage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
 	defer cancel()
 
-	image, contentType, err := d.P.GetCardImage(ctx, cardID)
+	image, contentType, updatedAt, err := d.P.GetCardImage(ctx, cardID)
 	if err != nil {
 		if errors.Is(err, persist.ErrCardImageNotFound) {
 			http.Error(w, "Image not found.", http.StatusNotFound)
@@ -315,15 +316,20 @@ func (d *Data) GetCardImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reference art doesn't change once imported - safe to let browsers
-	// and any intermediate cache hold onto it rather than re-fetching the
-	// same bytes on every page load.
+	// Reference art doesn't change once imported in the common case, so a
+	// full day of blind browser caching (max-age) is safe - but it does
+	// occasionally get replaced wholesale (e.g. a re-scrape swapping in a
+	// higher-res version), so this also sets Last-Modified from the
+	// image's real updated_at. ServeContent uses that for conditional
+	// requests: once max-age expires, a revalidation returns a cheap 304
+	// (no image bytes at all) if nothing changed, and picks up a genuine
+	// replacement correctly rather than serving stale bytes for the rest
+	// of the cache window. Content-Type is set explicitly first since
+	// ServeContent would otherwise try to guess it from a filename we
+	// don't have.
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=86400")
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(image); err != nil {
-		log.Error().Err(err).Str("cardID", cardID).Msg("error writing card image response")
-	}
+	http.ServeContent(w, r, "", updatedAt, bytes.NewReader(image))
 }
 
 // writeJSON marshals v and writes it as the response body with status.
