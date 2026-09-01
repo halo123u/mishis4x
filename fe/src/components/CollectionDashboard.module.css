@@ -33,19 +33,18 @@
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
-  text-decoration: none;
-  color: var(--ink);
-  transition: border-color 0.15s ease;
 }
 
-.setCard:hover {
-  border-color: var(--teal);
-  color: var(--ink);
+.setInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 
-.setCard:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
+.setActions {
+  display: flex;
+  gap: var(--space-3);
 }
 
 .setName {

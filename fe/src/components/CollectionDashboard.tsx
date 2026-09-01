@@ -64,10 +64,20 @@ const CollectionDashboard = () => {
         <ul className={styles.list}>
           {sets.map((set) => (
             <li key={set.id}>
-              <Link to={`/collection/${set.id}`} className={styles.setCard}>
-                <span className={styles.setName}>{set.name}</span>
-                <span className={styles.setMeta}>{set.card_count} cards</span>
-              </Link>
+              <div className={styles.setCard}>
+                <div className={styles.setInfo}>
+                  <span className={styles.setName}>{set.name}</span>
+                  <span className={styles.setMeta}>{set.card_count} cards</span>
+                </div>
+                <div className={styles.setActions}>
+                  <Link to={`/collection/${set.id}`}>
+                    <Button variant="secondary">View set</Button>
+                  </Link>
+                  <Link to={`/collection/${set.id}/insights`}>
+                    <Button variant="secondary">View insights</Button>
+                  </Link>
+                </div>
+              </div>
             </li>
           ))}
         </ul>

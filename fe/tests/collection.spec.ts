@@ -56,7 +56,10 @@ test("card manager: widget -> dashboard -> set detail -> back", async ({
 
   await expect(page.getByText("Brown Dust 2")).toBeVisible();
 
-  await page.getByText("Brown Dust 2").click();
+  // The set name itself is plain text, not a link - each set now offers
+  // two explicit actions ("View set" / "View insights") instead of the
+  // whole row being clickable.
+  await page.getByRole("button", { name: "View set" }).click();
 
   await expect(page).toHaveURL(/\/collection\/[^/]+$/);
   // exact: true - the real catalog also has "BRD/W139-001SSP", and a plain

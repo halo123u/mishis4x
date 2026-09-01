@@ -9,6 +9,7 @@ import CollectionDashboard from './components/CollectionDashboard.tsx';
 import AddSet from './components/AddSet.tsx';
 import OnboardCards from './components/OnboardCards.tsx';
 import SetDetail from './components/SetDetail.tsx';
+import DeckInsights from './components/DeckInsights.tsx';
 
 function App() {
   return (
@@ -25,6 +26,10 @@ function App() {
             <Route
               path="/collection/:setID/onboard"
               element={<OnboardCards />}
+            />
+            <Route
+              path="/collection/:setID/insights"
+              element={<DeckInsights />}
             />
             <Route path="/collection/:setID" element={<SetDetail />} />
           </Route>
