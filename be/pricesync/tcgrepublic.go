@@ -19,7 +19,7 @@ import (
 // page. Text is the product's raw alt/caption text (e.g. "ビーチの天使
 // テレーゼ BRD/W139-075S SR Foil & Stamped") rather than an extracted code -
 // this package doesn't know or assume any particular game's code format,
-// so matching a specific card against these items (via strings.Contains)
+// so matching a specific card against these items (via MatchListingItem)
 // is the caller's job, done with codes it already knows from
 // card_price_sources/cards.
 type ListingItem struct {
@@ -130,16 +130,29 @@ func parsePriceCents(s string) (int, error) {
 	return strconv.Atoi(wholeCents)
 }
 
-// MatchListingItem finds the item among items whose text contains code,
-// preferring a non-ranking (real grid) match over a ranking-widget one if
-// both exist for the same code - the ranking widget can carry a stale or
-// out-of-context price for a "trending" item that isn't really this
-// page's row. Returns found=false if code doesn't appear at all.
+// MatchListingItem finds the item among items whose text contains code as
+// a whole token - not merely as a substring - preferring a non-ranking
+// (real grid) match over a ranking-widget one if both exist for the same
+// code - the ranking widget can carry a stale or out-of-context price for
+// a "trending" item that isn't really this page's row. Returns
+// found=false if code doesn't appear at all.
+//
+// A plain strings.Contains was tried first and was wrong: a code like
+// "BRD/W139-054S" is a literal prefix of "BRD/W139-054SSP" (that card's
+// own SSP variant), so a bare substring check silently matched the wrong
+// card's listing whenever both happened to appear in the same fetched
+// page (e.g. the SSP variant showing up in the repeated "popular items"
+// sidebar - see IsRanking) - two real cards (054S/054SSP, 029S/029SSP)
+// were confirmed to have been recording each other's price this way.
+// Requiring the character right after the match to not continue the code
+// (not a letter or digit) is what the original Python prototype that
+// generated price_sources.csv already did correctly - this brings the
+// production matcher in line with that proven approach.
 func MatchListingItem(items []ListingItem, code string) (item ListingItem, found bool) {
 	var rankingMatch ListingItem
 	var rankingFound bool
 	for _, it := range items {
-		if !strings.Contains(it.Text, code) {
+		if !containsCodeToken(it.Text, code) {
 			continue
 		}
 		if !it.IsRanking {
@@ -148,4 +161,35 @@ func MatchListingItem(items []ListingItem, code string) (item ListingItem, found
 		rankingMatch, rankingFound = it, true
 	}
 	return rankingMatch, rankingFound
+}
+
+// containsCodeToken reports whether text contains code as a whole token.
+// Only the trailing boundary is checked (not a leading one) - every real
+// code in this domain shares the same "BRD/W139-" prefix followed by a
+// fixed-shape number+letters, so a false match at the *start* of code
+// isn't a realistic failure mode the way a longer suffix variant
+// (S/SP/SSP/EX/...) sharing a prefix is.
+func containsCodeToken(text, code string) bool {
+	for start := 0; ; {
+		idx := strings.Index(text[start:], code)
+		if idx == -1 {
+			return false
+		}
+		idx += start
+
+		end := idx + len(code)
+		if end >= len(text) || !isCodeContinuation(text[end]) {
+			return true
+		}
+
+		start = idx + 1
+	}
+}
+
+// isCodeContinuation reports whether b could be part of the same code
+// token that just matched - if so, the match found so far is only a
+// prefix of a longer code (e.g. "054S" inside "054SSP"), not a real
+// match on its own.
+func isCodeContinuation(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
 }
