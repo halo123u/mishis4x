@@ -1,11 +1,14 @@
 package pricesync
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"example.com/mishis4x/persist"
 	"github.com/go-sql-driver/mysql"
@@ -110,4 +113,81 @@ func TestSyncAll_RecordsPricesAndMisses(t *testing.T) {
 	require.True(t, ok)
 	require.Nil(t, missing.PriceCents)
 	require.NotNil(t, missing.CheckedAt, "a card that's been checked but not found should still get last_checked_at set")
+}
+
+// withShortRetryDelay swaps fetchRetryDelay down to a couple of
+// milliseconds for the duration of one test, so a test that deliberately
+// exercises retries doesn't have to wait out several real seconds of
+// backoff. Restores the real value on cleanup rather than leaving a
+// shrunk delay bleeding into other tests in the package.
+func withShortRetryDelay(t *testing.T) {
+	t.Helper()
+	original := fetchRetryDelay
+	fetchRetryDelay = 2 * time.Millisecond
+	t.Cleanup(func() { fetchRetryDelay = original })
+}
+
+// TestFetchListingWithRetry_SucceedsAfterTransientFailures proves a
+// transient failure (the first couple of requests failing) doesn't sink
+// the whole url - it should recover within the retry cap rather than
+// getting logged as errored and left stale until the next scheduled sync.
+func TestFetchListingWithRetry_SucceedsAfterTransientFailures(t *testing.T) {
+	withShortRetryDelay(t)
+
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&attempts, 1) <= 2 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write([]byte(fixtureListingHTML))
+	}))
+	defer server.Close()
+
+	items, err := fetchListingWithRetry(t.Context(), server.URL)
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+	require.Equal(t, int32(3), atomic.LoadInt32(&attempts), "should succeed on the 3rd attempt, within maxFetchAttempts")
+}
+
+// TestFetchListingWithRetry_GivesUpAfterMaxAttempts is the direct proof of
+// the "cap" - a url that's genuinely broken (never succeeds) must still
+// give up after exactly maxFetchAttempts tries and return an error,
+// rather than retrying forever.
+func TestFetchListingWithRetry_GivesUpAfterMaxAttempts(t *testing.T) {
+	withShortRetryDelay(t)
+
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	_, err := fetchListingWithRetry(t.Context(), server.URL)
+	require.Error(t, err)
+	require.Equal(t, int32(maxFetchAttempts), atomic.LoadInt32(&attempts))
+}
+
+// TestFetchListingWithRetry_StopsOnContextCancellation confirms a
+// cancellation during the backoff wait between attempts returns promptly
+// with ctx.Err() rather than blocking out the rest of fetchRetryDelay.
+func TestFetchListingWithRetry_StopsOnContextCancellation(t *testing.T) {
+	original := fetchRetryDelay
+	fetchRetryDelay = time.Hour // long enough that only cancellation ends the wait
+	t.Cleanup(func() { fetchRetryDelay = original })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := fetchListingWithRetry(ctx, server.URL)
+	require.ErrorIs(t, err, context.Canceled)
 }

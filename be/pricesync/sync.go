@@ -15,6 +15,22 @@ import (
 // requests, it's one per listing page.
 const SyncDelay = 2 * time.Second
 
+// maxFetchAttempts caps retries for a single price-source url's fetch
+// within one sync pass. A transient blip (a dropped connection, a 502)
+// shouldn't leave every card pointing at that url stuck stale for a full
+// SyncInterval (currently 12h, see cmd/http.go) just because one request
+// happened to land badly - but a url that's genuinely broken (page
+// removed, wrong url) needs to still give up and get logged rather than
+// retry forever, which is what "cap" means here.
+const maxFetchAttempts = 3
+
+// fetchRetryDelay is the pause between retry attempts for one url -
+// deliberately short since these retries are meant to ride out a brief
+// blip, not wait out a real outage (that's what the next scheduled sync,
+// hours later, is for). A var, not a const, so tests can shrink it instead
+// of a real test run waiting out several real seconds of backoff.
+var fetchRetryDelay = 5 * time.Second
+
 // Stats summarizes one SyncAll pass.
 type Stats struct {
 	Checked   int
@@ -70,9 +86,10 @@ func SyncAll(ctx context.Context, p *persist.Persist) (Stats, error) {
 			continue
 		}
 
-		items, err := FetchTCGRepublicListing(ctx, url)
+		items, err := fetchListingWithRetry(ctx, url)
 		if err != nil {
-			log.Error().Err(err).Str("url", url).Msg("error fetching listing page, skipping")
+			log.Error().Err(err).Str("url", url).Int("attempts", maxFetchAttempts).
+				Msg("error fetching listing page after retries, skipping")
 			stats.Errored += len(cards)
 			continue
 		}
@@ -115,4 +132,32 @@ func SyncAll(ctx context.Context, p *persist.Persist) (Stats, error) {
 		Msg("price sync finished")
 
 	return stats, nil
+}
+
+// fetchListingWithRetry calls FetchTCGRepublicListing, retrying up to
+// maxFetchAttempts times with fetchRetryDelay between attempts before
+// giving up - see maxFetchAttempts' doc comment for why this is bounded
+// rather than unbounded.
+func fetchListingWithRetry(ctx context.Context, url string) ([]ListingItem, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
+		items, err := FetchTCGRepublicListing(ctx, url)
+		if err == nil {
+			return items, nil
+		}
+		lastErr = err
+
+		if attempt == maxFetchAttempts {
+			break
+		}
+		log.Warn().Err(err).Str("url", url).Int("attempt", attempt).Int("maxAttempts", maxFetchAttempts).
+			Msg("price source fetch failed, retrying")
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(fetchRetryDelay):
+		}
+	}
+	return nil, lastErr
 }
