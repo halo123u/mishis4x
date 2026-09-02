@@ -69,12 +69,13 @@ func TestGetEbayListings_Success(t *testing.T) {
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
-	var listings []api.EbayListing
-	require.NoError(t, json.NewDecoder(res.Body).Decode(&listings))
-	require.Len(t, listings, 1)
-	require.Equal(t, "v1|111|0", listings[0].ItemID)
-	require.Equal(t, 4200, listings[0].PriceCents)
-	require.Equal(t, "seller_a", listings[0].SellerUsername)
+	var data api.EbayListingsResponse
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&data))
+	require.Equal(t, "Ebay Listings Test Set 086S", data.Query)
+	require.Len(t, data.Listings, 1)
+	require.Equal(t, "v1|111|0", data.Listings[0].ItemID)
+	require.Equal(t, 4200, data.Listings[0].PriceCents)
+	require.Equal(t, "seller_a", data.Listings[0].SellerUsername)
 }
 
 func TestGetEbayListings_CardNotFound(t *testing.T) {

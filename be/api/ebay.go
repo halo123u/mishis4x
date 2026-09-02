@@ -16,3 +16,14 @@ type EbayListing struct {
 	ItemWebURL               string `json:"item_web_url"`
 	ImageURL                 string `json:"image_url"`
 }
+
+// EbayListingsResponse is what GET /api/cards/{cardID}/ebay-listings
+// actually returns - Query is the same search string ebay.SearchQuery
+// built server-side to fetch these Listings, handed back so the frontend
+// can link out to a plain eBay search (fe/src/ebay.ts's
+// ebaySearchUrlForQuery) without needing its own separate lookup of the
+// card's set name just to reconstruct it.
+type EbayListingsResponse struct {
+	Query    string        `json:"query"`
+	Listings []EbayListing `json:"listings"`
+}

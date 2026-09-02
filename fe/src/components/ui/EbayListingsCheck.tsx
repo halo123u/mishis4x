@@ -1,5 +1,6 @@
 import { Card, EbayListing } from '../../types';
 import { priceRange } from '../../ebayListings';
+import { ebaySearchUrlForQuery } from '../../ebay';
 import EbayIcon from './EbayIcon';
 import styles from './EbayListingsCheck.module.css';
 
@@ -19,6 +20,7 @@ const EbayListingsCheck = ({
   status,
   isOpen,
   listings,
+  query,
   errorMessage,
   onTrigger,
   onClose,
@@ -27,6 +29,13 @@ const EbayListingsCheck = ({
   status: EbayCheckStatus;
   isOpen: boolean;
   listings: EbayListing[];
+  // The same search string the backend used to fetch listings - present
+  // whenever status is 'loaded', regardless of whether any listings came
+  // back. Used for the "search eBay directly" fallback link shown when
+  // the API found nothing (currently the common case against sandbox -
+  // see be/ebay's doc comments), rather than leaving an empty result as
+  // a dead end.
+  query?: string;
   errorMessage?: string;
   onTrigger: () => void;
   onClose: () => void;
@@ -86,7 +95,19 @@ const EbayListingsCheck = ({
           <div className={`${styles.scrim} ${styles.show}`} onClick={onClose} />
           <div className={`${styles.popover} ${styles.show}`}>
             {listings.length === 0 ? (
-              <p className={styles.empty}>No current listings found.</p>
+              <div className={styles.empty}>
+                <p>No current listings found.</p>
+                {query && (
+                  <a
+                    href={ebaySearchUrlForQuery(query)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.emptyLink}
+                  >
+                    Search eBay directly ↗
+                  </a>
+                )}
+              </div>
             ) : (
               <>
                 {range && (

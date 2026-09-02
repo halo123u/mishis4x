@@ -47,3 +47,7 @@ export interface EbayListing {
   item_web_url: string;
   image_url: string;
 }
+export interface EbayListingsResponse {
+  query: string;
+  listings: EbayListing[];
+}

@@ -49,9 +49,9 @@ func (d *Data) GetEbayListings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := make([]api.EbayListing, 0, len(listings))
+	respListings := make([]api.EbayListing, 0, len(listings))
 	for _, l := range listings {
-		resp = append(resp, api.EbayListing{
+		respListings = append(respListings, api.EbayListing{
 			ItemID:                   l.ItemID,
 			Title:                    l.Title,
 			PriceCents:               l.PriceCents,
@@ -63,5 +63,5 @@ func (d *Data) GetEbayListings(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, api.EbayListingsResponse{Query: query, Listings: respListings})
 }

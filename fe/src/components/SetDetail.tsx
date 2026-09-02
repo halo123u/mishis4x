@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Card, EbayListing, OwnedCardInput } from '../types';
+import { Card, EbayListingsResponse, OwnedCardInput } from '../types';
 import Button from './ui/Button';
 import CardThumbnail from './ui/CardThumbnail';
 import EbayListingsCheck from './ui/EbayListingsCheck';
@@ -104,10 +104,12 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // reopening the same card's badge doesn't re-fetch (see
   // EbayListingsCheck's doc comment). ebayLoadingCardId separately tracks
   // which card's fetch is in flight, since a click can happen for a card
-  // that isn't the currently-open one.
+  // that isn't the currently-open one. Query is kept alongside the
+  // listings (not re-derived client-side) so an empty result can still
+  // link out to a plain eBay search for the same query the API used.
   const [ebayOpenCardId, setEbayOpenCardId] = useState<string | null>(null);
-  const [ebayListingsByCard, setEbayListingsByCard] = useState<
-    Record<string, EbayListing[]>
+  const [ebayDataByCard, setEbayDataByCard] = useState<
+    Record<string, EbayListingsResponse>
   >({});
   const [ebayLoadingCardId, setEbayLoadingCardId] = useState<string | null>(
     null,
@@ -217,7 +219,7 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // toggles visibility, no new fetch) - EbayListingsCheck stays purely
   // presentational and calls this same handler either way.
   const handleCheckEbayPrices = (cardId: string) => {
-    if (ebayListingsByCard[cardId]) {
+    if (ebayDataByCard[cardId]) {
       setEbayOpenCardId((current) => (current === cardId ? null : cardId));
       return;
     }
@@ -249,8 +251,8 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
         if (res.status !== 200 || !contentType.includes('json')) {
           throw new Error('Could not fetch eBay listings. Please try again.');
         }
-        const listings: EbayListing[] = await res.json();
-        setEbayListingsByCard((prev) => ({ ...prev, [cardId]: listings }));
+        const data: EbayListingsResponse = await res.json();
+        setEbayDataByCard((prev) => ({ ...prev, [cardId]: data }));
         setEbayOpenCardId(cardId);
       })
       .catch((err: Error) => {
@@ -635,7 +637,7 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                     <EbayListingsCheck
                       card={card}
                       status={
-                        ebayListingsByCard[card.id]
+                        ebayDataByCard[card.id]
                           ? 'loaded'
                           : ebayLoadingCardId === card.id
                             ? 'loading'
@@ -644,7 +646,8 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                               : 'idle'
                       }
                       isOpen={ebayOpenCardId === card.id}
-                      listings={ebayListingsByCard[card.id] ?? []}
+                      listings={ebayDataByCard[card.id]?.listings ?? []}
+                      query={ebayDataByCard[card.id]?.query}
                       errorMessage={
                         ebayError?.cardId === card.id
                           ? ebayError.message

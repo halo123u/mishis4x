@@ -135,7 +135,20 @@
 .empty {
   color: var(--ash);
   font-size: var(--text-xs);
-  margin: 0;
+}
+
+.empty p {
+  margin: 0 0 var(--space-2);
+}
+
+.emptyLink {
+  color: var(--teal);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.emptyLink:hover {
+  text-decoration: underline;
 }
 
 .popoverHeader {
