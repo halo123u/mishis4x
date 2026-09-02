@@ -3,6 +3,7 @@ package persist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -102,6 +103,28 @@ func (p *Persist) ListPriceSourcesForURL(ctx context.Context, url string) ([]Pri
 	}
 
 	return cards, rows.Err()
+}
+
+// GetPriceSourceForCard returns the source/url configured for cardID, for
+// the on-demand "check now" refresh endpoint (be/handlers.RefreshCardPrice)
+// to find what to actually fetch - found is false when cardID has no
+// card_price_sources row at all (nothing to refresh), which the handler
+// reports back as 404 rather than a bare empty response.
+func (p *Persist) GetPriceSourceForCard(ctx context.Context, cardID string) (source, url string, found bool, err error) {
+	row := sq.Select("source", "url").
+		From("card_price_sources").
+		Where(sq.Eq{"card_id": cardID}).
+		RunWith(p.DB).
+		QueryRowContext(ctx)
+
+	if err := row.Scan(&source, &url); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", "", false, nil
+		}
+		return "", "", false, err
+	}
+
+	return source, url, true, nil
 }
 
 // MarketPrice is one card's current market-price standing: PriceCents is

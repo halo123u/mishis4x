@@ -191,3 +191,50 @@ func TestFetchListingWithRetry_StopsOnContextCancellation(t *testing.T) {
 	_, err := fetchListingWithRetry(ctx, server.URL)
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+// withDrainedLimiter swaps the package-level, shared Limiter for a
+// zero-capacity one that never allows a token, so a test can prove
+// SyncURL actually consults it - then restores the real Limiter on
+// cleanup so it doesn't stay drained for every other test sharing this
+// package's test binary.
+func withDrainedLimiter(t *testing.T) {
+	t.Helper()
+	original := Limiter
+	Limiter = NewRateLimiter(0, time.Hour)
+	t.Cleanup(func() { Limiter = original })
+}
+
+// TestSyncURL_RateLimited is the direct proof that SyncURL - the one
+// call site both the background loop and the on-demand refresh endpoint
+// share - actually consults Limiter before fetching, and reports it back
+// as the distinguishable ErrRateLimited rather than a generic fetch
+// error (be/handlers.RefreshCardPrice maps this specific error to 429).
+func TestSyncURL_RateLimited(t *testing.T) {
+	db := testDB(t)
+	p := &persist.Persist{DB: db}
+	ctx := t.Context()
+
+	withDrainedLimiter(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(fixtureListingHTML))
+	}))
+	defer server.Close()
+
+	setID, err := p.CreateSet(ctx, "Rate Limit Test Set", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM card_price_sources WHERE card_id IN (SELECT id FROM cards WHERE set_id = ?)", setID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(ctx, setID, "Rate Limited Card", "BRD/W139-999S", "SR")
+	require.NoError(t, err)
+	require.NoError(t, p.UpsertPriceSource(ctx, cardID, "tcg_republic", server.URL))
+
+	stats, err := SyncURL(ctx, p, server.URL)
+	require.ErrorIs(t, err, ErrRateLimited)
+	require.Equal(t, 1, stats.Errored)
+	require.Equal(t, 0, stats.Checked)
+}

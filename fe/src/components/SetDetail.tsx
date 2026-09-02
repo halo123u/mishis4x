@@ -5,7 +5,9 @@ import { Card, OwnedCardInput, Set as SetT } from '../types';
 import Button from './ui/Button';
 import CardThumbnail from './ui/CardThumbnail';
 import EbayIcon from './ui/EbayIcon';
+import RefreshIcon from './ui/RefreshIcon';
 import { ebaySearchUrl } from '../ebay';
+import { formatFreshness } from '../priceFreshness';
 import styles from './SetDetail.module.css';
 
 // market_checked_at being set (regardless of market_price_cents) means the
@@ -92,6 +94,15 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // does exist it'll need its own owner-only gating per eBay's ToS - kept
   // as a separate mode entirely rather than merged into the same view.
   const [priceSource, setPriceSource] = useState<'tcg' | 'ebay'>('tcg');
+  // One refresh in flight at a time, keyed by card id - simplest possible
+  // concurrency model given a click already re-fetches every card in the
+  // set on success (see handleRefresh), so overlapping refreshes would
+  // just race each other's re-fetch rather than do anything useful.
+  const [refreshingCardId, setRefreshingCardId] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<{
+    cardId: string;
+    message: string;
+  } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -141,6 +152,61 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
         setError('Could not reach the server. Please try again.');
       });
   }, [setID]);
+
+  // Re-checks just this card's shared price-source url (POST
+  // /api/cards/{id}/refresh-price - see be/handlers/refresh_price.go,
+  // which calls the exact same pricesync.SyncURL the background sync loop
+  // does). A successful refresh can update every card sharing that url,
+  // not just the one clicked, so on success this re-fetches the whole
+  // set's cards rather than patching just this one in place - same "many
+  // cards, one shared source" shape SyncAll already relies on for the
+  // background sync.
+  const handleRefresh = (cardId: string) => {
+    if (!setID) {
+      return;
+    }
+
+    setRefreshingCardId(cardId);
+    setRefreshError(null);
+
+    fetch(`/api/cards/${cardId}/refresh-price`, {
+      method: 'POST',
+    })
+      .then(async (res) => {
+        if (res.status === 429) {
+          throw new Error(
+            'Too many refreshes right now - please try again in a bit.',
+          );
+        }
+        // A 200 alone isn't proof this actually hit a real endpoint - an
+        // unmatched /api/* path falls through to the router's SPA-shell
+        // catch-all (see be/handlers/handlers.go's final PathPrefix("/")),
+        // which happily returns 200 with index.html's HTML. Requiring a
+        // JSON content-type on 200 catches that silently-wrong case
+        // instead of treating it as a successful refresh that did nothing.
+        const contentType = res.headers.get('content-type') ?? '';
+        const isRealResponse =
+          res.status === 204 ||
+          (res.status === 200 && contentType.includes('json'));
+        if (!isRealResponse) {
+          throw new Error('Could not refresh this price. Please try again.');
+        }
+
+        const cardsRes = await fetch(`/api/sets/${setID}/cards`);
+        if (cardsRes.status !== 200) {
+          throw new Error(
+            'Refreshed, but could not reload the updated prices.',
+          );
+        }
+        setCards(await cardsRes.json());
+      })
+      .catch((err: Error) => {
+        setRefreshError({ cardId, message: err.message });
+      })
+      .finally(() => {
+        setRefreshingCardId(null);
+      });
+  };
 
   const handleDelete = () => {
     if (!setID) {
@@ -217,6 +283,52 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     (card) => (owned?.[card.id] ?? 0) > 0,
   ).length;
   const totalCount = rarityAndSearchFilteredCards.length;
+
+  // The persistent "6m ago" caption + refresh icon (refresh-mockups
+  // artifact, Option C) - only for a card that's actually been checked at
+  // least once (market_checked_at set). A card with no price source at all
+  // has nothing to refresh, so it gets neither the caption nor the button
+  // - marketUnavailableLabel's "Not tracked yet" already says enough for
+  // that case on its own.
+  const renderFreshness = (card: Card) => {
+    if (card.market_checked_at == null) {
+      return null;
+    }
+
+    const freshness = formatFreshness(card.market_checked_at);
+    const isRefreshing = refreshingCardId === card.id;
+
+    return (
+      <>
+        <div className={styles.freshnessRow}>
+          <span className={styles.freshnessText}>
+            {freshness && (
+              <span className={styles.freshnessValue}>{freshness.amount}</span>
+            )}
+            {freshness?.suffix ? ` ${freshness.suffix}` : null}
+          </span>
+          <button
+            type="button"
+            className={
+              isRefreshing
+                ? `${styles.refreshBtn} ${styles.spinning}`
+                : styles.refreshBtn
+            }
+            onClick={() => handleRefresh(card.id)}
+            disabled={isRefreshing}
+            aria-label={`Refresh ${card.name}'s price`}
+          >
+            <RefreshIcon />
+          </button>
+        </div>
+        {refreshError?.cardId === card.id && (
+          <p className={styles.refreshError} role="alert">
+            {refreshError.message}
+          </p>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="stack">
@@ -433,6 +545,7 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                                 {marketUnavailableLabel(card)}
                               </div>
                             )}
+                            {renderFreshness(card)}
                           </div>
                         )
                       : // Missing: no "paid" to compare against, so just the
@@ -442,24 +555,28 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                         // case.
                         (card.market_price_cents != null ||
                           card.market_checked_at != null) && (
-                          <div
-                            className={
-                              card.market_price_cents != null
-                                ? styles.marketPill
-                                : `${styles.marketPill} ${styles.marketPillMuted}`
-                            }
-                          >
-                            {card.market_price_cents != null ? (
-                              <>
-                                Market{' '}
-                                <MarketPriceLink card={card}>
-                                  ${(card.market_price_cents / 100).toFixed(2)}
-                                </MarketPriceLink>
-                              </>
-                            ) : (
-                              marketUnavailableLabel(card)
-                            )}
-                          </div>
+                          <>
+                            <div
+                              className={
+                                card.market_price_cents != null
+                                  ? styles.marketPill
+                                  : `${styles.marketPill} ${styles.marketPillMuted}`
+                              }
+                            >
+                              {card.market_price_cents != null ? (
+                                <>
+                                  Market{' '}
+                                  <MarketPriceLink card={card}>
+                                    $
+                                    {(card.market_price_cents / 100).toFixed(2)}
+                                  </MarketPriceLink>
+                                </>
+                              ) : (
+                                marketUnavailableLabel(card)
+                              )}
+                            </div>
+                            {renderFreshness(card)}
+                          </>
                         ))}
                   {priceSource === 'ebay' && (
                     <a
