@@ -83,7 +83,7 @@ func (m *tokenManager) getToken(ctx context.Context) (string, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status %d requesting oauth token", resp.StatusCode)
+		return "", fmt.Errorf("unexpected status %d requesting oauth token from %s", resp.StatusCode, m.tokenURL)
 	}
 
 	var parsed tokenResponse
