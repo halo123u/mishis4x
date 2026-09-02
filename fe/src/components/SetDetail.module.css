@@ -269,3 +269,77 @@
 .error {
   color: var(--bad);
 }
+
+/* Per-card refresh (refresh-mockups artifact, Option C) - a persistent
+   freshness caption under the market price, plus an icon button that
+   re-checks just this card's shared TCG Republic source on demand. */
+.freshnessRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: 0.15rem;
+}
+
+.freshnessText {
+  /* Deliberately below --text-xs (the type scale's smallest token) - this
+     caption is the least important text on the tile, and reads fine even
+     smaller given it's just a few characters next to an icon. */
+  font-size: 0.625rem;
+  color: var(--ash);
+}
+
+/* Only the number pops with the accent color - "ago" stays muted so the
+   number itself is the thing that catches your eye. */
+.freshnessValue {
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.refreshBtn {
+  border: none;
+  background: transparent;
+  color: var(--ash);
+  cursor: pointer;
+  padding: 0.15rem;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  color: var(--teal);
+  background: var(--paper);
+}
+
+.refreshBtn:disabled {
+  cursor: default;
+}
+
+.refreshBtn.spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refreshBtn.spinning svg {
+    animation: none;
+  }
+}
+
+.refreshError {
+  width: 100%;
+  color: var(--bad);
+  font-size: 0.625rem;
+  margin-top: 0.15rem;
+}
