@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"example.com/mishis4x/ebay"
 	"example.com/mishis4x/handlers"
 	"example.com/mishis4x/logger"
 	"example.com/mishis4x/matchmaking"
@@ -105,6 +106,35 @@ func loadCollectionAllowAllUsers() bool {
 	}
 
 	return allow
+}
+
+// loadEbayService reads EBAY_APP_ID/EBAY_CERT_ID (and EBAY_SANDBOX) and
+// builds an ebay.Service, or returns nil if either credential is unset -
+// handlers.Data.GetEbayListings reports a 503 rather than crashing when
+// this is nil, so an environment that hasn't configured eBay credentials
+// yet just doesn't offer that one feature rather than failing to boot.
+// EBAY_SANDBOX defaults to true (unset = sandbox) - the safer default
+// given a misconfigured/forgotten env var should mean "fake fixture
+// data," not "accidentally querying eBay's real production API."
+func loadEbayService() *ebay.Service {
+	appID := os.Getenv("EBAY_APP_ID")
+	certID := os.Getenv("EBAY_CERT_ID")
+	if appID == "" || certID == "" {
+		log.Warn().Msg("EBAY_APP_ID/EBAY_CERT_ID not set, eBay listings endpoint disabled")
+		return nil
+	}
+
+	sandbox := true
+	if raw := os.Getenv("EBAY_SANDBOX"); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			log.Fatal().Err(err).Str("EBAY_SANDBOX", raw).Msg("invalid EBAY_SANDBOX")
+		}
+		sandbox = parsed
+	}
+
+	log.Info().Bool("sandbox", sandbox).Msg("eBay listings endpoint enabled")
+	return ebay.NewService(ebay.Config{AppID: appID, CertID: certID, Sandbox: sandbox})
 }
 
 // loadEnablePriceSync reads ENABLE_PRICE_SYNC - an explicit opt-in for the
@@ -219,6 +249,7 @@ var httpCMD = &cobra.Command{
 			},
 			loadCollectionOwnerUserID(),
 			loadCollectionAllowAllUsers(),
+			loadEbayService(),
 		)
 
 		// Shares the same DB pool/connection the request handlers already

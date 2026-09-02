@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"example.com/mishis4x/ebay"
 	"example.com/mishis4x/matchmaking"
 	"example.com/mishis4x/persist"
 	"github.com/gorilla/mux"
@@ -102,11 +103,21 @@ type Data struct {
 	CollectionOwnerUserID int
 	// See CollectionOwnerUserID above.
 	CollectionAllowAllUsers bool
+	// Ebay is nil when EBAY_APP_ID/EBAY_CERT_ID aren't configured (see
+	// cmd/http.go's wiring) - GetEbayListings reports a 503 rather than
+	// crashing when this is nil, so an environment that hasn't set up
+	// eBay credentials yet just doesn't offer this one feature rather
+	// than failing to boot. Not gated by CollectionOwnerUserID (unlike
+	// what that field's own doc comment above once predicted) - see
+	// GetEbayListings' doc comment for why that restriction turned out
+	// not to actually apply here once eBay's real API License Agreement
+	// terms were read in full.
+	Ebay *ebay.Service
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
 // its own internal state (the login/signup rate limiters).
-func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool) *Data {
+func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service) *Data {
 	return &Data{
 		P:                       p,
 		Lobby:                   lobby,
@@ -115,6 +126,7 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 		SignupLimiter:           newAttemptLimiter(),
 		CollectionOwnerUserID:   collectionOwnerUserID,
 		CollectionAllowAllUsers: collectionAllowAllUsers,
+		Ebay:                    ebaySvc,
 	}
 }
 
@@ -164,6 +176,7 @@ func (d *Data) NewRouter() *mux.Router {
 	cardImages := api.PathPrefix("/cards").Subrouter()
 	cardImages.HandleFunc("/{cardID}/image", d.GetCardImage).Methods("GET")
 	cardImages.HandleFunc("/{cardID}/refresh-price", d.RefreshCardPrice).Methods("POST")
+	cardImages.HandleFunc("/{cardID}/ebay-listings", d.GetEbayListings).Methods("GET")
 
 	ownedSets := api.PathPrefix("/owned-sets").Subrouter()
 	ownedSets.HandleFunc("", d.ListOwnedSets).Methods("GET")

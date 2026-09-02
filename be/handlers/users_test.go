@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"example.com/mishis4x/ebay"
 	"example.com/mishis4x/persist"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
@@ -25,6 +26,18 @@ func newTestServer(t *testing.T, db *sql.DB) (*httptest.Server, *http.Client) {
 	t.Helper()
 
 	d := newTestData(db)
+	ts := httptest.NewServer(d.NewRouter())
+	t.Cleanup(ts.Close)
+
+	return ts, newClient(t)
+}
+
+// newTestServerWithEbay is newTestServer, but wired with a real (fake-
+// server-backed) ebay.Service instead of nil - for ebay_listings_test.go.
+func newTestServerWithEbay(t *testing.T, db *sql.DB, ebaySvc *ebay.Service) (*httptest.Server, *http.Client) {
+	t.Helper()
+
+	d := newTestDataWithEbay(db, ebaySvc)
 	ts := httptest.NewServer(d.NewRouter())
 	t.Cleanup(ts.Close)
 

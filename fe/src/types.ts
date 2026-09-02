@@ -37,3 +37,17 @@ export interface OwnedCardInput {
 export interface SetOwnedCardsInput {
   cards: OwnedCardInput[];
 }
+export interface EbayListing {
+  item_id: string;
+  title: string;
+  price_cents: number;
+  condition: string;
+  seller_username: string;
+  seller_feedback_percentage: string;
+  item_web_url: string;
+  image_url: string;
+}
+export interface EbayListingsResponse {
+  query: string;
+  listings: EbayListing[];
+}

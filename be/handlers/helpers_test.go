@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"example.com/mishis4x/ebay"
 	"example.com/mishis4x/matchmaking"
 	"example.com/mishis4x/persist"
 	"github.com/go-sql-driver/mysql"
@@ -70,12 +71,20 @@ func testSessionCookieConfig() SessionCookieConfig {
 // exercising canAccessCollection/ownerOnlyMiddleware directly constructs its
 // own Data{...} instead (see owner_only_test.go).
 func newTestData(db *sql.DB) *Data {
+	return newTestDataWithEbay(db, nil)
+}
+
+// newTestDataWithEbay is newTestData, but with an explicit ebay.Service -
+// for the one test file (ebay_listings_test.go) that needs a real (fake-
+// server-backed) one instead of the nil every other test gets.
+func newTestDataWithEbay(db *sql.DB, ebaySvc *ebay.Service) *Data {
 	return NewData(
 		persist.Persist{DB: db},
 		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
 		testSessionCookieConfig(),
 		0,
 		false,
+		ebaySvc,
 	)
 }
 
