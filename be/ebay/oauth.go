@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -83,7 +84,13 @@ func (m *tokenManager) getToken(ctx context.Context) (string, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status %d requesting oauth token from %s", resp.StatusCode, m.tokenURL)
+		// eBay's error responses here are almost always a JSON body like
+		// {"error":"invalid_client","error_description":"..."} - genuinely
+		// necessary for debugging an auth failure (which credential-level
+		// problem, not just "some 4xx happened"), so surface it rather
+		// than just the bare status code.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return "", fmt.Errorf("unexpected status %d requesting oauth token from %s: %s", resp.StatusCode, m.tokenURL, body)
 	}
 
 	var parsed tokenResponse
