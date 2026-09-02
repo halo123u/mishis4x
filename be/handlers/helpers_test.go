@@ -85,6 +85,7 @@ func newTestDataWithEbay(db *sql.DB, ebaySvc *ebay.Service) *Data {
 		0,
 		false,
 		ebaySvc,
+		false,
 	)
 }
 

@@ -7,6 +7,7 @@ export interface User {
 }
 export interface GlobalData {
   user: User;
+  ebay_listings_enabled: boolean;
 }
 export interface Time {}
 export interface Set {

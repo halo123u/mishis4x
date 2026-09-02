@@ -20,6 +20,11 @@ import (
 // same "Public Display" allowance covering the rest of this app's eBay
 // links already.
 func (d *Data) GetEbayListings(w http.ResponseWriter, r *http.Request) {
+	if d.EbayListingsDisabled {
+		writeJSONError(w, http.StatusServiceUnavailable, "eBay listings are temporarily unavailable.")
+		return
+	}
+
 	cardID := mux.Vars(r)["cardID"]
 
 	ctx, cancel := context.WithTimeout(r.Context(), refreshPriceTimeout)

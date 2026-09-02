@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"example.com/mishis4x/ebay"
+	"example.com/mishis4x/matchmaking"
 	"example.com/mishis4x/persist"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
@@ -38,6 +39,28 @@ func newTestServerWithEbay(t *testing.T, db *sql.DB, ebaySvc *ebay.Service) (*ht
 	t.Helper()
 
 	d := newTestDataWithEbay(db, ebaySvc)
+	ts := httptest.NewServer(d.NewRouter())
+	t.Cleanup(ts.Close)
+
+	return ts, newClient(t)
+}
+
+// newTestServerWithEbayDisabled wires a real ebay.Service (so a test can
+// prove the EbayListingsDisabled kill switch blocks the route even with
+// working credentials, not just when Ebay is nil) alongside
+// EbayListingsDisabled: true.
+func newTestServerWithEbayDisabled(t *testing.T, db *sql.DB, ebaySvc *ebay.Service) (*httptest.Server, *http.Client) {
+	t.Helper()
+
+	d := NewData(
+		persist.Persist{DB: db},
+		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
+		testSessionCookieConfig(),
+		0,
+		false,
+		ebaySvc,
+		true,
+	)
 	ts := httptest.NewServer(d.NewRouter())
 	t.Cleanup(ts.Close)
 
