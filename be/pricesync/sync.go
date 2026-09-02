@@ -2,11 +2,19 @@ package pricesync
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"example.com/mishis4x/persist"
 	"github.com/rs/zerolog/log"
 )
+
+// ErrRateLimited is returned by SyncURL when Limiter has no token
+// available right now - callers distinguish this from a real fetch
+// failure (be/handlers.RefreshCardPrice maps it to 429, SyncAll just
+// treats it like any other per-url error and moves on to the next one).
+var ErrRateLimited = errors.New("rate limited")
 
 // SyncDelay is the pause between fetching each distinct price-source url -
 // a few seconds apart is plenty polite given how few distinct urls there
@@ -43,93 +51,122 @@ type Stats struct {
 // the result for every card pointing at it - shared by both the
 // sync-prices CLI command and the background ticker started alongside
 // be http (cmd/http.go), so there's exactly one code path that actually
-// does a scrape+write, not two divergent copies.
+// does a scrape+write, not two divergent copies. Loops over SyncURL (the
+// actual single-url unit of work - also called directly by the on-demand
+// per-card refresh endpoint, be/handlers.RefreshCardPrice) rather than
+// duplicating its logic here.
 //
 // Respects ctx cancellation between urls (not mid-fetch) so a shutdown
 // request doesn't have to wait out the full pacing delay - see
 // cmd/http.go's use of this during graceful shutdown.
-//
-// Currently only "tcg_republic" is a supported source - anything else is
-// logged and skipped per-card, not fatal, same tolerance a malformed CSV
-// row gets elsewhere in this codebase.
 func SyncAll(ctx context.Context, p *persist.Persist) (Stats, error) {
-	var stats Stats
+	var total Stats
 
 	urls, err := p.ListDistinctPriceSourceURLs(ctx)
 	if err != nil {
-		return stats, err
+		return total, err
 	}
 	log.Info().Int("urls", len(urls)).Msg("price sync starting")
 
 	for i, url := range urls {
 		if ctx.Err() != nil {
-			return stats, ctx.Err()
+			return total, ctx.Err()
 		}
 
-		cards, err := p.ListPriceSourcesForURL(ctx, url)
+		stats, err := SyncURL(ctx, p, url)
 		if err != nil {
-			log.Error().Err(err).Str("url", url).Msg("error listing cards for url, skipping")
-			stats.Errored++
-			continue
+			log.Error().Err(err).Str("url", url).Msg("error syncing url, skipping")
 		}
-		if len(cards) == 0 {
-			continue
-		}
-
-		// Every card sharing a url is assumed to share the same source -
-		// true for how set-price-sources populates rows today (one CSV,
-		// one source column per set).
-		source := cards[0].Source
-		if source != "tcg_republic" {
-			log.Error().Str("source", source).Str("url", url).Msg("unsupported source, skipping")
-			stats.Errored += len(cards)
-			continue
-		}
-
-		items, err := fetchListingWithRetry(ctx, url)
-		if err != nil {
-			log.Error().Err(err).Str("url", url).Int("attempts", maxFetchAttempts).
-				Msg("error fetching listing page after retries, skipping")
-			stats.Errored += len(cards)
-			continue
-		}
-
-		for _, c := range cards {
-			item, found := MatchListingItem(items, c.Code)
-
-			var priceCents *int
-			if found {
-				priceCents = &item.PriceCents
-				stats.Matched++
-			} else {
-				stats.Unmatched++
-			}
-
-			if err := p.RecordPriceCheck(ctx, c.CardID, c.Source, priceCents); err != nil {
-				log.Error().Err(err).Str("code", c.Code).Msg("error recording price check, skipping")
-				stats.Errored++
-				continue
-			}
-			stats.Checked++
-		}
-
-		log.Info().Str("url", url).Int("cards", len(cards)).Msg("checked url")
+		total.Checked += stats.Checked
+		total.Matched += stats.Matched
+		total.Unmatched += stats.Unmatched
+		total.Errored += stats.Errored
 
 		if i < len(urls)-1 {
 			select {
 			case <-ctx.Done():
-				return stats, ctx.Err()
+				return total, ctx.Err()
 			case <-time.After(SyncDelay):
 			}
 		}
 	}
 
 	log.Info().
-		Int("checked", stats.Checked).
-		Int("matched", stats.Matched).
-		Int("unmatched", stats.Unmatched).
-		Int("errored", stats.Errored).
+		Int("checked", total.Checked).
+		Int("matched", total.Matched).
+		Int("unmatched", total.Unmatched).
+		Int("errored", total.Errored).
 		Msg("price sync finished")
+
+	return total, nil
+}
+
+// SyncURL fetches url once and records the result for every card pointing
+// at it - the single-url unit both SyncAll loops over and
+// be/handlers.RefreshCardPrice calls directly for one card's shared
+// source, without touching any other configured url.
+//
+// Currently only "tcg_republic" is a supported source - anything else is
+// an error, not fatal to the caller (SyncAll logs it and moves on to the
+// next url; the on-demand endpoint reports it back as a failed refresh),
+// same tolerance a malformed CSV row gets elsewhere in this codebase.
+//
+// Draws from Limiter (see ratelimiter.go) before fetching - shared between
+// this and every other SyncURL caller so a burst of on-demand refreshes
+// and the background loop can't combine into more requests than the
+// limiter allows.
+func SyncURL(ctx context.Context, p *persist.Persist, url string) (Stats, error) {
+	var stats Stats
+
+	cards, err := p.ListPriceSourcesForURL(ctx, url)
+	if err != nil {
+		stats.Errored++
+		return stats, err
+	}
+	if len(cards) == 0 {
+		return stats, nil
+	}
+
+	// Every card sharing a url is assumed to share the same source - true
+	// for how set-price-sources populates rows today (one CSV, one source
+	// column per set).
+	source := cards[0].Source
+	if source != "tcg_republic" {
+		stats.Errored += len(cards)
+		return stats, fmt.Errorf("unsupported source %q for url %q", source, url)
+	}
+
+	if !Limiter.TryAcquire() {
+		stats.Errored += len(cards)
+		return stats, ErrRateLimited
+	}
+
+	items, err := fetchListingWithRetry(ctx, url)
+	if err != nil {
+		stats.Errored += len(cards)
+		return stats, fmt.Errorf("fetching listing page after %d attempts: %w", maxFetchAttempts, err)
+	}
+
+	for _, c := range cards {
+		item, found := MatchListingItem(items, c.Code)
+
+		var priceCents *int
+		if found {
+			priceCents = &item.PriceCents
+			stats.Matched++
+		} else {
+			stats.Unmatched++
+		}
+
+		if err := p.RecordPriceCheck(ctx, c.CardID, c.Source, priceCents); err != nil {
+			log.Error().Err(err).Str("code", c.Code).Msg("error recording price check, skipping")
+			stats.Errored++
+			continue
+		}
+		stats.Checked++
+	}
+
+	log.Info().Str("url", url).Int("cards", len(cards)).Msg("checked url")
 
 	return stats, nil
 }

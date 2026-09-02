@@ -154,12 +154,13 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   }, [setID]);
 
   // Re-checks just this card's shared price-source url (POST
-  // /api/collection/cards/{id}/refresh-price - see be/handlers, not yet
-  // built as of this commit). A successful refresh can update every card
-  // sharing that url, not just the one clicked, so on success this
-  // re-fetches the whole set's cards rather than patching just this one in
-  // place - same "many cards, one shared source" shape SyncAll already
-  // relies on for the background sync.
+  // /api/cards/{id}/refresh-price - see be/handlers/refresh_price.go,
+  // which calls the exact same pricesync.SyncURL the background sync loop
+  // does). A successful refresh can update every card sharing that url,
+  // not just the one clicked, so on success this re-fetches the whole
+  // set's cards rather than patching just this one in place - same "many
+  // cards, one shared source" shape SyncAll already relies on for the
+  // background sync.
   const handleRefresh = (cardId: string) => {
     if (!setID) {
       return;
@@ -168,7 +169,7 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     setRefreshingCardId(cardId);
     setRefreshError(null);
 
-    fetch(`/api/collection/cards/${cardId}/refresh-price`, {
+    fetch(`/api/cards/${cardId}/refresh-price`, {
       method: 'POST',
     })
       .then(async (res) => {

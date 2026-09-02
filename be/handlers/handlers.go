@@ -37,6 +37,12 @@ const (
 	// the client) forever.
 	dbQueryTimeout = 5 * time.Second
 
+	// refreshPriceTimeout bounds RefreshCardPrice's whole request - it does
+	// a real outbound fetch (with its own retries/backoff, see
+	// pricesync.fetchListingWithRetry) rather than just a DB call, so it
+	// gets a longer budget than dbQueryTimeout.
+	refreshPriceTimeout = 20 * time.Second
+
 	// maxRequestBodyBytes bounds how much of a request body we'll ever read.
 	// Generous for this app's JSON API (every body is a handful of short
 	// fields) - the point is capping it at all, not the exact number.
@@ -157,6 +163,7 @@ func (d *Data) NewRouter() *mux.Router {
 	// authenticated user.
 	cardImages := api.PathPrefix("/cards").Subrouter()
 	cardImages.HandleFunc("/{cardID}/image", d.GetCardImage).Methods("GET")
+	cardImages.HandleFunc("/{cardID}/refresh-price", d.RefreshCardPrice).Methods("POST")
 
 	ownedSets := api.PathPrefix("/owned-sets").Subrouter()
 	ownedSets.HandleFunc("", d.ListOwnedSets).Methods("GET")
