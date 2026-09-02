@@ -137,6 +137,30 @@ func loadEbayService() *ebay.Service {
 	return ebay.NewService(ebay.Config{AppID: appID, CertID: certID, Sandbox: sandbox})
 }
 
+// loadEbayListingsDisabled reads EBAY_LISTINGS_DISABLED - a separate kill
+// switch from loadEbayService's nil-Service case (see
+// handlers.Data.EbayListingsDisabled's doc comment for why: credentials
+// can be fully configured and still need to be hidden, e.g. while a
+// production auth failure gets sorted out). Unset/empty returns false -
+// the feature stays on by default, same as before this switch existed;
+// this is an opt-in "turn it off," not a fail-closed gate.
+func loadEbayListingsDisabled() bool {
+	raw := os.Getenv("EBAY_LISTINGS_DISABLED")
+	if raw == "" {
+		return false
+	}
+
+	disabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Fatal().Err(err).Str("EBAY_LISTINGS_DISABLED", raw).Msg("invalid EBAY_LISTINGS_DISABLED")
+	}
+	if disabled {
+		log.Warn().Msg("eBay listings feature disabled via EBAY_LISTINGS_DISABLED")
+	}
+
+	return disabled
+}
+
 // loadEnablePriceSync reads ENABLE_PRICE_SYNC - an explicit opt-in for the
 // background price-sync loop, same fail-closed-by-default convention as
 // loadCollectionAllowAllUsers. Unset/empty returns false: without this,
@@ -250,6 +274,7 @@ var httpCMD = &cobra.Command{
 			loadCollectionOwnerUserID(),
 			loadCollectionAllowAllUsers(),
 			loadEbayService(),
+			loadEbayListingsDisabled(),
 		)
 
 		// Shares the same DB pool/connection the request handlers already

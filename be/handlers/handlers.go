@@ -113,11 +113,23 @@ type Data struct {
 	// not to actually apply here once eBay's real API License Agreement
 	// terms were read in full.
 	Ebay *ebay.Service
+	// EbayListingsDisabled is a separate kill switch from Ebay being nil -
+	// Ebay can be fully configured (real credentials loaded) and this
+	// still forces the feature off. Added for exactly the situation that
+	// prompted it: production credentials that turned out to be
+	// misconfigured/rejected by eBay (a 401 invalid_client while getting
+	// an oauth token), where hiding the broken feature from users while
+	// it's sorted out is preferable to leaving a "Check prices" button
+	// that always errors. Read by both GetGlobalData (so the frontend can
+	// hide the "eBay" option entirely, not just watch it fail) and
+	// GetEbayListings itself (defense in depth - the API refuses even if
+	// someone bypasses the UI).
+	EbayListingsDisabled bool
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
 // its own internal state (the login/signup rate limiters).
-func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service) *Data {
+func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service, ebayListingsDisabled bool) *Data {
 	return &Data{
 		P:                       p,
 		Lobby:                   lobby,
@@ -127,6 +139,7 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 		CollectionOwnerUserID:   collectionOwnerUserID,
 		CollectionAllowAllUsers: collectionAllowAllUsers,
 		Ebay:                    ebaySvc,
+		EbayListingsDisabled:    ebayListingsDisabled,
 	}
 }
 

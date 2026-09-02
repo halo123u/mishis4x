@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Card, EbayListingsResponse, OwnedCardInput } from '../types';
+import {
+  Card,
+  EbayListingsResponse,
+  OwnedCardInput,
+  Set as SetT,
+} from '../types';
 import Button from './ui/Button';
 import CardThumbnail from './ui/CardThumbnail';
+import EbayIcon from './ui/EbayIcon';
 import EbayListingsCheck from './ui/EbayListingsCheck';
 import RefreshIcon from './ui/RefreshIcon';
+import { ebaySearchUrl } from '../ebay';
 import { formatFreshness } from '../priceFreshness';
+import { useGlobalData } from '../useGlobalData';
 import styles from './SetDetail.module.css';
 
 // market_checked_at being set (regardless of market_price_cents) means the
@@ -57,6 +65,13 @@ const SetDetail = () => {
 
 const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [cards, setCards] = useState<Card[] | null>(null);
+  // Only needed for the plain eBay search link's query, shown as a
+  // fallback when ebayListingsEnabled is false (see EbayListingsCheck's
+  // real listings flow, which computes its own query server-side and
+  // doesn't need this at all) - GET /api/sets is the full catalog list,
+  // not just this one set, but there's no single-set lookup endpoint and
+  // the list itself is small/cheap.
+  const [setName, setSetName] = useState<string | null>(null);
   // card_id -> quantity, only for cards with a quantity > 0 owned_cards
   // row - a card missing from this map reads as "not owned" whether that's
   // because there's no row at all or an explicit quantity-0 one, which is
@@ -119,6 +134,12 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     message: string;
   } | null>(null);
   const navigate = useNavigate();
+  // Defaults to true (feature visible) until /api/data resolves, then
+  // reflects the real server-side kill switch - see
+  // handlers.Data.EbayListingsDisabled's doc comment for why this exists
+  // as a separate flag from eBay credentials just not being configured.
+  const { globalData } = useGlobalData();
+  const ebayListingsEnabled = globalData?.ebay_listings_enabled ?? true;
 
   useEffect(() => {
     if (!setID) {
@@ -128,8 +149,9 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     Promise.all([
       fetch(`/api/sets/${setID}/cards`),
       fetch(`/api/owned-sets/${setID}/cards`),
+      fetch('/api/sets'),
     ])
-      .then(async ([cardsRes, ownedRes]) => {
+      .then(async ([cardsRes, ownedRes, allSetsRes]) => {
         if (cardsRes.status === 404) {
           setError('This set could not be found.');
           return;
@@ -153,6 +175,14 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
         setOwned(ownedMap);
         setOwnedPrices(pricesMap);
         setCards(await cardsRes.json());
+
+        // Not fatal if this one fails - the eBay fallback link just falls
+        // back to omitting the set name from its query rather than
+        // blocking the whole page over a non-essential extra.
+        if (allSetsRes.status === 200) {
+          const allSets: SetT[] = await allSetsRes.json();
+          setSetName(allSets.find((s) => s.id === setID)?.name ?? null);
+        }
       })
       .catch(() => {
         setError('Could not reach the server. Please try again.');
@@ -633,30 +663,45 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                             {renderFreshness(card)}
                           </>
                         ))}
-                  {priceSource === 'ebay' && (
-                    <EbayListingsCheck
-                      card={card}
-                      status={
-                        ebayDataByCard[card.id]
-                          ? 'loaded'
-                          : ebayLoadingCardId === card.id
-                            ? 'loading'
-                            : ebayError?.cardId === card.id
-                              ? 'error'
-                              : 'idle'
-                      }
-                      isOpen={ebayOpenCardId === card.id}
-                      listings={ebayDataByCard[card.id]?.listings ?? []}
-                      query={ebayDataByCard[card.id]?.query}
-                      errorMessage={
-                        ebayError?.cardId === card.id
-                          ? ebayError.message
-                          : undefined
-                      }
-                      onTrigger={() => handleCheckEbayPrices(card.id)}
-                      onClose={() => setEbayOpenCardId(null)}
-                    />
-                  )}
+                  {priceSource === 'ebay' &&
+                    (ebayListingsEnabled ? (
+                      <EbayListingsCheck
+                        card={card}
+                        status={
+                          ebayDataByCard[card.id]
+                            ? 'loaded'
+                            : ebayLoadingCardId === card.id
+                              ? 'loading'
+                              : ebayError?.cardId === card.id
+                                ? 'error'
+                                : 'idle'
+                        }
+                        isOpen={ebayOpenCardId === card.id}
+                        listings={ebayDataByCard[card.id]?.listings ?? []}
+                        query={ebayDataByCard[card.id]?.query}
+                        errorMessage={
+                          ebayError?.cardId === card.id
+                            ? ebayError.message
+                            : undefined
+                        }
+                        onTrigger={() => handleCheckEbayPrices(card.id)}
+                        onClose={() => setEbayOpenCardId(null)}
+                      />
+                    ) : (
+                      // Fallback while the real listings feature is
+                      // switched off (see EbayListingsCheck's kill-switch
+                      // handling above) - the plain search-icon link this
+                      // app used before that feature existed.
+                      <a
+                        href={ebaySearchUrl(setName, card.code)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.ebayLink}
+                        aria-label={`Search eBay for ${card.name}`}
+                      >
+                        <EbayIcon />
+                      </a>
+                    ))}
                 </div>
               );
             })}

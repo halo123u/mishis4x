@@ -117,6 +117,35 @@ func TestGetEbayListings_NotConfigured(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, res.StatusCode)
 }
 
+// TestGetEbayListings_Disabled proves EbayListingsDisabled blocks the
+// route even with a fully working ebay.Service configured - a separate
+// kill switch from TestGetEbayListings_NotConfigured's nil-Service case
+// (see handlers.Data.EbayListingsDisabled's doc comment for why both
+// exist).
+func TestGetEbayListings_Disabled(t *testing.T) {
+	db := testDB(t)
+	fake := fakeEbayServer(t)
+	svc := ebay.NewServiceWithURLs("app-id", "cert-id", fake.URL+"/token", fake.URL+"/search")
+	ts, client := newTestServerWithEbayDisabled(t, db, svc)
+	createAndLoginTestUser(t, db, client, ts.URL)
+
+	p := &persist.Persist{DB: db}
+	setID, err := p.CreateSet(t.Context(), "Ebay Listings Test Set", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Test Card", "BRD/W139-086S", "SR")
+	require.NoError(t, err)
+
+	res, err := client.Get(ts.URL + "/api/cards/" + cardID + "/ebay-listings")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusServiceUnavailable, res.StatusCode)
+}
+
 func TestGetEbayListings_Unauthenticated(t *testing.T) {
 	db := testDB(t)
 	ts, client := newTestServer(t, db)
