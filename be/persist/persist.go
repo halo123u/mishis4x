@@ -31,10 +31,24 @@ type Persist struct {
 
 func NewDB(env string) (*sql.DB, error) {
 	if env == "local" {
+		// Overload, not Load: Load only fills in vars that aren't already
+		// set, so anything lingering in the shell (e.g. DB_HOST/DB_CA_CERT
+		// exported earlier for a --env prod command in the same terminal -
+		// this bit for real once already) silently wins over --env local's
+		// own file. Overload forces every var this file lists, making
+		// --env local actually deterministic regardless of shell history.
+		//
+		// DB_CA_CERT isn't listed in this file at all (local's plain
+		// Docker MySQL never uses TLS - see configureTLS), so even
+		// Overload can't clear a stray export of it - unset it explicitly
+		// instead of leaving local's TLS-or-not dependent on shell hygiene.
 		envPath := "./infra/envs/local/.env"
-		err := godotenv.Load(envPath)
+		err := godotenv.Overload(envPath)
 		if err != nil {
 			log.Fatal().Err(err).Msg("error loading .env file")
+		}
+		if err := os.Unsetenv("DB_CA_CERT"); err != nil {
+			log.Fatal().Err(err).Msg("error unsetting DB_CA_CERT")
 		}
 	}
 
