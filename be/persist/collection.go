@@ -344,6 +344,29 @@ func (p *Persist) GetCardIDByCode(ctx context.Context, setID, code string) (stri
 	return id, nil
 }
 
+// GetCardSearchInfo returns just enough about cardID - its own code and
+// its set's name - for the on-demand eBay listings endpoint
+// (be/handlers.GetEbayListings) to build the same search query
+// ebay.SearchQuery/fe/src/ebay.ts's ebaySearchUrl already construct.
+// found is false when cardID doesn't exist at all.
+func (p *Persist) GetCardSearchInfo(ctx context.Context, cardID string) (code, setName string, found bool, err error) {
+	row := sq.Select("cards.code", "sets.name").
+		From("cards").
+		Join("sets ON sets.id = cards.set_id").
+		Where(sq.Eq{"cards.id": cardID}).
+		RunWith(p.DB).
+		QueryRowContext(ctx)
+
+	if err := row.Scan(&code, &setName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", "", false, nil
+		}
+		return "", "", false, err
+	}
+
+	return code, setName, true, nil
+}
+
 // codePattern splits a card code into everything before its trailing
 // number+letters, that trailing number, and its trailing letter suffix
 // (the rarity-variant marker: "S", "SP", "SSP", "EX", ...). The prefix

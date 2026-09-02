@@ -26,7 +26,7 @@ var generateTypesCMD = &cobra.Command{
 
 func generateTypes() {
 	log.Info().Msg("generating types")
-	converter := typescriptify.New().Add(api.GlobalData{}).Add(api.Set{}).Add(api.Card{}).Add(api.AddOwnedSetInput{}).Add(api.OwnedCardInput{}).Add(api.SetOwnedCardsInput{})
+	converter := typescriptify.New().Add(api.GlobalData{}).Add(api.Set{}).Add(api.Card{}).Add(api.AddOwnedSetInput{}).Add(api.OwnedCardInput{}).Add(api.SetOwnedCardsInput{}).Add(api.EbayListing{})
 
 	err := converter.WithInterface(true).ConvertToFile("types.ts")
 	if err != nil {

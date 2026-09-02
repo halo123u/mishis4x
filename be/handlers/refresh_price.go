@@ -33,22 +33,22 @@ func (d *Data) RefreshCardPrice(w http.ResponseWriter, r *http.Request) {
 	_, url, found, err := d.P.GetPriceSourceForCard(ctx, cardID)
 	if err != nil {
 		log.Error().Err(err).Str("cardID", cardID).Msg("error looking up price source for card")
-		http.Error(w, "Something went wrong.", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
 		return
 	}
 	if !found {
-		http.Error(w, "This card has no price source configured.", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "This card has no price source configured.")
 		return
 	}
 
 	stats, err := pricesync.SyncURL(ctx, &d.P, url)
 	if err != nil {
 		if errors.Is(err, pricesync.ErrRateLimited) {
-			http.Error(w, "Too many refreshes right now. Please try again shortly.", http.StatusTooManyRequests)
+			writeJSONError(w, http.StatusTooManyRequests, "Too many refreshes right now. Please try again shortly.")
 			return
 		}
 		log.Error().Err(err).Str("cardID", cardID).Str("url", url).Msg("error refreshing card price")
-		http.Error(w, "Could not refresh this price. Please try again.", http.StatusBadGateway)
+		writeJSONError(w, http.StatusBadGateway, "Could not refresh this price. Please try again.")
 		return
 	}
 

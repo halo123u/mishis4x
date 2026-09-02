@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Card, OwnedCardInput, Set as SetT } from '../types';
+import { Card, EbayListing, OwnedCardInput } from '../types';
 import Button from './ui/Button';
 import CardThumbnail from './ui/CardThumbnail';
-import EbayIcon from './ui/EbayIcon';
+import EbayListingsCheck from './ui/EbayListingsCheck';
 import RefreshIcon from './ui/RefreshIcon';
-import { ebaySearchUrl } from '../ebay';
 import { formatFreshness } from '../priceFreshness';
 import styles from './SetDetail.module.css';
 
@@ -58,10 +57,6 @@ const SetDetail = () => {
 
 const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [cards, setCards] = useState<Card[] | null>(null);
-  // Only needed for the eBay quick-link's search query - GET /api/sets is
-  // the full catalog list, not just this one set, but there's no
-  // single-set lookup endpoint and the list itself is small/cheap.
-  const [setName, setSetName] = useState<string | null>(null);
   // card_id -> quantity, only for cards with a quantity > 0 owned_cards
   // row - a card missing from this map reads as "not owned" whether that's
   // because there's no row at all or an explicit quantity-0 one, which is
@@ -88,11 +83,12 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     'all' | 'owned' | 'missing'
   >('all');
   // Which price affordance the tile shows - TCG's tracked market price
-  // (paid-vs-market comparison) or the eBay quick-search link. Not both at
-  // once: eBay data isn't tracked historically the way TCG's is (no real
-  // eBay API access yet, just the search link), and once real eBay pricing
-  // does exist it'll need its own owner-only gating per eBay's ToS - kept
-  // as a separate mode entirely rather than merged into the same view.
+  // (paid-vs-market comparison) or eBay's on-demand listings check. Not
+  // both at once: eBay listings are live-fetched-and-cached (see
+  // be/ebay), not synced/stored the way TCG's is, and eBay's terms
+  // forbid combining the two into one display anyway (see
+  // [[ebay-api-license-terms]]) - kept as a separate mode entirely rather
+  // than merged into the same view.
   const [priceSource, setPriceSource] = useState<'tcg' | 'ebay'>('tcg');
   // One refresh in flight at a time, keyed by card id - simplest possible
   // concurrency model given a click already re-fetches every card in the
@@ -100,6 +96,23 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // just race each other's re-fetch rather than do anything useful.
   const [refreshingCardId, setRefreshingCardId] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<{
+    cardId: string;
+    message: string;
+  } | null>(null);
+  // eBay listings state - only one card's popover open at a time
+  // (ebayOpenCardId), fetched results kept per-card once loaded so
+  // reopening the same card's badge doesn't re-fetch (see
+  // EbayListingsCheck's doc comment). ebayLoadingCardId separately tracks
+  // which card's fetch is in flight, since a click can happen for a card
+  // that isn't the currently-open one.
+  const [ebayOpenCardId, setEbayOpenCardId] = useState<string | null>(null);
+  const [ebayListingsByCard, setEbayListingsByCard] = useState<
+    Record<string, EbayListing[]>
+  >({});
+  const [ebayLoadingCardId, setEbayLoadingCardId] = useState<string | null>(
+    null,
+  );
+  const [ebayError, setEbayError] = useState<{
     cardId: string;
     message: string;
   } | null>(null);
@@ -113,9 +126,8 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     Promise.all([
       fetch(`/api/sets/${setID}/cards`),
       fetch(`/api/owned-sets/${setID}/cards`),
-      fetch('/api/sets'),
     ])
-      .then(async ([cardsRes, ownedRes, allSetsRes]) => {
+      .then(async ([cardsRes, ownedRes]) => {
         if (cardsRes.status === 404) {
           setError('This set could not be found.');
           return;
@@ -139,14 +151,6 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
         setOwned(ownedMap);
         setOwnedPrices(pricesMap);
         setCards(await cardsRes.json());
-
-        // Not fatal if this one fails - the eBay link just falls back to
-        // omitting the set name from its query rather than blocking the
-        // whole page over a non-essential extra.
-        if (allSetsRes.status === 200) {
-          const allSets: SetT[] = await allSetsRes.json();
-          setSetName(allSets.find((s) => s.id === setID)?.name ?? null);
-        }
       })
       .catch(() => {
         setError('Could not reach the server. Please try again.');
@@ -205,6 +209,45 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       })
       .finally(() => {
         setRefreshingCardId(null);
+      });
+  };
+
+  // Handles both the initial "Check prices" click (fetch live, cache
+  // locally) and reopening an already-checked card's range badge (just
+  // toggles visibility, no new fetch) - EbayListingsCheck stays purely
+  // presentational and calls this same handler either way.
+  const handleCheckEbayPrices = (cardId: string) => {
+    if (ebayListingsByCard[cardId]) {
+      setEbayOpenCardId((current) => (current === cardId ? null : cardId));
+      return;
+    }
+
+    setEbayLoadingCardId(cardId);
+    setEbayError(null);
+
+    fetch(`/api/cards/${cardId}/ebay-listings`)
+      .then(async (res) => {
+        if (res.status === 503) {
+          throw new Error('eBay listings are not available right now.');
+        }
+        // Same false-positive-200 guard as handleRefresh above: an
+        // unmatched /api/* path falls through to the router's SPA-shell
+        // catch-all, which returns 200 with index.html's HTML rather than
+        // a real 404 - a JSON content-type check catches that instead of
+        // res.json() throwing a confusing parse error.
+        const contentType = res.headers.get('content-type') ?? '';
+        if (res.status !== 200 || !contentType.includes('json')) {
+          throw new Error('Could not fetch eBay listings. Please try again.');
+        }
+        const listings: EbayListing[] = await res.json();
+        setEbayListingsByCard((prev) => ({ ...prev, [cardId]: listings }));
+        setEbayOpenCardId(cardId);
+      })
+      .catch((err: Error) => {
+        setEbayError({ cardId, message: err.message });
+      })
+      .finally(() => {
+        setEbayLoadingCardId(null);
       });
   };
 
@@ -579,15 +622,27 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                           </>
                         ))}
                   {priceSource === 'ebay' && (
-                    <a
-                      href={ebaySearchUrl(setName, card.code)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={styles.ebayLink}
-                      aria-label={`Search eBay for ${card.name}`}
-                    >
-                      <EbayIcon />
-                    </a>
+                    <EbayListingsCheck
+                      card={card}
+                      status={
+                        ebayListingsByCard[card.id]
+                          ? 'loaded'
+                          : ebayLoadingCardId === card.id
+                            ? 'loading'
+                            : ebayError?.cardId === card.id
+                              ? 'error'
+                              : 'idle'
+                      }
+                      isOpen={ebayOpenCardId === card.id}
+                      listings={ebayListingsByCard[card.id] ?? []}
+                      errorMessage={
+                        ebayError?.cardId === card.id
+                          ? ebayError.message
+                          : undefined
+                      }
+                      onTrigger={() => handleCheckEbayPrices(card.id)}
+                      onClose={() => setEbayOpenCardId(null)}
+                    />
                   )}
                 </div>
               );
