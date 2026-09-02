@@ -225,7 +225,17 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     setEbayLoadingCardId(cardId);
     setEbayError(null);
 
-    fetch(`/api/cards/${cardId}/ebay-listings`)
+    // cache: 'no-store' - a real, hit-in-testing failure mode: this
+    // endpoint didn't exist yet for part of today's dev session, so any
+    // browser that GET-requested this exact URL earlier got back the
+    // SPA-shell's index.html (200, Last-Modified set, no explicit
+    // Cache-Control) - which the browser's own HTTP cache then heuristically
+    // treated as cacheable, and kept serving from cache indefinitely even
+    // after the real endpoint started working. This isn't just a local-dev
+    // artifact of today either: any future new GET endpoint hit once before
+    // its route existed would hit the same trap. no-store is the correct
+    // fix regardless - this response should never be cached at all.
+    fetch(`/api/cards/${cardId}/ebay-listings`, { cache: 'no-store' })
       .then(async (res) => {
         if (res.status === 503) {
           throw new Error('eBay listings are not available right now.');
