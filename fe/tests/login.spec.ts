@@ -1,5 +1,6 @@
 import { test, expect, Page } from "@playwright/test";
 import { nanoid } from "nanoid";
+import { mintApprovedInviteCode } from "./inviteHelper";
 
 test("login/logout", async ({ page }) => {
   await page.goto("http://localhost:8091/login");
@@ -21,9 +22,12 @@ test("login/logout", async ({ page }) => {
 });
 
 test("test create account", async ({ page }) => {
-  await page.goto("http://localhost:8091/login");
-
-  await page.click('a[href="/sign-up"]');
+  // Signup is invite-only (see be/handlers/users.go's UserCreate) - the
+  // "/sign-up" link with no code just shows an explanatory message now,
+  // so this goes straight to an already-approved invite link instead of
+  // clicking through from /login.
+  const invite = mintApprovedInviteCode();
+  await page.goto(`http://localhost:8091/sign-up?invite=${invite}`);
 
   // Signup enforces an 8-char minimum password (see UserForm's
   // passwordMinLength) - login intentionally does not, so the seeded

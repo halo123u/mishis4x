@@ -49,8 +49,8 @@ const Login: FC = () => {
           pending={pending}
           error={error}
         />
-        <Link to="/sign-up" className={styles.link}>
-          Create account
+        <Link to="/request-invite" className={styles.link}>
+          Request an invite
         </Link>
       </div>
     </div>

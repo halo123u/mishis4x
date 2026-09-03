@@ -16,3 +16,9 @@ __debug_bin
 # One-off real credentials for running prod DB commands (e.g. migrations)
 # manually from a laptop - never committed, see infra/envs/prod/.env.local.
 /infra/envs/prod/
+
+# Same "one-off real credentials, never committed" pattern as prod/.env.local
+# above, but for real (e.g. prod eBay) credentials pointed at from local dev -
+# infra/envs/local/.env itself IS committed (fake/non-secret defaults), this
+# sibling file isn't.
+/infra/envs/local/.env.local

@@ -88,6 +88,13 @@ type Data struct {
 	// real login for that account, and vice versa.
 	LoginLimiter  *attemptLimiter
 	SignupLimiter *attemptLimiter
+	// InviteRequestLimiter throttles the public "request an invite" form
+	// (RequestInvite) by email address - same in-memory attemptLimiter as
+	// the other two, just keyed by email instead of username. Every
+	// submission counts against it (there's no real "failure" case to
+	// distinguish here the way a wrong password is one), so it's really
+	// just a submission cap per address per window.
+	InviteRequestLimiter *attemptLimiter
 	// CollectionOwnerUserID and CollectionAllowAllUsers back
 	// canAccessCollection/ownerOnlyMiddleware (see their doc comments) -
 	// not currently wired into any route. They gated the whole collection
@@ -136,6 +143,7 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 		Sessions:                sessions,
 		LoginLimiter:            newAttemptLimiter(),
 		SignupLimiter:           newAttemptLimiter(),
+		InviteRequestLimiter:    newAttemptLimiter(),
 		CollectionOwnerUserID:   collectionOwnerUserID,
 		CollectionAllowAllUsers: collectionAllowAllUsers,
 		Ebay:                    ebaySvc,
@@ -161,6 +169,7 @@ func (d *Data) NewRouter() *mux.Router {
 	//API routes
 	api.HandleFunc("/user/login", d.UserLogin).Methods("POST")
 	api.HandleFunc("/user/create", d.UserCreate).Methods("POST")
+	api.HandleFunc("/invites/request", d.RequestInvite).Methods("POST")
 
 	// // Protected routes
 	api.HandleFunc("/logout", d.UserLogout)
@@ -365,7 +374,7 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" {
+		if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" || r.URL.Path == "/api/invites/request" {
 			next.ServeHTTP(w, r)
 			return
 		}
