@@ -1,11 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // `docker compose` resolves compose.yaml relative to its own cwd, but
 // Playwright itself runs with cwd fe/ (see package.json's test script) -
 // point at the repo-root compose.yaml explicitly rather than relying on
-// whatever directory this happens to be invoked from.
+// whatever directory this happens to be invoked from. fe/package.json is
+// "type": "module", so this file runs as real ESM (no __dirname) -
+// import.meta.url is the ESM-safe equivalent.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const composeFile = path.resolve(__dirname, "..", "..", "compose.yaml");
 
 let emailCounter = 0;
