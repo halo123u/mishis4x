@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"example.com/mishis4x/email"
 	"example.com/mishis4x/logger"
@@ -96,7 +97,15 @@ itself will fail even though the DB update already succeeded.`,
 		// discovered only after that point would strand an approved code
 		// nobody can see. Fail here instead, while it's still cheap to
 		// just fix the env and re-run.
-		appBaseURL := os.Getenv("APP_BASE_URL")
+		//
+		// TrimSpace guards against a real, hit-in-production mistake: a
+		// trailing space pasted into DigitalOcean's env var UI silently
+		// became part of every generated sign-up link
+		// ("mishis4x.com /sign-up", rendered by email clients as
+		// "mishis4x.com%20/sign-up" - an invalid, unclickable URL) without
+		// ever showing up as an error here, since a value with a trailing
+		// space still isn't "".
+		appBaseURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
 		if appBaseURL == "" {
 			log.Fatal().Msg("APP_BASE_URL is not set")
 		}
@@ -175,13 +184,19 @@ var inviteDenyCMD = &cobra.Command{
 // error rather than fataling directly - invite-approve calls this before
 // touching the DB specifically so a missing/bad config is caught before
 // an invite gets irreversibly flipped to 'approved'.
+//
+// TrimSpace on both env vars for the same reason buildSignupURL's
+// APP_BASE_URL read has it (see invite-approve) - a stray copy-pasted
+// space wouldn't fail the == "" check, it'd just quietly break the
+// value at the point it's actually used (a malformed Authorization
+// header, an invalid From address).
 func loadEmailService() (*email.Service, error) {
-	apiKey := os.Getenv("RESEND_API_KEY")
+	apiKey := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
 	if apiKey == "" {
 		return nil, fmt.Errorf("RESEND_API_KEY is not set")
 	}
 
-	from := os.Getenv("EMAIL_FROM_ADDRESS")
+	from := strings.TrimSpace(os.Getenv("EMAIL_FROM_ADDRESS"))
 	if from == "" {
 		from = defaultInviteFromAddress
 	}
