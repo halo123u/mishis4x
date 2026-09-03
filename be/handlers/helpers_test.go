@@ -107,3 +107,21 @@ func testUsername(t *testing.T, db *sql.DB) string {
 
 	return username
 }
+
+// testInviteToken mints a fresh, unused invite token directly via persist
+// (bypassing HTTP, matching how createTestUser bypasses HTTP for direct user
+// creation) - signup now requires one (see handlers.UserCreate), and since
+// each token is single-use, any test driving /api/user/create through the
+// invite-redemption path needs its own call to this per attempt.
+func testInviteToken(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	p := &persist.Persist{DB: db}
+	token, err := p.CreateInvite(t.Context())
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM invites WHERE token = ?`, token)
+	})
+
+	return token
+}

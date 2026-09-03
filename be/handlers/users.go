@@ -30,6 +30,11 @@ type User struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Status   string `json:"status"`
+	// InviteToken gates signup - see UserCreate's doc comment. Not part
+	// of persist.User (it's redeemed, not stored on the user record
+	// itself - see persist.MarkInviteUsedBy for where it does get
+	// recorded, on the invites row instead).
+	InviteToken string `json:"invite_token"`
 }
 
 // validatePassword is shared by signup and change-password - login
@@ -57,6 +62,13 @@ func validateSignupInput(username, password string) string {
 	return validatePassword(password)
 }
 
+// UserCreate is invite-only, not open public signup - a valid, unused
+// invites row (see persist.RedeemInvite) is required before an account
+// gets created. Invites are minted by the app owner via `be invite
+// create` (be/cmd/invite.go), not through any API endpoint - there's no
+// "invite someone else" feature for a regular user, matching this app's
+// current single-owner-controlled-access shape (same spirit as
+// CollectionOwnerUserID elsewhere).
 func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 	var u User
 	u.Status = "active"
@@ -72,12 +84,35 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
 	// Rate limited per username, separately from login (see
 	// attemptLimiter's doc comment) - mainly to slow down probing whether a
 	// given username is taken via repeated signup attempts against it.
+	// Checked before the invite gets burned below: a username already
+	// under lockout is going to be rejected regardless of invite
+	// validity, so there's no reason to spend a scarce, hand-issued
+	// invite on a request that can't succeed anyway.
 	if d.SignupLimiter.locked(u.Username) {
 		log.Warn().Str("username", u.Username).Msg("signup blocked: too many failed attempts")
 		writeJSONError(w, http.StatusTooManyRequests, "Too many attempts. Please try again in a few minutes.")
+		return
+	}
+
+	// Claimed before the bcrypt work below, so an invalid or already-used
+	// token fails as cheaply as possible - see persist.RedeemInvite's doc
+	// comment for why this is safe under concurrent redemption attempts
+	// and why a signup that fails further down still burns the invite
+	// rather than un-claiming it.
+	if err := d.P.RedeemInvite(ctx, u.InviteToken); err != nil {
+		if errors.Is(err, persist.ErrInvalidInvite) {
+			log.Warn().Msg("signup blocked: invalid or already-used invite")
+			writeJSONError(w, http.StatusForbidden, "This invite link is invalid or has already been used.")
+			return
+		}
+		log.Error().Err(err).Msg("error redeeming invite")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong creating your account. Please try again.")
 		return
 	}
 
@@ -87,9 +122,6 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "Something went wrong creating your account. Please try again.")
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
-	defer cancel()
 
 	id, err := d.P.CreateUser(ctx, persist.User{
 		Username: u.Username,
@@ -109,6 +141,12 @@ func (d *Data) UserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.SignupLimiter.recordSuccess(u.Username)
+
+	// Best-effort - see MarkInviteUsedBy's doc comment for why a failure
+	// here shouldn't fail a signup that already succeeded.
+	if err := d.P.MarkInviteUsedBy(ctx, u.InviteToken, id); err != nil {
+		log.Error().Err(err).Int("userID", id).Msg("error recording invite redeemer")
+	}
 
 	session, err := d.P.CreateSession(ctx, id, d.Sessions.TTL)
 	if err != nil {

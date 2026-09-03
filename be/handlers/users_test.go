@@ -128,8 +128,9 @@ func TestUserCreate_Success(t *testing.T) {
 	username := testUsername(t, db)
 
 	res := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
-		"username": username,
-		"password": "validpass123",
+		"username":     username,
+		"password":     "validpass123",
+		"invite_token": testInviteToken(t, db),
 	})
 	require.Equal(t, http.StatusCreated, res.StatusCode)
 
@@ -155,18 +156,79 @@ func TestUserCreate_DuplicateUsername(t *testing.T) {
 	username := testUsername(t, db)
 
 	res := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
-		"username": username,
-		"password": "validpass123",
+		"username":     username,
+		"password":     "validpass123",
+		"invite_token": testInviteToken(t, db),
 	})
 	require.Equal(t, http.StatusCreated, res.StatusCode)
 
+	// Invites are single-use (see persist.RedeemInvite), so this second
+	// attempt needs its own fresh, valid one to actually reach the
+	// duplicate-username check rather than failing on an already-used
+	// invite instead.
 	res2 := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
-		"username": username,
-		"password": "anotherpass456",
+		"username":     username,
+		"password":     "anotherpass456",
+		"invite_token": testInviteToken(t, db),
 	})
 	require.Equal(t, http.StatusConflict, res2.StatusCode)
 	require.Equal(t, "That username is already taken.", decodeError(t, res2))
 }
+
+func TestUserCreate_NoInviteToken(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+	username := testUsername(t, db)
+
+	res := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
+		"username": username,
+		"password": "validpass123",
+	})
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+	require.Equal(t, "This invite link is invalid or has already been used.", decodeError(t, res))
+}
+
+func TestUserCreate_InvalidInviteToken(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+	username := testUsername(t, db)
+
+	res := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
+		"username":     username,
+		"password":     "validpass123",
+		"invite_token": "this-token-was-never-minted",
+	})
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+	require.Equal(t, "This invite link is invalid or has already been used.", decodeError(t, res))
+}
+
+func TestUserCreate_AlreadyUsedInviteToken(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+	invite := testInviteToken(t, db)
+
+	res := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
+		"username":     testUsername(t, db),
+		"password":     "validpass123",
+		"invite_token": invite,
+	})
+	require.Equal(t, http.StatusCreated, res.StatusCode)
+
+	// Same invite, a different (available) username - the invite itself
+	// being spent is what should block this, not a username collision.
+	res2 := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
+		"username":     testUsername(t, db),
+		"password":     "anotherpass456",
+		"invite_token": invite,
+	})
+	require.Equal(t, http.StatusForbidden, res2.StatusCode)
+	require.Equal(t, "This invite link is invalid or has already been used.", decodeError(t, res2))
+}
+
+// TestUserCreate_PasswordTooShort and TestUserCreate_MissingUsername
+// deliberately don't pass an invite_token - input validation
+// (validateSignupInput) runs before the invite is ever checked (see
+// handlers.UserCreate), so these fail on the same 400 regardless.
 
 func TestUserCreate_PasswordTooShort(t *testing.T) {
 	db := testDB(t)
@@ -275,17 +337,23 @@ func TestUserCreate_RateLimiting(t *testing.T) {
 
 	// Every attempt below hits the duplicate-username (409) branch, since
 	// username already exists - repeatedly probing that is exactly the
-	// enumeration angle this limiter exists to slow down.
+	// enumeration angle this limiter exists to slow down. Invites are
+	// single-use (see persist.RedeemInvite), so each attempt needs its own
+	// fresh one to actually reach the duplicate-username check.
 	var lastStatus int
 	for i := 0; i < maxFailedAttempts; i++ {
 		res := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
-			"username": username,
-			"password": "someotherpass123",
+			"username":     username,
+			"password":     "someotherpass123",
+			"invite_token": testInviteToken(t, db),
 		})
 		lastStatus = res.StatusCode
 	}
 	require.Equal(t, http.StatusConflict, lastStatus, "the threshold-th attempt is still just a normal duplicate-username response")
 
+	// No invite_token needed here - the rate-limit check now runs before
+	// the invite is claimed (see handlers.UserCreate), specifically so a
+	// lockout like this one doesn't need to burn one.
 	lockedRes := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
 		"username": username,
 		"password": "someotherpass123",
@@ -296,8 +364,9 @@ func TestUserCreate_RateLimiting(t *testing.T) {
 	// limiter is keyed per-username, not global.
 	freeUsername := testUsername(t, db)
 	freeRes := postJSON(t, client, ts.URL+"/api/user/create", map[string]string{
-		"username": freeUsername,
-		"password": "someotherpass123",
+		"username":     freeUsername,
+		"password":     "someotherpass123",
+		"invite_token": testInviteToken(t, db),
 	})
 	require.Equal(t, http.StatusCreated, freeRes.StatusCode)
 }
