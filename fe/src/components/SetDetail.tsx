@@ -114,15 +114,14 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     cardId: string;
     message: string;
   } | null>(null);
-  // eBay listings state - only one card's popover open at a time
-  // (ebayOpenCardId), fetched results kept per-card once loaded so
-  // reopening the same card's badge doesn't re-fetch (see
-  // EbayListingsCheck's doc comment). ebayLoadingCardId separately tracks
-  // which card's fetch is in flight, since a click can happen for a card
-  // that isn't the currently-open one. Query is kept alongside the
-  // listings (not re-derived client-side) so an empty result can still
-  // link out to a plain eBay search for the same query the API used.
-  const [ebayOpenCardId, setEbayOpenCardId] = useState<string | null>(null);
+  // eBay listings state - fetched results kept per-card once loaded, so
+  // the range badge (see EbayListingsCheck's doc comment - a plain link
+  // out to eBay's real search results, not an in-app listing browser)
+  // doesn't need to re-fetch on every render. ebayLoadingCardId
+  // separately tracks which card's fetch is in flight, since a click can
+  // happen for a card that isn't the most recent one. Query is kept
+  // alongside the listings (not re-derived client-side) so the range
+  // badge links to the exact search the API itself used.
   const [ebayDataByCard, setEbayDataByCard] = useState<
     Record<string, EbayListingsResponse>
   >({});
@@ -244,16 +243,12 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       });
   };
 
-  // Handles both the initial "Check prices" click (fetch live, cache
-  // locally) and reopening an already-checked card's range badge (just
-  // toggles visibility, no new fetch) - EbayListingsCheck stays purely
-  // presentational and calls this same handler either way.
+  // Fires on the "Check prices" click - fetches live and caches locally.
+  // EbayListingsCheck only ever renders this as callable while status is
+  // 'idle' or 'error' (see its own doc comment - once loaded, the badge
+  // is a plain link out to eBay, not something that re-triggers this),
+  // so there's no "already have it, do nothing" guard needed here.
   const handleCheckEbayPrices = (cardId: string) => {
-    if (ebayDataByCard[cardId]) {
-      setEbayOpenCardId((current) => (current === cardId ? null : cardId));
-      return;
-    }
-
     setEbayLoadingCardId(cardId);
     setEbayError(null);
 
@@ -283,7 +278,6 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
         }
         const data: EbayListingsResponse = await res.json();
         setEbayDataByCard((prev) => ({ ...prev, [cardId]: data }));
-        setEbayOpenCardId(cardId);
       })
       .catch((err: Error) => {
         setEbayError({ cardId, message: err.message });
@@ -676,7 +670,6 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                                 ? 'error'
                                 : 'idle'
                         }
-                        isOpen={ebayOpenCardId === card.id}
                         listings={ebayDataByCard[card.id]?.listings ?? []}
                         query={ebayDataByCard[card.id]?.query}
                         errorMessage={
@@ -685,7 +678,6 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                             : undefined
                         }
                         onTrigger={() => handleCheckEbayPrices(card.id)}
-                        onClose={() => setEbayOpenCardId(null)}
                       />
                     ) : (
                       // Fallback while the real listings feature is
