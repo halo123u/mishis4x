@@ -108,20 +108,33 @@ func testUsername(t *testing.T, db *sql.DB) string {
 	return username
 }
 
-// testInviteToken mints a fresh, unused invite token directly via persist
-// (bypassing HTTP, matching how createTestUser bypasses HTTP for direct user
-// creation) - signup now requires one (see handlers.UserCreate), and since
-// each token is single-use, any test driving /api/user/create through the
-// invite-redemption path needs its own call to this per attempt.
-func testInviteToken(t *testing.T, db *sql.DB) string {
+var testInviteCounter atomic.Int64
+
+// testApprovedInvite inserts an invites row that's already 'approved',
+// straight via SQL (bypassing the real request -> invite-approve flow
+// and its email send entirely, matching how createTestUser bypasses HTTP
+// for direct user creation) - signup requires a redeemable code (see
+// handlers.UserCreate), and since each one is single-use, any test
+// driving /api/user/create through the invite-redemption path needs its
+// own call to this per attempt.
+func testApprovedInvite(t *testing.T, db *sql.DB) string {
 	t.Helper()
-	p := &persist.Persist{DB: db}
-	token, err := p.CreateInvite(t.Context())
+
+	code, err := persist.NewInviteCode()
+	require.NoError(t, err)
+
+	n := testInviteCounter.Add(1)
+	email := fmt.Sprintf("ht-invite-%d-%d@example.com", time.Now().Unix()%100000, n)
+
+	_, err = db.Exec(
+		`INSERT INTO invites (code, status, email_address) VALUES (?, 'approved', ?)`,
+		code, email,
+	)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		_, _ = db.Exec(`DELETE FROM invites WHERE token = ?`, token)
+		_, _ = db.Exec(`DELETE FROM invites WHERE code = ?`, code)
 	})
 
-	return token
+	return code
 }

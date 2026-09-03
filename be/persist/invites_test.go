@@ -9,56 +9,194 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateInvite(t *testing.T) {
+// testEmail returns a unique-per-call email address so tests don't
+// collide with each other or with ErrInviteRequestExists' dedup check.
+var testEmailCounter int
+
+func testEmail(t *testing.T) string {
+	t.Helper()
+	testEmailCounter++
+	return fmt.Sprintf("invite-test-%d-%d@example.com", os.Getpid(), testEmailCounter)
+}
+
+func TestCreateInviteRequest(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
+
+	require.NoError(t, p.CreateInviteRequest(t.Context(), email))
+
+	requests, err := p.ListRequestedInvites(t.Context())
+	require.NoError(t, err)
+
+	var found *InviteRequest
+	for i := range requests {
+		if requests[i].EmailAddress == email {
+			found = &requests[i]
+		}
+	}
+	require.NotNil(t, found, "newly created request should show up in ListRequestedInvites")
+	require.Equal(t, InviteStatusRequested, found.Status)
+	// 32 random bytes, base64 URL-safe, no padding - same shape as a real
+	// session token (see NewSessionToken) - generated up front at request
+	// time, not deferred to approval.
+	require.Len(t, found.Code, 43)
+}
+
+func TestCreateInviteRequest_DuplicateBlocked(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
+
+	require.NoError(t, p.CreateInviteRequest(t.Context(), email))
+	err := p.CreateInviteRequest(t.Context(), email)
+	require.ErrorIs(t, err, ErrInviteRequestExists)
+}
+
+func TestCreateInviteRequest_AllowedAfterDenied(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
+
+	require.NoError(t, p.CreateInviteRequest(t.Context(), email))
+	requests, err := p.ListRequestedInvites(t.Context())
+	require.NoError(t, err)
+	var id int
+	for _, r := range requests {
+		if r.EmailAddress == email {
+			id = r.ID
+		}
+	}
+	require.NotZero(t, id)
+
+	_, err = p.DenyInvite(t.Context(), id)
+	require.NoError(t, err)
+
+	// A denied request doesn't permanently block that address - situations
+	// change, a fresh request should be allowed.
+	require.NoError(t, p.CreateInviteRequest(t.Context(), email))
+}
+
+func requestedInvite(t *testing.T, p *Persist, email string) InviteRequest {
+	t.Helper()
+	require.NoError(t, p.CreateInviteRequest(t.Context(), email))
+	requests, err := p.ListRequestedInvites(t.Context())
+	require.NoError(t, err)
+	for _, r := range requests {
+		if r.EmailAddress == email {
+			return r
+		}
+	}
+	t.Fatalf("just-created request for %s not found in ListRequestedInvites", email)
+	return InviteRequest{}
+}
+
+func TestApproveInvite(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
+
+	req := requestedInvite(t, p, email)
+
+	approved, err := p.ApproveInvite(t.Context(), req.ID)
+	require.NoError(t, err)
+	require.Equal(t, InviteStatusApproved, approved.Status)
+	require.Equal(t, req.Code, approved.Code)
+}
+
+func TestApproveInvite_AlreadyDecided(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
+
+	req := requestedInvite(t, p, email)
+	_, err := p.ApproveInvite(t.Context(), req.ID)
+	require.NoError(t, err)
+
+	_, err = p.ApproveInvite(t.Context(), req.ID)
+	require.ErrorIs(t, err, ErrInviteNotPending)
+}
+
+func TestApproveInvite_NonExistentID(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
 
-	token, err := p.CreateInvite(t.Context())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM invites WHERE token = ?", token)
-	})
+	_, err := p.ApproveInvite(t.Context(), -1)
+	require.ErrorIs(t, err, ErrInviteNotPending)
+}
 
-	require.NotEmpty(t, token)
-	// 32 random bytes, base64 URL-safe, no padding - same shape as a real
-	// session token (see NewSessionToken).
-	require.Len(t, token, 43)
+func TestDenyInvite(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
+
+	req := requestedInvite(t, p, email)
+
+	denied, err := p.DenyInvite(t.Context(), req.ID)
+	require.NoError(t, err)
+	require.Equal(t, InviteStatusDenied, denied.Status)
+
+	// A denied code was never approved, so it must never redeem either.
+	_, err = p.RedeemInvite(t.Context(), req.Code)
+	require.ErrorIs(t, err, ErrInvalidInvite)
 }
 
 func TestRedeemInvite_Success(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
 
-	token, err := p.CreateInvite(t.Context())
+	req := requestedInvite(t, p, email)
+	_, err := p.ApproveInvite(t.Context(), req.ID)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM invites WHERE token = ?", token)
-	})
 
-	require.NoError(t, p.RedeemInvite(t.Context(), token))
+	gotEmail, err := p.RedeemInvite(t.Context(), req.Code)
+	require.NoError(t, err)
+	require.Equal(t, email, gotEmail)
 }
 
-func TestRedeemInvite_AlreadyUsed(t *testing.T) {
+func TestRedeemInvite_NotYetApproved(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
 
-	token, err := p.CreateInvite(t.Context())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM invites WHERE token = ?", token)
-	})
+	req := requestedInvite(t, p, email)
 
-	require.NoError(t, p.RedeemInvite(t.Context(), token))
-
-	err = p.RedeemInvite(t.Context(), token)
+	// Still 'requested', never approved - must not redeem.
+	_, err := p.RedeemInvite(t.Context(), req.Code)
 	require.ErrorIs(t, err, ErrInvalidInvite)
 }
 
-func TestRedeemInvite_NonExistentToken(t *testing.T) {
+func TestRedeemInvite_AlreadyRedeemed(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
+
+	req := requestedInvite(t, p, email)
+	_, err := p.ApproveInvite(t.Context(), req.ID)
+	require.NoError(t, err)
+
+	_, err = p.RedeemInvite(t.Context(), req.Code)
+	require.NoError(t, err)
+
+	_, err = p.RedeemInvite(t.Context(), req.Code)
+	require.ErrorIs(t, err, ErrInvalidInvite)
+}
+
+func TestRedeemInvite_NonExistentCode(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
 
-	err := p.RedeemInvite(t.Context(), "this-token-was-never-created")
+	_, err := p.RedeemInvite(t.Context(), "this-code-was-never-created")
 	require.ErrorIs(t, err, ErrInvalidInvite)
 }
 
@@ -70,12 +208,12 @@ func TestRedeemInvite_NonExistentToken(t *testing.T) {
 func TestRedeemInvite_ConcurrentRedemption(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
+	email := testEmail(t)
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email) })
 
-	token, err := p.CreateInvite(t.Context())
+	req := requestedInvite(t, p, email)
+	_, err := p.ApproveInvite(t.Context(), req.ID)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM invites WHERE token = ?", token)
-	})
 
 	const attempts = 10
 	var wg sync.WaitGroup
@@ -84,7 +222,7 @@ func TestRedeemInvite_ConcurrentRedemption(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i] = p.RedeemInvite(t.Context(), token)
+			_, results[i] = p.RedeemInvite(t.Context(), req.Code)
 		}(i)
 	}
 	wg.Wait()
@@ -100,27 +238,28 @@ func TestRedeemInvite_ConcurrentRedemption(t *testing.T) {
 	require.Equal(t, 1, successes, "exactly one concurrent redemption attempt should succeed")
 }
 
-func TestMarkInviteUsedBy(t *testing.T) {
+func TestMarkInviteRedeemedBy(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
-
-	token, err := p.CreateInvite(t.Context())
-	require.NoError(t, err)
-
+	email := testEmail(t)
 	username := fmt.Sprintf("invite-test-user-%d", os.Getpid())
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM invites WHERE token = ?", token)
+		_, _ = db.Exec("DELETE FROM invites WHERE email_address = ?", email)
 		_, _ = db.Exec("DELETE FROM users WHERE username = ?", username)
 	})
 
-	require.NoError(t, p.RedeemInvite(t.Context(), token))
+	req := requestedInvite(t, p, email)
+	_, err := p.ApproveInvite(t.Context(), req.ID)
+	require.NoError(t, err)
+	_, err = p.RedeemInvite(t.Context(), req.Code)
+	require.NoError(t, err)
 
 	userID, err := p.CreateUser(t.Context(), User{Username: username, Status: "active", Password: "hashedpw"})
 	require.NoError(t, err)
 
-	require.NoError(t, p.MarkInviteUsedBy(t.Context(), token, userID))
+	require.NoError(t, p.MarkInviteRedeemedBy(t.Context(), req.Code, userID))
 
-	var usedBy int
-	require.NoError(t, db.QueryRow("SELECT used_by_user_id FROM invites WHERE token = ?", token).Scan(&usedBy))
-	require.Equal(t, userID, usedBy)
+	var redeemedBy int
+	require.NoError(t, db.QueryRow("SELECT redeemed_by_user_id FROM invites WHERE code = ?", req.Code).Scan(&redeemedBy))
+	require.Equal(t, userID, redeemedBy)
 }

@@ -2,6 +2,7 @@ package persist
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/rs/zerolog/log"
@@ -16,14 +17,18 @@ type User struct {
 	Username string
 	Password string
 	Status   string
+	// EmailAddress is nullable - existing/seeded accounts predate this
+	// column. New accounts get it copied over from the invites row they
+	// redeemed at signup (see handlers.UserCreate).
+	EmailAddress *string
 }
 
 func (p *Persist) CreateUser(ctx context.Context, u User) (int, error) {
 	q := `
-		INSERT INTO users (username, status, password)
-		VALUES (?, ?, ?);
+		INSERT INTO users (username, status, password, email_address)
+		VALUES (?, ?, ?, ?);
 	`
-	result, err := p.DB.ExecContext(ctx, q, u.Username, u.Status, u.Password)
+	result, err := p.DB.ExecContext(ctx, q, u.Username, u.Status, u.Password, u.EmailAddress)
 	if err != nil {
 		return -1, err
 	}
@@ -38,7 +43,7 @@ func (p *Persist) CreateUser(ctx context.Context, u User) (int, error) {
 // TODO combine both into a query function
 func (p *Persist) GetUserByID(ctx context.Context, id int) (User, error) {
 	q := `
-		SELECT id, username, status, password
+		SELECT id, username, status, password, email_address
 		FROM users
 		WHERE id = ?;
 	`
@@ -54,10 +59,11 @@ func (p *Persist) GetUserByID(ctx context.Context, id int) (User, error) {
 	}()
 
 	var u User
+	var email sql.NullString
 	found := false
 
 	for stmt.Next() {
-		err := stmt.Scan(&u.ID, &u.Username, &u.Status, &u.Password)
+		err := stmt.Scan(&u.ID, &u.Username, &u.Status, &u.Password, &email)
 		if err != nil {
 			return User{}, err
 		}
@@ -66,13 +72,16 @@ func (p *Persist) GetUserByID(ctx context.Context, id int) (User, error) {
 	if !found {
 		return User{}, ErrUserNotFound
 	}
+	if email.Valid {
+		u.EmailAddress = &email.String
+	}
 
 	return u, nil
 }
 
 func (p *Persist) GetUserByUsername(ctx context.Context, username string) (User, error) {
 	q := `
-		SELECT username, status, password, id
+		SELECT username, status, password, id, email_address
 		FROM users
 		WHERE username = ?;
 	`
@@ -88,10 +97,11 @@ func (p *Persist) GetUserByUsername(ctx context.Context, username string) (User,
 	}()
 
 	var u User
+	var email sql.NullString
 	found := false
 
 	for stmt.Next() {
-		err := stmt.Scan(&u.Username, &u.Status, &u.Password, &u.ID)
+		err := stmt.Scan(&u.Username, &u.Status, &u.Password, &u.ID, &email)
 		if err != nil {
 			return User{}, err
 		}
@@ -99,6 +109,9 @@ func (p *Persist) GetUserByUsername(ctx context.Context, username string) (User,
 	}
 	if !found {
 		return User{}, ErrUserNotFound
+	}
+	if email.Valid {
+		u.EmailAddress = &email.String
 	}
 
 	return u, nil

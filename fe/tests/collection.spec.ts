@@ -1,6 +1,6 @@
 import { test, expect, Page } from "@playwright/test";
 import { nanoid } from "nanoid";
-import { mintInviteToken } from "./inviteHelper";
+import { mintApprovedInviteCode } from "./inviteHelper";
 
 // Relies on the fixture set/cards in be/db/seeds/005_sets_seed.sql and
 // 006_cards_seed.sql - not real catalog data (that's #68/#70's job via the
@@ -93,10 +93,10 @@ test("card manager: a real non-owner account can access it too", async ({
   // restriction is kept around for a future market-rate feature instead of
   // gating the whole tracker.
   // Signup is invite-only (see be/handlers/users.go's UserCreate) - go
-  // straight to a real minted invite link rather than clicking through
-  // from /login, since that link with no token now just shows an
+  // straight to an already-approved invite link rather than clicking
+  // through from /login, since that link with no code now just shows an
   // explanatory message instead of the form.
-  const invite = mintInviteToken();
+  const invite = mintApprovedInviteCode();
   await page.goto(`http://localhost:8091/sign-up?invite=${invite}`);
   await page.fill('input[name="username"]', nanoid());
   await page.fill('input[name="password"]', "validpass123");

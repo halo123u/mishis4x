@@ -19,12 +19,14 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
 
         if (res.status === 401) {
           setGlobalData(null);
-          // Don't bounce away from /sign-up (or re-navigate to /login while
-          // already there) - an unauthenticated visitor landing directly on
-          // either auth page is expected, not an error to redirect out of.
+          // Don't bounce away from /sign-up or /request-invite (or
+          // re-navigate to /login while already there) - an
+          // unauthenticated visitor landing directly on any of these auth
+          // pages is expected, not an error to redirect out of.
           if (
             location.pathname !== '/login' &&
-            location.pathname !== '/sign-up'
+            location.pathname !== '/sign-up' &&
+            location.pathname !== '/request-invite'
           ) {
             navigate('/login');
           }
@@ -39,7 +41,11 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
         // redirect/error handling already happened, nothing further to do.
         if (res) {
           let path = location.pathname;
-          if (path === '/login' || path === '/sign-up') {
+          if (
+            path === '/login' ||
+            path === '/sign-up' ||
+            path === '/request-invite'
+          ) {
             path = '/';
           }
 

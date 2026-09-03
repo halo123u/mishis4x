@@ -1,6 +1,6 @@
 import { test, expect, Page } from "@playwright/test";
 import { nanoid } from "nanoid";
-import { mintInviteToken } from "./inviteHelper";
+import { mintApprovedInviteCode } from "./inviteHelper";
 
 test("login/logout", async ({ page }) => {
   await page.goto("http://localhost:8091/login");
@@ -23,10 +23,10 @@ test("login/logout", async ({ page }) => {
 
 test("test create account", async ({ page }) => {
   // Signup is invite-only (see be/handlers/users.go's UserCreate) - the
-  // "/sign-up" link with no token just shows an explanatory message now,
-  // so this goes straight to a real minted invite link instead of
+  // "/sign-up" link with no code just shows an explanatory message now,
+  // so this goes straight to an already-approved invite link instead of
   // clicking through from /login.
-  const invite = mintInviteToken();
+  const invite = mintApprovedInviteCode();
   await page.goto(`http://localhost:8091/sign-up?invite=${invite}`);
 
   // Signup enforces an 8-char minimum password (see UserForm's

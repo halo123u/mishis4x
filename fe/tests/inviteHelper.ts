@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 
 // `docker compose` resolves compose.yaml relative to its own cwd, but
@@ -7,15 +8,23 @@ import path from "node:path";
 // whatever directory this happens to be invoked from.
 const composeFile = path.resolve(__dirname, "..", "..", "compose.yaml");
 
-// Signup is invite-only (see be/handlers/users.go's UserCreate) - e2e tests
-// that need to create a fresh account go through the exact same path a real
-// admin would: the `invite-create` CLI command, run inside the already-
-// running `app` container from compose.yaml, exactly like a real deploy
-// would (`docker compose exec app ./mishis4x invite-create`). No test-only
-// backend route exists to mint one, and shouldn't - that would mean testing
-// a code path that doesn't exist in production.
-export function mintInviteToken(): string {
-  const output = execFileSync(
+let emailCounter = 0;
+
+// Signup is invite-only (see be/handlers/users.go's UserCreate), and a
+// redeemable code only exists once the owner has approved a request (see
+// be/cmd/invite.go's invite-approve) - which sends a real email via
+// Resend. e2e tests shouldn't depend on a configured Resend account or
+// trigger a real send, so this bypasses the request/approve flow
+// entirely and inserts an already-'approved' row straight into the `db`
+// service, the same way be/handlers' own test helpers bypass HTTP for
+// setup (see testApprovedInvite in be/handlers/helpers_test.go) rather
+// than going through invite-approve for real.
+export function mintApprovedInviteCode(): string {
+  const code = randomBytes(32).toString("base64url");
+  emailCounter += 1;
+  const email = `e2e-invite-${Date.now()}-${emailCounter}@example.com`;
+
+  execFileSync(
     "docker",
     [
       "compose",
@@ -23,21 +32,16 @@ export function mintInviteToken(): string {
       composeFile,
       "exec",
       "-T",
-      "app",
-      "./mishis4x",
-      "invite-create",
-      "--env",
-      "test",
+      "db",
+      "mysql",
+      "-uroot",
+      "-proot_password",
+      "mishis4x",
+      "-e",
+      `INSERT INTO invites (code, status, email_address) VALUES ('${code}', 'approved', '${email}');`,
     ],
     { encoding: "utf-8" },
   );
 
-  // Matches be/cmd/invite.go's fmt.Printf("invite created: /sign-up?invite=%s\n", token).
-  const match = output.match(/invite=(\S+)/);
-  if (!match) {
-    throw new Error(
-      `could not parse invite token from invite-create output: ${output}`,
-    );
-  }
-  return match[1];
+  return code;
 }
