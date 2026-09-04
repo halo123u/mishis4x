@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Card,
+  CardPriceTrend,
   EbayListingsResponse,
   OwnedCardInput,
   Set as SetT,
@@ -12,6 +13,7 @@ import CardThumbnail from './ui/CardThumbnail';
 import EbayIcon from './ui/EbayIcon';
 import EbayListingsCheck from './ui/EbayListingsCheck';
 import RefreshIcon from './ui/RefreshIcon';
+import TrendIcon from './ui/TrendIcon';
 import { ebaySearchUrl } from '../ebay';
 import { formatFreshness } from '../priceFreshness';
 import { useGlobalData } from '../useGlobalData';
@@ -139,6 +141,50 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // as a separate flag from eBay credentials just not being configured.
   const { globalData } = useGlobalData();
   const ebayListingsEnabled = globalData?.ebay_listings_enabled ?? true;
+  // Defaults to false (feature hidden) until /api/data resolves - the
+  // opposite default from ebayListingsEnabled above, since this ships
+  // off by default rather than on (see handlers.Data.PriceTrendsEnabled's
+  // doc comment). Showing the icon only to hide it again a moment later
+  // once the real flag arrives would be worse than a brief absence.
+  const priceTrendsEnabled = globalData?.price_trends_enabled ?? false;
+  // card_id -> trend, only for cards with at least 2 days of TCG
+  // Republic history in the last week (see GetPriceTrendsForSet's doc
+  // comment) - a card missing from this map just doesn't get a trend
+  // icon at all, same "absence means nothing to report" convention as
+  // market price data elsewhere on this page.
+  const [priceTrends, setPriceTrends] = useState<
+    Record<string, CardPriceTrend>
+  >({});
+  // Only one card's trend panel open at a time, same pattern the old
+  // eBay listings popover used before that feature was simplified to a
+  // plain link - still the right call here since this genuinely is an
+  // in-app expand, not something with somewhere better to link out to.
+  const [expandedTrendCardId, setExpandedTrendCardId] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!setID || !priceTrendsEnabled) {
+      return;
+    }
+
+    fetch(`/api/sets/${setID}/price-trends`)
+      .then(async (res) => {
+        if (res.status !== 200) {
+          return;
+        }
+        const trends: CardPriceTrend[] = await res.json();
+        const map: Record<string, CardPriceTrend> = {};
+        for (const trend of trends) {
+          map[trend.card_id] = trend;
+        }
+        setPriceTrends(map);
+      })
+      .catch(() => {
+        // Not fatal - trend icons are a nice-to-have overlay, same
+        // reasoning as the set-name fetch below not blocking the page.
+      });
+  }, [setID, priceTrendsEnabled]);
 
   useEffect(() => {
     if (!setID) {
@@ -369,6 +415,37 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // has nothing to refresh, so it gets neither the caption nor the button
   // - marketUnavailableLabel's "Not tracked yet" already says enough for
   // that case on its own.
+  // Self-normalized per-card - each mini chart scales to its own card's
+  // min/max within the window, not a shared scale across cards (prices
+  // vary wildly card to card, so a shared scale would flatten most bars
+  // to nothing). floorPercent keeps the series minimum still visibly a
+  // bar rather than flattened to 0 height.
+  const barHeightPercent = (
+    priceCents: number,
+    minCents: number,
+    maxCents: number,
+  ): number => {
+    const floorPercent = 20;
+    if (maxCents === minCents) {
+      return 100;
+    }
+    return (
+      floorPercent +
+      ((priceCents - minCents) / (maxCents - minCents)) * (100 - floorPercent)
+    );
+  };
+
+  // The persistent "6m ago" caption + refresh icon (refresh-mockups
+  // artifact, Option C) - only for a card that's actually been checked at
+  // least once (market_checked_at set). A card with no price source at all
+  // has nothing to refresh, so it gets neither the caption nor the button
+  // - marketUnavailableLabel's "Not tracked yet" already says enough for
+  // that case on its own. The trend icon (analytics-trends-mock artifact)
+  // sits alongside it, but is its own independent condition - a card can
+  // have a fresh market-price check with no TCG trend data yet (fewer
+  // than 2 days of history), or vice versa isn't really possible since
+  // trend data implies checks happened, but the two are never assumed to
+  // imply each other.
   const renderFreshness = (card: Card) => {
     if (card.market_checked_at == null) {
       return null;
@@ -376,6 +453,8 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
 
     const freshness = formatFreshness(card.market_checked_at);
     const isRefreshing = refreshingCardId === card.id;
+    const trend = priceTrends[card.id];
+    const isTrendExpanded = expandedTrendCardId === card.id;
 
     return (
       <>
@@ -386,24 +465,83 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
             )}
             {freshness?.suffix ? ` ${freshness.suffix}` : null}
           </span>
-          <button
-            type="button"
-            className={
-              isRefreshing
-                ? `${styles.refreshBtn} ${styles.spinning}`
-                : styles.refreshBtn
-            }
-            onClick={() => handleRefresh(card.id)}
-            disabled={isRefreshing}
-            aria-label={`Refresh ${card.name}'s price`}
-          >
-            <RefreshIcon />
-          </button>
+          <div className={styles.iconBtns}>
+            <button
+              type="button"
+              className={
+                isRefreshing
+                  ? `${styles.refreshBtn} ${styles.spinning}`
+                  : styles.refreshBtn
+              }
+              onClick={() => handleRefresh(card.id)}
+              disabled={isRefreshing}
+              aria-label={`Refresh ${card.name}'s price`}
+            >
+              <RefreshIcon />
+            </button>
+            {trend && (
+              <button
+                type="button"
+                className={
+                  isTrendExpanded
+                    ? `${styles.refreshBtn} ${styles.trendBtnActive}`
+                    : styles.refreshBtn
+                }
+                onClick={() =>
+                  setExpandedTrendCardId((current) =>
+                    current === card.id ? null : card.id,
+                  )
+                }
+                aria-expanded={isTrendExpanded}
+                aria-label={`Toggle ${card.name}'s 7-day price trend`}
+              >
+                <TrendIcon />
+              </button>
+            )}
+          </div>
         </div>
         {refreshError?.cardId === card.id && (
           <p className={styles.refreshError} role="alert">
             {refreshError.message}
           </p>
+        )}
+        {trend && isTrendExpanded && (
+          <div className={styles.trendPanel}>
+            <div className={styles.chart}>
+              {(() => {
+                const prices = trend.daily_prices.map((p) => p.price_cents);
+                const minCents = Math.min(...prices);
+                const maxCents = Math.max(...prices);
+                return trend.daily_prices.map((point, i) => {
+                  const isLast = i === trend.daily_prices.length - 1;
+                  const prevPrice =
+                    i > 0 ? trend.daily_prices[i - 1].price_cents : null;
+                  const barClass = isLast
+                    ? styles.barLatest
+                    : prevPrice == null || point.price_cents === prevPrice
+                      ? ''
+                      : point.price_cents > prevPrice
+                        ? styles.barUp
+                        : styles.barDown;
+                  return (
+                    <div
+                      key={point.date}
+                      className={`${styles.bar} ${barClass}`}
+                      style={{
+                        height: `${barHeightPercent(point.price_cents, minCents, maxCents)}%`,
+                      }}
+                    />
+                  );
+                });
+              })()}
+            </div>
+            <span
+              className={`${styles.change} ${trend.change_cents >= 0 ? styles.changeUp : styles.changeDown}`}
+            >
+              {trend.change_cents >= 0 ? '+' : '−'}
+              {Math.abs(trend.change_percent).toFixed(1)}% / 7d
+            </span>
+          </div>
         )}
       </>
     );

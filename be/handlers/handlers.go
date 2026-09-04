@@ -132,11 +132,21 @@ type Data struct {
 	// GetEbayListings itself (defense in depth - the API refuses even if
 	// someone bypasses the UI).
 	EbayListingsDisabled bool
+	// PriceTrendsEnabled gates the per-card price-trend feature (icon +
+	// GET /api/sets/{setID}/price-trends) entirely - unlike
+	// EbayListingsDisabled, this isn't a kill switch on something that
+	// otherwise defaults on; it ships off by default (see
+	// cmd.loadPriceTrendsEnabled's doc comment) since it's new and
+	// hasn't been exercised against real production data yet. Read by
+	// both GetGlobalData (so the frontend never shows the trend icon at
+	// all while this is off) and the price-trends route itself (defense
+	// in depth, same convention as EbayListingsDisabled).
+	PriceTrendsEnabled bool
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
 // its own internal state (the login/signup rate limiters).
-func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service, ebayListingsDisabled bool) *Data {
+func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service, ebayListingsDisabled bool, priceTrendsEnabled bool) *Data {
 	return &Data{
 		P:                       p,
 		Lobby:                   lobby,
@@ -148,6 +158,7 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 		CollectionAllowAllUsers: collectionAllowAllUsers,
 		Ebay:                    ebaySvc,
 		EbayListingsDisabled:    ebayListingsDisabled,
+		PriceTrendsEnabled:      priceTrendsEnabled,
 	}
 }
 
@@ -192,6 +203,7 @@ func (d *Data) NewRouter() *mux.Router {
 	collection := api.PathPrefix("/sets").Subrouter()
 	collection.HandleFunc("", d.ListSets).Methods("GET")
 	collection.HandleFunc("/{setID}/cards", d.ListCardsForSet).Methods("GET")
+	collection.HandleFunc("/{setID}/price-trends", d.GetPriceTrends).Methods("GET")
 
 	// Card images: same reasoning as above - not eBay-sourced, open to any
 	// authenticated user.

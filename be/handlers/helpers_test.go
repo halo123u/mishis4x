@@ -86,6 +86,24 @@ func newTestDataWithEbay(db *sql.DB, ebaySvc *ebay.Service) *Data {
 		false,
 		ebaySvc,
 		false,
+		false,
+	)
+}
+
+// newTestDataWithPriceTrends is newTestData, but with PriceTrendsEnabled
+// true - for price_trends_test.go, which needs the feature actually on
+// to test its real behavior (every other test gets the off-by-default
+// state, matching production until this is explicitly turned on).
+func newTestDataWithPriceTrends(db *sql.DB) *Data {
+	return NewData(
+		persist.Persist{DB: db},
+		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
+		testSessionCookieConfig(),
+		0,
+		false,
+		nil,
+		false,
+		true,
 	)
 }
 

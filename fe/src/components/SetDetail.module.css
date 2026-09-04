@@ -344,3 +344,65 @@
   font-size: 0.625rem;
   margin-top: 0.15rem;
 }
+
+/* Price trends (analytics-trends-mock artifact) - the trend icon reuses
+   .refreshBtn's own styling (same size/hover treatment as the refresh
+   icon it sits next to), just wrapped in a row alongside it. */
+.iconBtns {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.trendBtnActive {
+  color: var(--teal);
+  background: var(--paper);
+}
+
+.trendPanel {
+  width: 100%;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--hairline);
+}
+
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.15rem;
+  height: 2.5rem;
+  margin-bottom: var(--space-1);
+}
+
+.bar {
+  flex: 1;
+  border-radius: 2px 2px 1px 1px;
+  background: var(--hairline);
+}
+
+.barUp {
+  background: color-mix(in srgb, var(--good) 55%, var(--surface));
+}
+
+.barDown {
+  background: color-mix(in srgb, var(--bad) 55%, var(--surface));
+}
+
+.barLatest {
+  background: var(--teal);
+}
+
+.change {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.changeUp {
+  color: var(--good);
+}
+
+.changeDown {
+  color: var(--bad);
+}
