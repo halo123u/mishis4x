@@ -39,10 +39,19 @@ type Service struct {
 // registrar) - sends from an unverified domain are rejected by Resend
 // itself, not something this package can detect ahead of time.
 func NewService(apiKey, from string) *Service {
+	return NewServiceWithURL(apiKey, from, defaultResendAPIURL)
+}
+
+// NewServiceWithURL is the same construction NewService does, but with
+// an explicit API URL - exported for tests (in this package and
+// be/handlers) to point at a local httptest.Server instead of Resend's
+// real API, same convention be/ebay's NewServiceWithURLs uses. Not meant
+// for production use - call NewService there instead.
+func NewServiceWithURL(apiKey, from, apiURL string) *Service {
 	return &Service{
 		apiKey: apiKey,
 		from:   from,
-		apiURL: defaultResendAPIURL,
+		apiURL: apiURL,
 		client: &http.Client{Timeout: requestTimeout},
 	}
 }

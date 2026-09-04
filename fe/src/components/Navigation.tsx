@@ -34,6 +34,11 @@ const Navigation = () => {
             <li className={styles.greeting}>
               Hello, <strong>{globalData.user.username}</strong>
             </li>
+            {globalData.user.is_admin && (
+              <li>
+                <Link to="/admin">Admin</Link>
+              </li>
+            )}
             <li>
               <Link to="/account">Account</Link>
             </li>

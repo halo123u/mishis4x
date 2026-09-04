@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"example.com/mishis4x/ebay"
+	"example.com/mishis4x/email"
 	"example.com/mishis4x/handlers"
 	"example.com/mishis4x/logger"
 	"example.com/mishis4x/matchmaking"
@@ -182,6 +183,42 @@ func loadPriceTrendsEnabled() bool {
 	return enable
 }
 
+// loadAdminUserID reads ADMIN_USER_ID - the one users.id allowed to see
+// /api/admin/... routes (see handlers.Data.AdminUserID's doc comment for
+// why this is a separate config value from COLLECTION_OWNER_USER_ID,
+// not a reuse of it). Unset/empty returns 0, which
+// handlers.canAccessAdmin treats as "nobody" - failing closed by
+// default, same convention as loadCollectionOwnerUserID.
+func loadAdminUserID() int {
+	raw := os.Getenv("ADMIN_USER_ID")
+	if raw == "" {
+		return 0
+	}
+
+	id, err := strconv.Atoi(raw)
+	if err != nil {
+		log.Fatal().Err(err).Str("ADMIN_USER_ID", raw).Msg("invalid ADMIN_USER_ID")
+	}
+
+	return id
+}
+
+// loadEmailServiceForServer wraps loadEmailService (be/cmd/invite.go)
+// with a non-fatal outcome, matching loadEbayService's own convention:
+// an environment that hasn't configured RESEND_API_KEY yet just doesn't
+// offer the admin invite-approval email send (ApproveInviteRequest
+// reports a clear 503 instead) rather than failing to boot - unlike the
+// invite-approve CLI command, where the same missing config is fatal
+// since that command's entire purpose is sending this one email.
+func loadEmailServiceForServer() *email.Service {
+	svc, err := loadEmailService()
+	if err != nil {
+		log.Warn().Err(err).Msg("email not configured - admin invite-approval endpoint disabled")
+		return nil
+	}
+	return svc
+}
+
 // loadEnablePriceSync reads ENABLE_PRICE_SYNC - an explicit opt-in for the
 // background price-sync loop, same fail-closed-by-default convention as
 // loadCollectionAllowAllUsers. Unset/empty returns false: without this,
@@ -297,6 +334,9 @@ var httpCMD = &cobra.Command{
 			loadEbayService(),
 			loadEbayListingsDisabled(),
 			loadPriceTrendsEnabled(),
+			loadAdminUserID(),
+			loadEmailServiceForServer(),
+			loadAppBaseURL(),
 		)
 
 		// Shares the same DB pool/connection the request handlers already

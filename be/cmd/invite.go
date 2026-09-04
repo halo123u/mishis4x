@@ -97,15 +97,7 @@ itself will fail even though the DB update already succeeded.`,
 		// discovered only after that point would strand an approved code
 		// nobody can see. Fail here instead, while it's still cheap to
 		// just fix the env and re-run.
-		//
-		// TrimSpace guards against a real, hit-in-production mistake: a
-		// trailing space pasted into DigitalOcean's env var UI silently
-		// became part of every generated sign-up link
-		// ("mishis4x.com /sign-up", rendered by email clients as
-		// "mishis4x.com%20/sign-up" - an invalid, unclickable URL) without
-		// ever showing up as an error here, since a value with a trailing
-		// space still isn't "".
-		appBaseURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
+		appBaseURL := loadAppBaseURL()
 		if appBaseURL == "" {
 			log.Fatal().Msg("APP_BASE_URL is not set")
 		}
@@ -177,6 +169,18 @@ var inviteDenyCMD = &cobra.Command{
 
 		fmt.Printf("denied request from %s\n", req.EmailAddress)
 	},
+}
+
+// loadAppBaseURL reads APP_BASE_URL - the public URL to build a sign-up
+// link against (e.g. https://mishis4x.com) - trimmed of whitespace (see
+// invite-approve's own doc comment for the real, hit-in-production
+// mistake this guards against: a trailing space silently corrupting
+// every generated link without ever failing an == "" check). Returns ""
+// if unset; callers decide how severely to treat that (invite-approve
+// treats it as fatal, the http server's admin routes just disable
+// approving via that path).
+func loadAppBaseURL() string {
+	return strings.TrimSpace(os.Getenv("APP_BASE_URL"))
 }
 
 // loadEmailService reads RESEND_API_KEY (required) and

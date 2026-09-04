@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 )
@@ -27,6 +28,7 @@ type InviteRequest struct {
 	Code         string
 	Status       string
 	EmailAddress string
+	CreatedAt    time.Time
 }
 
 // NewInviteCode generates a cryptographically random, URL-safe invite
@@ -84,7 +86,7 @@ func (p *Persist) CreateInviteRequest(ctx context.Context, emailAddress string) 
 // ListRequestedInvites returns every invite still awaiting an
 // approve/deny decision, oldest first - what `be invite-list` shows.
 func (p *Persist) ListRequestedInvites(ctx context.Context) ([]InviteRequest, error) {
-	rows, err := sq.Select("id", "code", "status", "email_address").
+	rows, err := sq.Select("id", "code", "status", "email_address", "created_at").
 		From("invites").
 		Where(sq.Eq{"status": InviteStatusRequested}).
 		OrderBy("created_at ASC").
@@ -98,7 +100,7 @@ func (p *Persist) ListRequestedInvites(ctx context.Context) ([]InviteRequest, er
 	var out []InviteRequest
 	for rows.Next() {
 		var r InviteRequest
-		if err := rows.Scan(&r.ID, &r.Code, &r.Status, &r.EmailAddress); err != nil {
+		if err := rows.Scan(&r.ID, &r.Code, &r.Status, &r.EmailAddress, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -146,12 +148,12 @@ func (p *Persist) decideInvite(ctx context.Context, id int, newStatus string) (I
 	}
 
 	var r InviteRequest
-	err = sq.Select("id", "code", "status", "email_address").
+	err = sq.Select("id", "code", "status", "email_address", "created_at").
 		From("invites").
 		Where(sq.Eq{"id": id}).
 		RunWith(p.DB).
 		QueryRowContext(ctx).
-		Scan(&r.ID, &r.Code, &r.Status, &r.EmailAddress)
+		Scan(&r.ID, &r.Code, &r.Status, &r.EmailAddress, &r.CreatedAt)
 	if err != nil {
 		return InviteRequest{}, err
 	}
