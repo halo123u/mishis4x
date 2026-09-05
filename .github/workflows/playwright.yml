@@ -18,7 +18,16 @@ on:
       - ".github/workflows/playwright.yml"
 jobs:
   test:
-    timeout-minutes: 5
+    # Recent runs typically finish in ~140-170s total (checkout + docker
+    # build + healthcheck + npm ci + playwright install + the actual
+    # tests) - a real docker compose build --no-cache locally takes only
+    # ~15s, so the build steps themselves aren't the bottleneck. One run
+    # got cancelled at exactly 5m16s (matching the old 5-minute limit)
+    # after a slow docker image pull/module download, almost certainly a
+    # transient network/Docker Hub blip rather than a real regression -
+    # bumping this gives that kind of one-off enough room to finish
+    # instead of getting killed mid-build.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
