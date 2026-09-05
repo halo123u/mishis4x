@@ -272,7 +272,7 @@ func TestDeleteSetCascade_FailsIfACardIsOwned(t *testing.T) {
 	require.NoError(t, p.SetCardQuantity(t.Context(), userID, cardID, 1))
 
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
@@ -328,7 +328,7 @@ func TestDeleteCardsForSet_FailsIfACardIsOwned(t *testing.T) {
 	require.NoError(t, p.SetCardQuantity(t.Context(), userID, cardID, 1))
 
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
@@ -383,7 +383,7 @@ func TestDeleteCardsForSetExceptCodes_DoesNotTouchOwnedCardThatIsKept(t *testing
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
@@ -419,7 +419,7 @@ func TestDeleteCardsForSetExceptCodes_FailsIfARemovedCardIsOwned(t *testing.T) {
 	require.NoError(t, p.SetCardQuantity(t.Context(), userID, cardID, 1))
 
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})

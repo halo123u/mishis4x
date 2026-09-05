@@ -294,7 +294,7 @@ func TestDeleteOwnedSet_RemovesSetAndCards(t *testing.T) {
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
@@ -347,7 +347,7 @@ func TestListOwnedCardsForSet(t *testing.T) {
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
@@ -393,7 +393,7 @@ func TestSetOwnedCardsForSet_RecordsOwnership(t *testing.T) {
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
@@ -428,7 +428,7 @@ func TestSetOwnedCardsForSet_RecordsPricePaid(t *testing.T) {
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
