@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"example.com/mishis4x/ebay"
+	"example.com/mishis4x/email"
 	"example.com/mishis4x/matchmaking"
 	"example.com/mishis4x/persist"
 	"github.com/gorilla/mux"
@@ -142,11 +143,34 @@ type Data struct {
 	// all while this is off) and the price-trends route itself (defense
 	// in depth, same convention as EbayListingsDisabled).
 	PriceTrendsEnabled bool
+	// AdminUserID is the one users.id allowed to see/act on
+	// /api/admin/... routes (list/approve/deny invite requests) - same
+	// single-owner-controlled-access shape as CollectionOwnerUserID, but
+	// a deliberately separate config value: these are different concerns
+	// (eBay-consent-driven data visibility vs. app administration) that
+	// happen to both currently resolve to the same one person, not a
+	// reason to conflate them into one gate. Unset/0 fails closed -
+	// nobody is admin by default, not everybody. See canAccessAdmin.
+	AdminUserID int
+	// EmailService sends the invite-approval email for
+	// POST /api/admin/invites/{id}/approve - nil when RESEND_API_KEY
+	// isn't configured (see cmd/http.go's loadEmailService wiring),
+	// mirroring Ebay's own nil-means-disabled convention. The
+	// invite-approve CLI command has its own separate, fatal-if-missing
+	// check for the exact same env var - this is the same underlying
+	// config, read non-fatally here so a server that hasn't set up email
+	// yet still boots and serves everything else.
+	EmailService *email.Service
+	// AppBaseURL is the public URL admin-approve builds a sign-up link
+	// against (e.g. https://mishis4x.com) - empty when APP_BASE_URL isn't
+	// set, in which case the approve endpoint fails with a clear error
+	// rather than emailing a broken link.
+	AppBaseURL string
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
 // its own internal state (the login/signup rate limiters).
-func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service, ebayListingsDisabled bool, priceTrendsEnabled bool) *Data {
+func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service, ebayListingsDisabled bool, priceTrendsEnabled bool, adminUserID int, emailSvc *email.Service, appBaseURL string) *Data {
 	return &Data{
 		P:                       p,
 		Lobby:                   lobby,
@@ -159,6 +183,9 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 		Ebay:                    ebaySvc,
 		EbayListingsDisabled:    ebayListingsDisabled,
 		PriceTrendsEnabled:      priceTrendsEnabled,
+		AdminUserID:             adminUserID,
+		EmailService:            emailSvc,
+		AppBaseURL:              appBaseURL,
 	}
 }
 
@@ -218,6 +245,15 @@ func (d *Data) NewRouter() *mux.Router {
 	ownedSets.HandleFunc("/{setID}", d.DeleteOwnedSet).Methods("DELETE")
 	ownedSets.HandleFunc("/{setID}/cards", d.ListOwnedCardsForSet).Methods("GET")
 	ownedSets.HandleFunc("/{setID}/cards", d.SetOwnedCardsForSet).Methods("POST")
+
+	// Admin routes: gated by adminOnlyMiddleware on top of the api
+	// subrouter's own AuthMiddleware - see AdminUserID's doc comment for
+	// why this is its own gate, not a reuse of ownerOnlyMiddleware.
+	admin := api.PathPrefix("/admin").Subrouter()
+	admin.Use(d.adminOnlyMiddleware)
+	admin.HandleFunc("/invites", d.ListPendingInvites).Methods("GET")
+	admin.HandleFunc("/invites/{id}/approve", d.ApproveInviteRequest).Methods("POST")
+	admin.HandleFunc("/invites/{id}/deny", d.DenyInviteRequest).Methods("POST")
 
 	// healthcheck
 	r.PathPrefix("/healthcheck").HandlerFunc(d.Healthcheck).Methods("GET")
@@ -414,6 +450,30 @@ func (d Data) ownerOnlyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := userIDFromContext(r)
 		if !ok || !d.canAccessCollection(userID) {
+			writeJSONError(w, http.StatusForbidden, "Not available on this account.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// canAccessAdmin is the rule adminOnlyMiddleware enforces: does userID
+// match AdminUserID. Deliberately its own check, not a reuse of
+// canAccessCollection - see AdminUserID's own doc comment for why these
+// stay separate concepts even though they currently gate to the same
+// person.
+func (d Data) canAccessAdmin(userID int) bool {
+	return d.AdminUserID != 0 && userID == d.AdminUserID
+}
+
+// adminOnlyMiddleware restricts a route to whoever canAccessAdmin
+// allows. Must run after AuthMiddleware (relies on userIDFromContext
+// already being set) - 401 still means "not logged in at all", this
+// returns 403 for "logged in, but not an admin".
+func (d Data) adminOnlyMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := userIDFromContext(r)
+		if !ok || !d.canAccessAdmin(userID) {
 			writeJSONError(w, http.StatusForbidden, "Not available on this account.")
 			return
 		}

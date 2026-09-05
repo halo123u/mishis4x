@@ -4,6 +4,7 @@ export interface User {
   id: number;
   username: string;
   status: string;
+  is_admin: boolean;
 }
 export interface GlobalData {
   user: User;
@@ -62,4 +63,9 @@ export interface CardPriceTrend {
   daily_prices: DailyPricePoint[];
   change_cents: number;
   change_percent: number;
+}
+export interface AdminInviteRequest {
+  id: number;
+  email_address: string;
+  created_at: Time;
 }

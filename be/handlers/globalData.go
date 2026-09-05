@@ -35,6 +35,7 @@ func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 			ID:       user.ID,
 			Username: user.Username,
 			Status:   user.Status,
+			IsAdmin:  d.canAccessAdmin(user.ID),
 		},
 		EbayListingsEnabled: !d.EbayListingsDisabled,
 		PriceTrendsEnabled:  d.PriceTrendsEnabled,

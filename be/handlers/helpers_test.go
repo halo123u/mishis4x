@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"example.com/mishis4x/ebay"
+	"example.com/mishis4x/email"
 	"example.com/mishis4x/matchmaking"
 	"example.com/mishis4x/persist"
 	"github.com/go-sql-driver/mysql"
@@ -87,6 +88,9 @@ func newTestDataWithEbay(db *sql.DB, ebaySvc *ebay.Service) *Data {
 		ebaySvc,
 		false,
 		false,
+		0,
+		nil,
+		"",
 	)
 }
 
@@ -104,6 +108,29 @@ func newTestDataWithPriceTrends(db *sql.DB) *Data {
 		nil,
 		false,
 		true,
+		0,
+		nil,
+		"",
+	)
+}
+
+// newTestDataWithAdmin is newTestData, but with adminUserID recognized as
+// the admin and a real (fake-server-backed) email.Service - for
+// admin_test.go's tests, which need both to exercise the actual
+// approve-and-email flow rather than just the 403-if-not-admin gate.
+func newTestDataWithAdmin(db *sql.DB, adminUserID int, emailSvc *email.Service, appBaseURL string) *Data {
+	return NewData(
+		persist.Persist{DB: db},
+		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
+		testSessionCookieConfig(),
+		0,
+		false,
+		nil,
+		false,
+		false,
+		adminUserID,
+		emailSvc,
+		appBaseURL,
 	)
 }
 
