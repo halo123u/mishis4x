@@ -37,6 +37,7 @@ func (d *Data) GetGlobalData(w http.ResponseWriter, r *http.Request) {
 			Status:   user.Status,
 		},
 		EbayListingsEnabled: !d.EbayListingsDisabled,
+		PriceTrendsEnabled:  d.PriceTrendsEnabled,
 	}
 
 	jsonData, err := json.Marshal(resp)

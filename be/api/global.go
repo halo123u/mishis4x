@@ -7,4 +7,8 @@ type GlobalData struct {
 	// be configured (see handlers.Data.EbayListingsDisabled's doc comment
 	// for why this is a separate kill switch).
 	EbayListingsEnabled bool `json:"ebay_listings_enabled"`
+	// PriceTrendsEnabled gates whether the frontend shows the per-card
+	// price-trend icon at all - see handlers.Data.PriceTrendsEnabled's
+	// doc comment for why this ships off by default rather than on.
+	PriceTrendsEnabled bool `json:"price_trends_enabled"`
 }

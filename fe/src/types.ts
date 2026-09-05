@@ -8,6 +8,7 @@ export interface User {
 export interface GlobalData {
   user: User;
   ebay_listings_enabled: boolean;
+  price_trends_enabled: boolean;
 }
 export interface Time {}
 export interface Set {
@@ -51,4 +52,14 @@ export interface EbayListing {
 export interface EbayListingsResponse {
   query: string;
   listings: EbayListing[];
+}
+export interface DailyPricePoint {
+  date: string;
+  price_cents: number;
+}
+export interface CardPriceTrend {
+  card_id: string;
+  daily_prices: DailyPricePoint[];
+  change_cents: number;
+  change_percent: number;
 }

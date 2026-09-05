@@ -161,6 +161,27 @@ func loadEbayListingsDisabled() bool {
 	return disabled
 }
 
+// loadPriceTrendsEnabled reads ENABLE_PRICE_TRENDS - an explicit opt-in
+// for the per-card price-trend feature, same convention as
+// loadEnablePriceSync. Unset/empty returns false: this ships off by
+// default because it's new and hasn't been exercised against real
+// production price-history data yet, not because of any resource cost
+// the way ENABLE_PRICE_SYNC's real-network-request concern is - once
+// it's been checked out live, this is meant to just get turned on.
+func loadPriceTrendsEnabled() bool {
+	raw := os.Getenv("ENABLE_PRICE_TRENDS")
+	if raw == "" {
+		return false
+	}
+
+	enable, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Fatal().Err(err).Str("ENABLE_PRICE_TRENDS", raw).Msg("invalid ENABLE_PRICE_TRENDS")
+	}
+
+	return enable
+}
+
 // loadEnablePriceSync reads ENABLE_PRICE_SYNC - an explicit opt-in for the
 // background price-sync loop, same fail-closed-by-default convention as
 // loadCollectionAllowAllUsers. Unset/empty returns false: without this,
@@ -275,6 +296,7 @@ var httpCMD = &cobra.Command{
 			loadCollectionAllowAllUsers(),
 			loadEbayService(),
 			loadEbayListingsDisabled(),
+			loadPriceTrendsEnabled(),
 		)
 
 		// Shares the same DB pool/connection the request handlers already

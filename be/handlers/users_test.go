@@ -45,6 +45,18 @@ func newTestServerWithEbay(t *testing.T, db *sql.DB, ebaySvc *ebay.Service) (*ht
 	return ts, newClient(t)
 }
 
+// newTestServerWithPriceTrends is newTestServer, but with
+// PriceTrendsEnabled true - for price_trends_test.go.
+func newTestServerWithPriceTrends(t *testing.T, db *sql.DB) (*httptest.Server, *http.Client) {
+	t.Helper()
+
+	d := newTestDataWithPriceTrends(db)
+	ts := httptest.NewServer(d.NewRouter())
+	t.Cleanup(ts.Close)
+
+	return ts, newClient(t)
+}
+
 // newTestServerWithEbayDisabled wires a real ebay.Service (so a test can
 // prove the EbayListingsDisabled kill switch blocks the route even with
 // working credentials, not just when Ebay is nil) alongside
@@ -60,6 +72,7 @@ func newTestServerWithEbayDisabled(t *testing.T, db *sql.DB, ebaySvc *ebay.Servi
 		false,
 		ebaySvc,
 		true,
+		false,
 	)
 	ts := httptest.NewServer(d.NewRouter())
 	t.Cleanup(ts.Close)
