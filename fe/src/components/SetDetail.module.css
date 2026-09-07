@@ -366,30 +366,47 @@
   border-top: 1px solid var(--hairline);
 }
 
-.chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.15rem;
+/* A line, not bars (#108-era session's "the bars don't really show a
+   trend, just per-day rank-within-range" feedback) - segment-colored so
+   the old bars' per-day up/down signal survives, just as a connected
+   trajectory instead of disconnected blocks. Straight segments between
+   real check points, never smoothed - a curve would imply price movement
+   between two checks that was never actually observed. */
+.chartWrap {
+  width: 100%;
   height: 2.5rem;
   margin-bottom: var(--space-1);
 }
 
-.bar {
-  flex: 1;
-  border-radius: 2px 2px 1px 1px;
-  background: var(--hairline);
+.chartSvg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.barUp {
-  background: color-mix(in srgb, var(--good) 55%, var(--surface));
+.segment {
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
 
-.barDown {
-  background: color-mix(in srgb, var(--bad) 55%, var(--surface));
+.segmentUp {
+  stroke: var(--good);
 }
 
-.barLatest {
-  background: var(--teal);
+.segmentDown {
+  stroke: var(--bad);
+}
+
+/* Equal to the previous day's price - neither up nor down, same neutral
+   treatment the old bars gave a flat day (plain --hairline, no color). */
+.segmentFlat {
+  stroke: var(--hairline);
+}
+
+.pointLatest {
+  fill: var(--teal);
 }
 
 .change {
