@@ -463,24 +463,37 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // has nothing to refresh, so it gets neither the caption nor the button
   // - marketUnavailableLabel's "Not tracked yet" already says enough for
   // that case on its own.
-  // Self-normalized per-card - each mini chart scales to its own card's
+  // Maps daily_prices into SVG coordinates for the trend line - a fixed
+  // 0-100 x 0-40 viewBox (matching .chartWrap's real 2.5rem height) with
+  // preserveAspectRatio="none" so it always fills the panel regardless of
+  // how many days are in the series. Self-normalized per-card, same as
+  // the bar chart this replaced - each line scales to its own card's
   // min/max within the window, not a shared scale across cards (prices
-  // vary wildly card to card, so a shared scale would flatten most bars
-  // to nothing). floorPercent keeps the series minimum still visibly a
-  // bar rather than flattened to 0 height.
-  const barHeightPercent = (
-    priceCents: number,
-    minCents: number,
-    maxCents: number,
-  ): number => {
-    const floorPercent = 20;
-    if (maxCents === minCents) {
-      return 100;
-    }
-    return (
-      floorPercent +
-      ((priceCents - minCents) / (maxCents - minCents)) * (100 - floorPercent)
-    );
+  // vary wildly card to card, so a shared scale would flatten most lines
+  // to nothing). A flat series (min === max) draws a straight line
+  // through the vertical center rather than dividing by zero.
+  const trendLinePoints = (
+    dailyPrices: { price_cents: number }[],
+  ): [number, number][] => {
+    const prices = dailyPrices.map((p) => p.price_cents);
+    const minCents = Math.min(...prices);
+    const maxCents = Math.max(...prices);
+    const padTop = 4;
+    const padBottom = 4;
+    const usableHeight = 40 - padTop - padBottom;
+
+    return dailyPrices.map((point, i) => {
+      const x =
+        dailyPrices.length > 1 ? (i / (dailyPrices.length - 1)) * 100 : 50;
+      const y =
+        maxCents === minCents
+          ? padTop + usableHeight / 2
+          : padTop +
+            usableHeight -
+            ((point.price_cents - minCents) / (maxCents - minCents)) *
+              usableHeight;
+      return [x, y];
+    });
   };
 
   // The persistent "6m ago" caption + refresh icon (refresh-mockups
@@ -555,33 +568,49 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
         )}
         {trend && isTrendExpanded && (
           <div className={styles.trendPanel}>
-            <div className={styles.chart}>
-              {(() => {
-                const prices = trend.daily_prices.map((p) => p.price_cents);
-                const minCents = Math.min(...prices);
-                const maxCents = Math.max(...prices);
-                return trend.daily_prices.map((point, i) => {
-                  const isLast = i === trend.daily_prices.length - 1;
-                  const prevPrice =
-                    i > 0 ? trend.daily_prices[i - 1].price_cents : null;
-                  const barClass = isLast
-                    ? styles.barLatest
-                    : prevPrice == null || point.price_cents === prevPrice
-                      ? ''
-                      : point.price_cents > prevPrice
-                        ? styles.barUp
-                        : styles.barDown;
+            <div className={styles.chartWrap}>
+              <svg
+                viewBox="0 0 100 40"
+                preserveAspectRatio="none"
+                className={styles.chartSvg}
+              >
+                {(() => {
+                  const points = trendLinePoints(trend.daily_prices);
+                  const segments = [];
+                  for (let i = 1; i < points.length; i++) {
+                    const prevPrice = trend.daily_prices[i - 1].price_cents;
+                    const price = trend.daily_prices[i].price_cents;
+                    const segmentClass =
+                      price > prevPrice
+                        ? styles.segmentUp
+                        : price < prevPrice
+                          ? styles.segmentDown
+                          : styles.segmentFlat;
+                    segments.push(
+                      <line
+                        key={trend.daily_prices[i].date}
+                        x1={points[i - 1][0]}
+                        y1={points[i - 1][1]}
+                        x2={points[i][0]}
+                        y2={points[i][1]}
+                        className={`${styles.segment} ${segmentClass}`}
+                      />,
+                    );
+                  }
+                  const [lastX, lastY] = points[points.length - 1];
                   return (
-                    <div
-                      key={point.date}
-                      className={`${styles.bar} ${barClass}`}
-                      style={{
-                        height: `${barHeightPercent(point.price_cents, minCents, maxCents)}%`,
-                      }}
-                    />
+                    <>
+                      {segments}
+                      <circle
+                        cx={lastX}
+                        cy={lastY}
+                        r={2.5}
+                        className={styles.pointLatest}
+                      />
+                    </>
                   );
-                });
-              })()}
+                })()}
+              </svg>
             </div>
             <span
               className={`${styles.change} ${trend.change_cents >= 0 ? styles.changeUp : styles.changeDown}`}
