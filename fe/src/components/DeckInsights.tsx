@@ -8,18 +8,30 @@ type OwnedEntry = {
   pricePaidCents?: number;
 };
 
+// A card's market price for every aggregate below: its current price when
+// in stock, falling back to the last real price it ever had (see
+// api.Card's LastKnownMarket* doc comment) when it's out of stock right
+// now - so a card doesn't just vanish from Owned Market Value/Cost to
+// Complete/Most Valuable the moment TCG Republic temporarily runs out.
+// Still undefined for a card that's never had a real price recorded at
+// all (checked and found nothing, every time) - there's genuinely nothing
+// to use there, same as before this fallback existed.
+const effectiveMarketPriceCents = (card: Card): number | undefined =>
+  card.market_price_cents ?? card.last_known_market_price_cents;
+
 // Splits the cards missing from a value's coverage into *why* they're
-// missing - "out of stock" (checked, source reported no price - a real,
-// current answer, not a gap) vs. "not tracked yet" (never checked at all,
-// e.g. no card_price_sources row configured). Market Value/Cost to
-// Complete both silently exclude both groups from their sums, which reads
-// as "this card just isn't priced" if left unexplained - this is the
-// breakdown that makes clear which of those two very different reasons
-// applies, matching the same market_checked_at/market_price_cents
+// missing - "out of stock" (checked, and neither a current nor a last
+// known price - a real, current answer, not a gap) vs. "not tracked yet"
+// (never checked at all, e.g. no card_price_sources row configured).
+// Market Value/Cost to Complete both silently exclude both groups from
+// their sums, which reads as "this card just isn't priced" if left
+// unexplained - this is the breakdown that makes clear which of those two
+// very different reasons applies, matching the same market_checked_at
 // distinction marketUnavailableLabel uses per-card on SetDetail.
 const coverageBreakdown = (cards: Card[]): string => {
   const outOfStock = cards.filter(
-    (card) => card.market_checked_at != null && card.market_price_cents == null,
+    (card) =>
+      card.market_checked_at != null && effectiveMarketPriceCents(card) == null,
   ).length;
   const notTracked = cards.filter(
     (card) => card.market_checked_at == null,
@@ -31,6 +43,29 @@ const coverageBreakdown = (cards: Card[]): string => {
   ]
     .filter((s): s is string => s !== null)
     .join(', ');
+};
+
+// How many of cards are only priced via the last-known fallback above,
+// not a live current price.
+const usingLastKnownCount = (cards: Card[]): number =>
+  cards.filter(
+    (card) =>
+      card.market_price_cents == null &&
+      card.last_known_market_price_cents != null,
+  ).length;
+
+// The full parenthetical coverage caption - "2 using last known price, 1
+// not tracked yet" - shared by the page-level coverage note (owned cards)
+// and the Cost to Complete stat's own caption (missing cards) so the
+// wording can't drift between them. Empty string (render nothing, no
+// stray "()") when cards has nothing to call out either way.
+const coverageNote = (cards: Card[], pricedCount: number): string => {
+  const lastKnown = usingLastKnownCount(cards);
+  const parts = [
+    lastKnown > 0 ? `${lastKnown} using last known price` : null,
+    cards.length - pricedCount > 0 ? coverageBreakdown(cards) : null,
+  ].filter((s): s is string => s !== null);
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 };
 
 // Thin wrapper so navigating directly between two sets' insights pages
@@ -113,10 +148,10 @@ const DeckInsightsContent = ({ setID }: { setID?: string }) => {
   );
 
   const ownedWithMarket = ownedCards.filter(
-    (card) => card.market_price_cents != null,
+    (card) => effectiveMarketPriceCents(card) != null,
   );
   const ownedMarketValueCents = ownedWithMarket.reduce(
-    (sum, card) => sum + card.market_price_cents!,
+    (sum, card) => sum + effectiveMarketPriceCents(card)!,
     0,
   );
 
@@ -131,28 +166,31 @@ const DeckInsightsContent = ({ setID }: { setID?: string }) => {
   // different denominators.
   const comparableCards = ownedCards.filter(
     (card) =>
-      card.market_price_cents != null && owned[card.id]?.pricePaidCents != null,
+      effectiveMarketPriceCents(card) != null &&
+      owned[card.id]?.pricePaidCents != null,
   );
   const comparablePaidCents = comparableCards.reduce(
     (sum, card) => sum + owned[card.id]!.pricePaidCents!,
     0,
   );
   const comparableMarketCents = comparableCards.reduce(
-    (sum, card) => sum + card.market_price_cents!,
+    (sum, card) => sum + effectiveMarketPriceCents(card)!,
     0,
   );
   const deltaCents = comparablePaidCents - comparableMarketCents;
 
   const missingWithMarket = missingCards.filter(
-    (card) => card.market_price_cents != null,
+    (card) => effectiveMarketPriceCents(card) != null,
   );
   const costToCompleteCents = missingWithMarket.reduce(
-    (sum, card) => sum + card.market_price_cents!,
+    (sum, card) => sum + effectiveMarketPriceCents(card)!,
     0,
   );
 
   const topValuable = [...ownedWithMarket]
-    .sort((a, b) => b.market_price_cents! - a.market_price_cents!)
+    .sort(
+      (a, b) => effectiveMarketPriceCents(b)! - effectiveMarketPriceCents(a)!,
+    )
     .slice(0, 5);
 
   return (
@@ -194,9 +232,8 @@ const DeckInsightsContent = ({ setID }: { setID?: string }) => {
         <>
           <p className={styles.coverageNote}>
             Based on {ownedWithMarket.length} of {ownedCards.length} owned cards
-            with current market data
-            {ownedCards.length - ownedWithMarket.length > 0 &&
-              ` (${coverageBreakdown(ownedCards)})`}
+            with market data
+            {coverageNote(ownedCards, ownedWithMarket.length)}
           </p>
 
           <div className={styles.statGrid}>
@@ -252,8 +289,7 @@ const DeckInsightsContent = ({ setID }: { setID?: string }) => {
               <span className={styles.statSub}>
                 {missingWithMarket.length} of {missingCards.length} missing
                 cards priced
-                {missingCards.length - missingWithMarket.length > 0 &&
-                  ` (${coverageBreakdown(missingCards)})`}
+                {coverageNote(missingCards, missingWithMarket.length)}
               </span>
             </div>
             <div className={styles.statCard}>
@@ -290,7 +326,7 @@ const DeckInsightsContent = ({ setID }: { setID?: string }) => {
                       </span>
                     </span>
                     <span className={styles.topCardValue}>
-                      ${(card.market_price_cents! / 100).toFixed(2)}
+                      ${(effectiveMarketPriceCents(card)! / 100).toFixed(2)}
                     </span>
                   </div>
                 ))}
