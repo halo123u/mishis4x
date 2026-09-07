@@ -17,7 +17,7 @@ import RefreshIcon from './ui/RefreshIcon';
 import TrendIcon from './ui/TrendIcon';
 import { ebaySearchUrl } from '../ebay';
 import { computeMarketDelta } from '../marketDelta';
-import { formatFreshness } from '../priceFreshness';
+import { formatFreshness, lastKnownPriceLabel } from '../priceFreshness';
 import { useGlobalData } from '../useGlobalData';
 import styles from './SetDetail.module.css';
 
@@ -831,7 +831,12 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                                 <div
                                   className={`${styles.delta} ${styles.deltaMuted}`}
                                 >
-                                  {marketUnavailableLabel(card)}
+                                  {card.last_known_market_price_cents != null
+                                    ? lastKnownPriceLabel(
+                                        card.last_known_market_price_cents,
+                                        card.last_known_market_checked_at,
+                                      )
+                                    : marketUnavailableLabel(card)}
                                 </div>
                               )}
                               {renderFreshness(card)}
@@ -862,6 +867,12 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                                       )}
                                     </MarketPriceLink>
                                   </>
+                                ) : card.last_known_market_price_cents !=
+                                  null ? (
+                                  lastKnownPriceLabel(
+                                    card.last_known_market_price_cents,
+                                    card.last_known_market_checked_at,
+                                  )
                                 ) : (
                                   marketUnavailableLabel(card)
                                 )}

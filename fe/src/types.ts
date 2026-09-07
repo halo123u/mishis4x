@@ -28,6 +28,8 @@ export interface Card {
   market_price_cents?: number;
   market_checked_at?: Time;
   market_url?: string;
+  last_known_market_price_cents?: number;
+  last_known_market_checked_at?: Time;
 }
 export interface AddOwnedSetInput {
   set_id: string;

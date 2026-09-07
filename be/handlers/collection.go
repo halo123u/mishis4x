@@ -312,6 +312,8 @@ func (d *Data) ListCardsForSet(w http.ResponseWriter, r *http.Request) {
 			card.MarketPriceCents = mp.PriceCents
 			card.MarketCheckedAt = mp.CheckedAt
 			card.MarketURL = mp.URL
+			card.LastKnownMarketPriceCents = mp.LastKnownPriceCents
+			card.LastKnownMarketCheckedAt = mp.LastKnownAt
 		}
 		resp = append(resp, card)
 	}

@@ -35,6 +35,16 @@ type Card struct {
 	// configured for this card at all, same condition as the other
 	// market_* fields.
 	MarketURL string `json:"market_url,omitempty"`
+	// LastKnownMarketPriceCents/LastKnownMarketCheckedAt are the most
+	// recent price this card actually had, distinct from MarketPriceCents/
+	// MarketCheckedAt above (the single most recent check, whatever its
+	// outcome) - only meaningful (and only worth a caller showing) when
+	// MarketPriceCents is absent: it's what a currently-out-of-stock card
+	// was last seen going for, clearly a historical figure rather than a
+	// live one. Both omitted if this card has never had a real price on
+	// record at all.
+	LastKnownMarketPriceCents *int       `json:"last_known_market_price_cents,omitempty"`
+	LastKnownMarketCheckedAt  *time.Time `json:"last_known_market_checked_at,omitempty"`
 }
 
 // AddOwnedSetInput is the POST /api/owned-sets request body - onboards

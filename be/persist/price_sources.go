@@ -147,6 +147,19 @@ type MarketPrice struct {
 	// card-specific; always set whenever a card has a source row at all,
 	// same condition as CheckedAt/PriceCents being present in the map.
 	URL string
+	// LastKnownPriceCents/LastKnownAt are the most recent check that DID
+	// find a real price, as opposed to PriceCents/CheckedAt above (the
+	// single most recent check, whatever its outcome). Only meaningful -
+	// and only worth a caller actually showing - when PriceCents is nil
+	// (currently out of stock): it's what lets a card_price_history row
+	// staying "a null price is itself meaningful, not a gap to paper
+	// over" (see that table's doc comment) coexist with still telling the
+	// user what this card was going for the last time it *was* listed,
+	// clearly labeled as historical rather than conflated with a live
+	// price. Both nil if this card has never had a real price recorded at
+	// all (every check so far has come back empty).
+	LastKnownPriceCents *int
+	LastKnownAt         *time.Time
 }
 
 // GetLatestMarketPricesForSet returns market-price standing for every
@@ -165,18 +178,32 @@ type MarketPrice struct {
 // ListCardsBySet itself - so it has no userID parameter.
 func (p *Persist) GetLatestMarketPricesForSet(ctx context.Context, setID string) (map[string]MarketPrice, error) {
 	// A window function picks each card's single most recent history row
-	// (by recorded_at) in one query, rather than one query per card or a
-	// less precise GROUP BY MAX(recorded_at) that can't also select
-	// price_cents from that same row. Starting FROM card_price_sources
-	// (not cards) is what makes a card with no source row at all simply
-	// not appear below - only cards with something configured are
-	// candidates for "checked" at all.
+	// in one query, rather than one query per card or a less precise
+	// GROUP BY MAX(recorded_at) that can't also select price_cents from
+	// that same row. Starting FROM card_price_sources (not cards) is what
+	// makes a card with no source row at all simply not appear below -
+	// only cards with something configured are candidates for "checked"
+	// at all. A second, independent window function - scoped to WHERE
+	// price_cents IS NOT NULL - finds each card's most recent *real*
+	// price alongside the first one (which stays unfiltered; it has to
+	// see a null row to report "checked, nothing available" at all). Two
+	// separate LEFT JOINs rather than one - a card can easily have a
+	// most-recent check that's null while its most-recent non-null check
+	// is a different, earlier row entirely, and both need their own
+	// recorded_at. Both order by `recorded_at DESC, id DESC` rather than
+	// recorded_at alone - recorded_at is only second-granularity, and two
+	// checks close together in time (a real thing: RecordPriceCheck runs
+	// once per shared url, not per card, so every card on that url gets a
+	// row in the same instant) can otherwise tie; id (AUTO_INCREMENT) is
+	// insertion order and a reliable tiebreaker.
 	rows, err := p.DB.QueryContext(ctx, `
 		SELECT
 			card_price_sources.card_id,
 			card_price_sources.last_checked_at,
 			card_price_sources.url,
-			latest.price_cents
+			latest.price_cents,
+			last_known.price_cents,
+			last_known.recorded_at
 		FROM card_price_sources
 		JOIN cards ON cards.id = card_price_sources.card_id
 		LEFT JOIN (
@@ -185,10 +212,22 @@ func (p *Persist) GetLatestMarketPricesForSet(ctx context.Context, setID string)
 				price_cents,
 				ROW_NUMBER() OVER (
 					PARTITION BY card_id
-					ORDER BY recorded_at DESC
+					ORDER BY recorded_at DESC, id DESC
 				) AS rn
 			FROM card_price_history
 		) latest ON latest.card_id = card_price_sources.card_id AND latest.rn = 1
+		LEFT JOIN (
+			SELECT
+				card_id,
+				price_cents,
+				recorded_at,
+				ROW_NUMBER() OVER (
+					PARTITION BY card_id
+					ORDER BY recorded_at DESC, id DESC
+				) AS rn
+			FROM card_price_history
+			WHERE price_cents IS NOT NULL
+		) last_known ON last_known.card_id = card_price_sources.card_id AND last_known.rn = 1
 		WHERE cards.set_id = ?
 	`, setID)
 	if err != nil {
@@ -205,8 +244,9 @@ func (p *Persist) GetLatestMarketPricesForSet(ctx context.Context, setID string)
 		var cardID string
 		var checkedAt sql.NullTime
 		var url string
-		var priceCents sql.NullInt64
-		if err := rows.Scan(&cardID, &checkedAt, &url, &priceCents); err != nil {
+		var priceCents, lastKnownPriceCents sql.NullInt64
+		var lastKnownAt sql.NullTime
+		if err := rows.Scan(&cardID, &checkedAt, &url, &priceCents, &lastKnownPriceCents, &lastKnownAt); err != nil {
 			return nil, err
 		}
 
@@ -217,6 +257,13 @@ func (p *Persist) GetLatestMarketPricesForSet(ctx context.Context, setID string)
 		if priceCents.Valid {
 			cents := int(priceCents.Int64)
 			mp.PriceCents = &cents
+		}
+		if lastKnownPriceCents.Valid {
+			cents := int(lastKnownPriceCents.Int64)
+			mp.LastKnownPriceCents = &cents
+		}
+		if lastKnownAt.Valid {
+			mp.LastKnownAt = &lastKnownAt.Time
 		}
 		prices[cardID] = mp
 	}
