@@ -36,6 +36,20 @@ const deltaToneClass = {
   muted: styles.deltaMuted,
 };
 
+// "Sep 3" - no year, this is always within the trend's own 7-day window
+// (priceTrendWindowDays) so the year is never in question. Point hover is
+// specifically what answers "how long did it take to go up" - the line's
+// x-axis is spaced evenly by *index*, not by real elapsed time, since a
+// day with no successful check simply isn't a point at all (see
+// api.DailyPricePoint's doc comment) - two adjacent points can be 1 day
+// or several days apart, and the shape of the line alone can't tell you
+// which. The date on hover can.
+const formatTrendDate = (isoDate: string): string =>
+  new Date(isoDate).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+
 // Only the price value itself links out to card.market_url (a TCG
 // Republic category listing page - not a page dedicated to this one card,
 // see api.Card.MarketURL's doc comment) - the surrounding "Market" label
@@ -186,6 +200,19 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [expandedTrendCardId, setExpandedTrendCardId] = useState<string | null>(
     null,
   );
+  // Which trend-line point is currently hovered, if any - a single slot
+  // (not per-card) is enough since only one card's trend panel can be
+  // expanded at a time anyway (see expandedTrendCardId above). top/left
+  // are real viewport coordinates (from the hovered point's own
+  // getBoundingClientRect, same technique CardThumbnail's floating
+  // preview uses) so the tooltip can render position: fixed and escape
+  // the tile's small bounds instead of getting clipped by it.
+  const [hoveredTrendPoint, setHoveredTrendPoint] = useState<{
+    date: string;
+    priceCents: number;
+    top: number;
+    left: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!setID || !priceTrendsEnabled) {
@@ -597,20 +624,86 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                       />,
                     );
                   }
-                  const [lastX, lastY] = points[points.length - 1];
+
+                  // Every point is hoverable (see hoveredTrendPoint's doc
+                  // comment - the date is the only way to tell how far
+                  // apart two points really are), not just the latest.
+                  // Each is really two overlapping circles: a small
+                  // always-visible dot (colored by that day's direction,
+                  // so the per-day signal survives even before hovering
+                  // anything) and a larger invisible one on top purely as
+                  // a generous, easy-to-hit hover target - a 1.5-radius
+                  // dot alone would be a frustratingly small target at
+                  // this chart's real on-screen size.
+                  const dots = points.map(([x, y], i) => {
+                    const point = trend.daily_prices[i];
+                    const isLast = i === points.length - 1;
+                    const isHovered = hoveredTrendPoint?.date === point.date;
+                    const dotClass = isLast
+                      ? styles.pointLatest
+                      : i === 0
+                        ? styles.pointFlat
+                        : point.price_cents >
+                            trend.daily_prices[i - 1].price_cents
+                          ? styles.pointUp
+                          : point.price_cents <
+                              trend.daily_prices[i - 1].price_cents
+                            ? styles.pointDown
+                            : styles.pointFlat;
+
+                    return (
+                      <g key={point.date}>
+                        <circle
+                          cx={x}
+                          cy={y}
+                          r={isHovered ? 3 : isLast ? 2.5 : 1.5}
+                          className={`${styles.point} ${dotClass}`}
+                        />
+                        <circle
+                          cx={x}
+                          cy={y}
+                          r={4}
+                          className={styles.pointHitArea}
+                          onMouseEnter={(event) => {
+                            const rect =
+                              event.currentTarget.getBoundingClientRect();
+                            setHoveredTrendPoint({
+                              date: point.date,
+                              priceCents: point.price_cents,
+                              top: rect.top,
+                              left: rect.left + rect.width / 2,
+                            });
+                          }}
+                          onMouseLeave={() => setHoveredTrendPoint(null)}
+                        />
+                      </g>
+                    );
+                  });
+
                   return (
                     <>
                       {segments}
-                      <circle
-                        cx={lastX}
-                        cy={lastY}
-                        r={2.5}
-                        className={styles.pointLatest}
-                      />
+                      {dots}
                     </>
                   );
                 })()}
               </svg>
+              {hoveredTrendPoint && (
+                <div
+                  className={styles.trendTooltip}
+                  style={{
+                    top: hoveredTrendPoint.top,
+                    left: hoveredTrendPoint.left,
+                  }}
+                >
+                  <span className={styles.trendTooltipDate}>
+                    {formatTrendDate(hoveredTrendPoint.date)}
+                  </span>
+                  <span className={styles.trendTooltipPrice}>
+                    ${(hoveredTrendPoint.priceCents / 100).toFixed(2)}
+                  </span>
+                </div>
+              )}
             </div>
             <span
               className={`${styles.change} ${trend.change_cents >= 0 ? styles.changeUp : styles.changeDown}`}
