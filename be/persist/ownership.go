@@ -157,26 +157,56 @@ func (p *Persist) SetCardQuantity(ctx context.Context, userID int, cardID string
 	return tx.Commit()
 }
 
-// CardQuantity pairs a card with a quantity (and optionally what it cost) -
-// the unit SetOwnedCards operates on in bulk, as opposed to
-// SetCardQuantity's one-card-at-a-time form. PricePaidCents is nil when
-// unknown, distinct from a real $0. Quantity/PricePaidCents are the same
-// read-side aggregate (COUNT/SUM over owned_card_copies) OwnedCard exposes -
-// see reconcileOwnedCardCopies for exactly how a given PricePaidCents gets
-// distributed across the underlying copy rows when quantity changes.
+// CardCopy is one physical copy of a card - the unit CardQuantity.Copies
+// operates on. ID is empty for a copy that doesn't exist yet (a request to
+// create one); non-empty to reference an existing owned_card_copies row.
+// See reconcileOwnedCardCopiesByID for exactly how a []CardCopy gets
+// reconciled against what's actually stored.
+type CardCopy struct {
+	ID             string
+	PricePaidCents *int
+}
+
+// CardQuantity pairs a card with either a plain target quantity or a full
+// per-copy list - the unit SetOwnedCards operates on in bulk, as opposed to
+// SetCardQuantity's one-card-at-a-time form.
+//
+// Quantity/PricePaidCents are the legacy aggregate write form - still what
+// SetCardQuantity uses, and still what's returned on read (a plain
+// len()/sum() over Copies - see ListOwnedCardsBySet/GetOwnedCard).
+//
+// Copies, when non-nil (#108), is authoritative on write: the caller's
+// full desired end state for this card's physical copies, in whatever
+// order they should be numbered (oldest first is the convention every
+// current caller uses - see ListOwnedCardsBySet). Reconciled by identity
+// (reconcileOwnedCardCopiesByID), not just by count - an existing copy
+// whose ID isn't present gets deleted, one that is present gets its price
+// updated to match, and an empty-ID entry gets created fresh. This is what
+// makes editing an arbitrary older copy's price (not just "whichever is
+// newest") possible, and it sidesteps reconcileOwnedCardCopies' LIFO
+// guess-which-copy-to-delete problem entirely: the caller already knows
+// exactly which copies survive, because it's the one showing them to the
+// user. When Copies is nil, Quantity/PricePaidCents drive the legacy
+// count-only reconciliation instead (reconcileOwnedCardCopies) - nil, not
+// just empty, is the signal: an empty-but-non-nil Copies is a real "delete
+// every copy of this card" request.
 type CardQuantity struct {
 	CardID         string
 	Quantity       int
 	PricePaidCents *int
+	Copies         []CardCopy
 }
 
-// SetOwnedCards reconciles quantity and price for every entry in cards -
-// the bulk form of SetCardQuantity, used by the onboarding flow's
-// card-selection step, where a user submits many cards' ownership at once
-// rather than one at a time. All cards are reconciled in one transaction
-// (a failure partway through rolls back every card in this call, not just
-// the one that failed). A nil/empty cards is a no-op, not an error - it
-// never opens a transaction for nothing.
+// SetOwnedCards reconciles every entry in cards - the bulk form of
+// SetCardQuantity, used by the onboarding flow's card-selection step,
+// where a user submits many cards' ownership at once rather than one at a
+// time. Each entry with a non-nil Copies is reconciled by identity
+// (reconcileOwnedCardCopiesByID); everything else falls back to the
+// legacy count-only form (reconcileOwnedCardCopies). All cards are
+// reconciled in one transaction (a failure partway through rolls back
+// every card in this call, not just the one that failed). A nil/empty
+// cards is a no-op, not an error - it never opens a transaction for
+// nothing.
 func (p *Persist) SetOwnedCards(ctx context.Context, userID int, cards []CardQuantity) error {
 	if len(cards) == 0 {
 		return nil
@@ -193,12 +223,112 @@ func (p *Persist) SetOwnedCards(ctx context.Context, userID int, cards []CardQua
 	}()
 
 	for _, c := range cards {
+		if c.Copies != nil {
+			if err := reconcileOwnedCardCopiesByID(ctx, tx, userID, c.CardID, c.Copies); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := reconcileOwnedCardCopies(ctx, tx, userID, c.CardID, c.Quantity, c.PricePaidCents, true); err != nil {
 			return err
 		}
 	}
 
 	return tx.Commit()
+}
+
+// reconcileOwnedCardCopiesByID reconciles (userID, cardID)'s
+// owned_card_copies rows to exactly match copies, by identity rather than
+// just count (#108's real per-copy editing capability - see CardQuantity's
+// doc comment): any existing row whose ID isn't present in copies is
+// deleted, each entry with an ID matching an existing row updates that
+// row's price, and each entry with no ID (empty string) creates a new
+// copy. copies == nil is not valid here - an empty-but-non-nil slice is a
+// real "own zero copies of this card" request; callers that mean "don't
+// touch copies at all" should use reconcileOwnedCardCopies instead.
+//
+// An ID in copies that doesn't match any of userID's existing rows for
+// cardID (forged, stale, or belonging to a different user/card entirely)
+// is silently ignored rather than erroring - the scoped
+// user_id/card_id/id WHERE clause below means it simply can't affect a
+// row it doesn't own, so there's nothing unsafe about treating it as a
+// no-op rather than failing the whole request over it.
+func reconcileOwnedCardCopiesByID(ctx context.Context, runner sq.BaseRunner, userID int, cardID string, copies []CardCopy) error {
+	rows, err := sq.Select("id").
+		From("owned_card_copies").
+		Where(sq.Eq{"user_id": userID, "card_id": cardID}).
+		RunWith(runner).
+		QueryContext(ctx)
+	if err != nil {
+		return err
+	}
+	existing := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		existing[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if closeErr := rows.Close(); closeErr != nil {
+		log.Error().Err(closeErr).Msg("error closing rows")
+	}
+
+	keep := map[string]bool{}
+	for _, c := range copies {
+		if c.ID != "" {
+			keep[c.ID] = true
+		}
+	}
+
+	var toDelete []string
+	for id := range existing {
+		if !keep[id] {
+			toDelete = append(toDelete, id)
+		}
+	}
+	if len(toDelete) > 0 {
+		if _, err := sq.Delete("owned_card_copies").Where(sq.Eq{"id": toDelete}).RunWith(runner).ExecContext(ctx); err != nil {
+			return err
+		}
+	}
+
+	for _, c := range copies {
+		if c.ID == "" {
+			id, err := NewUUIDv7()
+			if err != nil {
+				return err
+			}
+			_, err = sq.Insert("owned_card_copies").
+				Columns("id", "user_id", "card_id", "price_paid_cents").
+				Values(id, userID, cardID, c.PricePaidCents).
+				RunWith(runner).
+				ExecContext(ctx)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		if !existing[c.ID] {
+			// Doesn't belong to this user/card - see doc comment above.
+			continue
+		}
+		_, err := sq.Update("owned_card_copies").
+			Set("price_paid_cents", c.PricePaidCents).
+			Where(sq.Eq{"id": c.ID, "user_id": userID, "card_id": cardID}).
+			RunWith(runner).
+			ExecContext(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // reconcileOwnedCardCopies adjusts the owned_card_copies rows for
@@ -309,20 +439,30 @@ func reconcileOwnedCardCopies(ctx context.Context, runner sq.BaseRunner, userID 
 }
 
 // ListOwnedCardsBySet returns userID's ownership for every card belonging
-// to setID that has at least one owned_card_copies row. Unlike before
-// #108, a card explicitly set to quantity 0 no longer appears here at all -
-// there's no physical row left to distinguish "explicitly marked not
-// owned" from "never interacted with" once quantity is a COUNT(*) rather
-// than a stored column (see OwnedCard's doc comment); the two are now the
-// same state. Nothing observable currently depended on that distinction
-// (OnboardCards.tsx's stepper defaults a missing entry to 0 the same as an
-// explicit one), so this is a deliberate simplification, not an oversight.
+// to setID that has at least one owned_card_copies row - Quantity/
+// PricePaidCents are a plain len()/sum() over Copies, and Copies itself is
+// every one of that card's copies, oldest first (created_at, id - see
+// reconcileOwnedCardCopies' doc comment for why id alone isn't safely
+// comparable across backfilled vs. live rows), each with its own real id
+// and price. Rows are fetched ungrouped and aggregated in Go rather than
+// via SQL COUNT/SUM/GROUP BY (contrast GetOwnedCard, which only needs the
+// aggregate for one card) specifically so this can return real per-copy
+// identity for #108's editing UI without a second per-card round trip.
+//
+// Unlike before #108, a card explicitly set to quantity 0 no longer
+// appears here at all - there's no physical row left to distinguish
+// "explicitly marked not owned" from "never interacted with" once quantity
+// is a COUNT(*) rather than a stored column (see OwnedCard's doc comment);
+// the two are now the same state. Nothing observable currently depended on
+// that distinction (OnboardCards.tsx's stepper defaults a missing entry to
+// 0 the same as an explicit one), so this is a deliberate simplification,
+// not an oversight.
 func (p *Persist) ListOwnedCardsBySet(ctx context.Context, userID int, setID string) ([]CardQuantity, error) {
-	rows, err := sq.Select("occ.card_id", "COUNT(*)", "SUM(occ.price_paid_cents)").
+	rows, err := sq.Select("occ.id", "occ.card_id", "occ.price_paid_cents").
 		From("owned_card_copies occ").
 		Join("cards c ON c.id = occ.card_id").
 		Where(sq.Eq{"occ.user_id": userID, "c.set_id": setID}).
-		GroupBy("occ.card_id").
+		OrderBy("occ.card_id", "occ.created_at", "occ.id").
 		RunWith(p.DB).
 		QueryContext(ctx)
 	if err != nil {
@@ -334,21 +474,47 @@ func (p *Persist) ListOwnedCardsBySet(ctx context.Context, userID int, setID str
 		}
 	}()
 
-	var owned []CardQuantity
+	// order tracks first-seen card_id order (stable, since the query above
+	// is itself ordered by card_id) - byCard alone (a plain map) wouldn't
+	// preserve that for the []CardQuantity this returns.
+	var order []string
+	byCard := map[string]*CardQuantity{}
 	for rows.Next() {
-		var cq CardQuantity
-		var priceSum sql.NullInt64
-		if err := rows.Scan(&cq.CardID, &cq.Quantity, &priceSum); err != nil {
+		var copyID, cardID string
+		var priceCents sql.NullInt64
+		if err := rows.Scan(&copyID, &cardID, &priceCents); err != nil {
 			return nil, err
 		}
-		if priceSum.Valid {
-			cents := int(priceSum.Int64)
-			cq.PricePaidCents = &cents
+
+		cq, ok := byCard[cardID]
+		if !ok {
+			cq = &CardQuantity{CardID: cardID}
+			byCard[cardID] = cq
+			order = append(order, cardID)
 		}
-		owned = append(owned, cq)
+
+		var price *int
+		if priceCents.Valid {
+			cents := int(priceCents.Int64)
+			price = &cents
+			if cq.PricePaidCents == nil {
+				zero := 0
+				cq.PricePaidCents = &zero
+			}
+			*cq.PricePaidCents += cents
+		}
+		cq.Copies = append(cq.Copies, CardCopy{ID: copyID, PricePaidCents: price})
+		cq.Quantity++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
-	return owned, rows.Err()
+	owned := make([]CardQuantity, 0, len(order))
+	for _, cardID := range order {
+		owned = append(owned, *byCard[cardID])
+	}
+	return owned, nil
 }
 
 // GetOwnedCard returns userID's ownership aggregate for cardID - Quantity

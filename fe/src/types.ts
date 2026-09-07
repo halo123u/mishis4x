@@ -32,10 +32,15 @@ export interface Card {
 export interface AddOwnedSetInput {
   set_id: string;
 }
+export interface OwnedCardCopyInput {
+  id?: string;
+  price_paid_cents?: number;
+}
 export interface OwnedCardInput {
   card_id: string;
   quantity: number;
   price_paid_cents?: number;
+  copies?: OwnedCardCopyInput[];
 }
 export interface SetOwnedCardsInput {
   cards: OwnedCardInput[];

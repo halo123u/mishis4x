@@ -1,0 +1,242 @@
+.single {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+/* Same currency-pill treatment OnboardCards already used for its single
+   price field (see .priceInputWrap in OnboardCards.module.css) - kept
+   here too so a 1-copy card and a 2+-copy card's price box look
+   identical, just with one or several of them. */
+.priceInputWrap {
+  display: inline-flex;
+  align-items: stretch;
+  height: 2.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.priceCurrency {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  color: var(--ash);
+  font-size: var(--text-sm);
+  border-right: 1px solid var(--hairline);
+}
+
+.priceInput {
+  width: 6rem;
+  border: none;
+  background: transparent;
+  padding: 0 var(--space-2);
+  text-align: right;
+}
+
+.priceInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- the stack: two faded "peek" layers behind the real thumbnail,
+   sized to CardThumbnail's own 63:88 card proportions ---- */
+
+.stack {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 63 / 88;
+  cursor: pointer;
+}
+
+.peek {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px dashed var(--hairline);
+  transition:
+    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.36s ease;
+}
+
+.peek2 {
+  transform: translate(7px, 9px) rotate(5deg);
+  opacity: 0.55;
+}
+
+.peek1 {
+  transform: translate(3.5px, 4.5px) rotate(2.5deg);
+  opacity: 0.8;
+}
+
+.front {
+  position: absolute;
+  inset: 0;
+  display: block;
+  box-shadow: var(--shadow);
+  border-radius: var(--radius-md);
+}
+
+.shuffling .front {
+  animation: shuffleFront 0.42s cubic-bezier(0.34, 1.35, 0.64, 1);
+}
+
+.shuffling .peek1 {
+  animation: shufflePeek1 0.42s cubic-bezier(0.34, 1.35, 0.64, 1);
+}
+
+.shuffling .peek2 {
+  animation: shufflePeek2 0.42s cubic-bezier(0.34, 1.35, 0.64, 1);
+}
+
+@keyframes shuffleFront {
+  0% {
+    transform: none;
+  }
+  38% {
+    transform: translate(11px, -16px) rotate(9deg) scale(0.96);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes shufflePeek1 {
+  0% {
+    transform: translate(3.5px, 4.5px) rotate(2.5deg);
+  }
+  45% {
+    transform: translate(1px, 1.5px) rotate(0.5deg);
+  }
+  100% {
+    transform: translate(3.5px, 4.5px) rotate(2.5deg);
+  }
+}
+
+@keyframes shufflePeek2 {
+  0% {
+    transform: translate(7px, 9px) rotate(5deg);
+  }
+  45% {
+    transform: translate(4px, 5.5px) rotate(3deg);
+  }
+  100% {
+    transform: translate(7px, 9px) rotate(5deg);
+  }
+}
+
+.cycleBtn {
+  position: absolute;
+  bottom: -0.5rem;
+  right: -0.5rem;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--surface);
+  background: var(--teal);
+  color: var(--teal-ink);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  z-index: 2;
+  transition: transform 0.15s ease;
+}
+
+.cycleBtn:hover:not(:disabled) {
+  transform: scale(1.08);
+}
+
+.cycleBtn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.cycleBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cycleBtn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.shuffling .cycleBtn svg {
+  animation: spin 0.42s ease;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+.dots {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--ash);
+  background: transparent;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.dotPriced {
+  background: var(--teal);
+  border-color: var(--teal);
+}
+
+.dotActive {
+  transform: scale(1.35);
+  border-color: var(--ink);
+}
+
+.dotPriced.dotActive {
+  border-color: var(--teal);
+}
+
+.copyIndex {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ash);
+  letter-spacing: 0.02em;
+  transition: opacity 0.16s ease;
+}
+
+.copyIndex.fading {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shuffling .front,
+  .shuffling .peek1,
+  .shuffling .peek2,
+  .shuffling .cycleBtn svg {
+    animation: none;
+  }
+  .peek,
+  .cycleBtn,
+  .dot {
+    transition: none;
+  }
+}

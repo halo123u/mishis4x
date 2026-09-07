@@ -294,9 +294,15 @@ func TestListOwnedCardsBySet(t *testing.T) {
 	// column model. See ListOwnedCardsBySet's doc comment.
 	owned, err = p.ListOwnedCardsBySet(t.Context(), userID, setID)
 	require.NoError(t, err)
-	require.Equal(t, []CardQuantity{
-		{CardID: cardOne, Quantity: 2},
-	}, owned, "a card explicitly set to 0 has no copies left to list, same as one never touched")
+	require.Len(t, owned, 1, "a card explicitly set to 0 has no copies left to list, same as one never touched")
+	require.Equal(t, cardOne, owned[0].CardID)
+	require.Equal(t, 2, owned[0].Quantity)
+	require.Nil(t, owned[0].PricePaidCents)
+	require.Len(t, owned[0].Copies, 2, "each copy must be its own real row, not just a count")
+	for _, c := range owned[0].Copies {
+		require.NotEmpty(t, c.ID)
+		require.Nil(t, c.PricePaidCents)
+	}
 }
 
 func TestSetOwnedCards_EmptyIsNoop(t *testing.T) {
@@ -426,4 +432,146 @@ func TestSetCardQuantity_DecreaseRemovesMostRecentCopyFirst(t *testing.T) {
 	require.Equal(t, 1, oc.Quantity)
 	require.NotNil(t, oc.PricePaidCents)
 	require.Equal(t, 1000, *oc.PricePaidCents, "the surviving copy must be the original $10 one, not the $15 one")
+}
+
+// TestSetOwnedCards_ByID_EditsAnArbitraryOlderCopy is the real point of
+// the by-identity write path (#108's follow-up UI): editing copy 1 of 2's
+// price directly, not just whichever copy happens to be newest - something
+// the legacy Quantity/PricePaidCents form can't express at all.
+func TestSetOwnedCards_ByID_EditsAnArbitraryOlderCopy(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+
+	firstPrice, secondPrice := 1000, 1500
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Quantity: 1, PricePaidCents: &firstPrice},
+	}))
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Quantity: 2, PricePaidCents: &secondPrice},
+	}))
+
+	owned, err := p.ListOwnedCardsBySet(t.Context(), userID, setID)
+	require.NoError(t, err)
+	require.Len(t, owned, 1)
+	require.Len(t, owned[0].Copies, 2)
+	firstCopyID := owned[0].Copies[0].ID // oldest first, per doc comment
+
+	correctedPrice := 899
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Copies: []CardCopy{
+			{ID: firstCopyID, PricePaidCents: &correctedPrice},
+			{ID: owned[0].Copies[1].ID, PricePaidCents: &secondPrice},
+		}},
+	}))
+
+	owned, err = p.ListOwnedCardsBySet(t.Context(), userID, setID)
+	require.NoError(t, err)
+	require.Len(t, owned, 1)
+	require.Equal(t, 2, owned[0].Quantity, "editing by id must not change how many copies exist")
+	require.NotNil(t, owned[0].PricePaidCents)
+	require.Equal(t, correctedPrice+secondPrice, *owned[0].PricePaidCents)
+	require.Equal(t, firstCopyID, owned[0].Copies[0].ID, "the same physical copy - not a new row")
+	require.Equal(t, correctedPrice, *owned[0].Copies[0].PricePaidCents)
+}
+
+// TestSetOwnedCards_ByID_DeletesOmittedCopyAndCreatesNew covers the other
+// two identity-based operations in one go: a copy whose id is left out of
+// the submitted list is deleted (not just "the most recent" - whichever
+// one the caller omits), and an entry with no id at all creates a new copy.
+func TestSetOwnedCards_ByID_DeletesOmittedCopyAndCreatesNew(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+
+	priceA, priceB, priceC := 500, 700, 900
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Copies: []CardCopy{
+			{PricePaidCents: &priceA},
+			{PricePaidCents: &priceB},
+		}},
+	}))
+
+	owned, err := p.ListOwnedCardsBySet(t.Context(), userID, setID)
+	require.NoError(t, err)
+	require.Len(t, owned[0].Copies, 2)
+	// The $7 copy (index 1) is the one being dropped below - keep track of
+	// which id that was so it can be asserted gone afterward.
+	keptID := owned[0].Copies[0].ID
+	droppedID := owned[0].Copies[1].ID
+
+	// Drop the $7 copy, keep the $5 one untouched, add a fresh $9 one.
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Copies: []CardCopy{
+			{ID: keptID, PricePaidCents: &priceA},
+			{PricePaidCents: &priceC},
+		}},
+	}))
+
+	owned, err = p.ListOwnedCardsBySet(t.Context(), userID, setID)
+	require.NoError(t, err)
+	require.Len(t, owned, 1)
+	require.Equal(t, 2, owned[0].Quantity)
+	require.Equal(t, priceA+priceC, *owned[0].PricePaidCents)
+
+	var ids []string
+	for _, c := range owned[0].Copies {
+		ids = append(ids, c.ID)
+	}
+	require.Contains(t, ids, keptID, "the copy that was explicitly kept must still be there")
+	require.NotContains(t, ids, droppedID, "the copy left out of the submitted list must be gone")
+}
+
+// TestSetOwnedCards_ByID_ForeignIDIsIgnored confirms an id that doesn't
+// belong to this user's copy of this card - forged, stale, or from a
+// different card/user entirely - is silently ignored rather than
+// corrupting someone else's data or erroring the whole request.
+func TestSetOwnedCards_ByID_ForeignIDIsIgnored(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	userID := setupOwnershipTestUser(t, p)
+
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+
+	forgedPrice := 1
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []CardQuantity{
+		{CardID: cardID, Copies: []CardCopy{
+			{ID: "does-not-exist", PricePaidCents: &forgedPrice},
+		}},
+	}))
+
+	oc, err := p.GetOwnedCard(t.Context(), userID, cardID)
+	require.NoError(t, err)
+	require.Equal(t, 0, oc.Quantity, "a forged id must not create a phantom copy")
 }
