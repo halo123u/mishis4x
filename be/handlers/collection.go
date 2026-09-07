@@ -170,10 +170,18 @@ func (d *Data) ListOwnedCardsForSet(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]api.OwnedCardInput, 0, len(owned))
 	for _, oc := range owned {
+		copies := make([]api.OwnedCardCopyInput, 0, len(oc.Copies))
+		for _, c := range oc.Copies {
+			copies = append(copies, api.OwnedCardCopyInput{
+				ID:             c.ID,
+				PricePaidCents: c.PricePaidCents,
+			})
+		}
 		resp = append(resp, api.OwnedCardInput{
 			CardID:         oc.CardID,
 			Quantity:       oc.Quantity,
 			PricePaidCents: oc.PricePaidCents,
+			Copies:         copies,
 		})
 	}
 
@@ -222,6 +230,23 @@ func (d *Data) SetOwnedCardsForSet(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, "One of these cards doesn't belong to this set.")
 			return
 		}
+
+		// c.Copies present (even empty) means the caller is using #108's
+		// real per-copy editing - reconciled by identity, not just count
+		// (see persist.CardQuantity's doc comment). Absent means the
+		// legacy quantity+aggregate-price form instead.
+		if c.Copies != nil {
+			copies := make([]persist.CardCopy, 0, len(c.Copies))
+			for _, cc := range c.Copies {
+				copies = append(copies, persist.CardCopy{
+					ID:             cc.ID,
+					PricePaidCents: cc.PricePaidCents,
+				})
+			}
+			cards = append(cards, persist.CardQuantity{CardID: c.CardID, Copies: copies})
+			continue
+		}
+
 		cards = append(cards, persist.CardQuantity{
 			CardID:         c.CardID,
 			Quantity:       c.Quantity,
@@ -287,6 +312,8 @@ func (d *Data) ListCardsForSet(w http.ResponseWriter, r *http.Request) {
 			card.MarketPriceCents = mp.PriceCents
 			card.MarketCheckedAt = mp.CheckedAt
 			card.MarketURL = mp.URL
+			card.LastKnownMarketPriceCents = mp.LastKnownPriceCents
+			card.LastKnownMarketCheckedAt = mp.LastKnownAt
 		}
 		resp = append(resp, card)
 	}

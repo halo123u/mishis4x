@@ -294,7 +294,7 @@ func TestDeleteOwnedSet_RemovesSetAndCards(t *testing.T) {
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
@@ -347,7 +347,7 @@ func TestListOwnedCardsForSet(t *testing.T) {
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
@@ -371,7 +371,14 @@ func TestListOwnedCardsForSet(t *testing.T) {
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusOK, res.StatusCode)
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&owned))
-	require.Equal(t, []api.OwnedCardInput{{CardID: cardID, Quantity: 4}}, owned)
+	require.Len(t, owned, 1)
+	require.Equal(t, cardID, owned[0].CardID)
+	require.Equal(t, 4, owned[0].Quantity)
+	require.Nil(t, owned[0].PricePaidCents)
+	require.Len(t, owned[0].Copies, 4, "each copy must round-trip as its own real id over the wire")
+	for _, c := range owned[0].Copies {
+		require.NotEmpty(t, c.ID)
+	}
 }
 
 func TestListOwnedCardsForSet_Unauthenticated(t *testing.T) {
@@ -393,7 +400,7 @@ func TestSetOwnedCardsForSet_RecordsOwnership(t *testing.T) {
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
@@ -428,7 +435,7 @@ func TestSetOwnedCardsForSet_RecordsPricePaid(t *testing.T) {
 	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM owned_cards WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
 		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
 	})
@@ -450,7 +457,78 @@ func TestSetOwnedCardsForSet_RecordsPricePaid(t *testing.T) {
 	require.Equal(t, http.StatusOK, res.StatusCode)
 	var owned []api.OwnedCardInput
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&owned))
-	require.Equal(t, []api.OwnedCardInput{{CardID: cardID, Quantity: 1, PricePaidCents: &priceCents}}, owned)
+	require.Len(t, owned, 1)
+	require.Equal(t, cardID, owned[0].CardID)
+	require.Equal(t, 1, owned[0].Quantity)
+	require.NotNil(t, owned[0].PricePaidCents)
+	require.Equal(t, priceCents, *owned[0].PricePaidCents)
+	require.Len(t, owned[0].Copies, 1)
+	require.NotEmpty(t, owned[0].Copies[0].ID)
+	require.NotNil(t, owned[0].Copies[0].PricePaidCents)
+	require.Equal(t, priceCents, *owned[0].Copies[0].PricePaidCents)
+}
+
+// TestSetOwnedCardsForSet_ByID_EditsAndDeletesSpecificCopies exercises
+// #108's real per-copy editing flow over the actual HTTP endpoint - add
+// two copies, then in a follow-up request edit one's price by id and drop
+// the other by leaving its id out, in one call.
+func TestSetOwnedCardsForSet_ByID_EditsAndDeletesSpecificCopies(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+	userID := createAndLoginTestUser(t, db, client, ts.URL)
+
+	p := &persist.Persist{DB: db}
+	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Poolside Fairy Refithea", "BRD/W139-001S", "SR 3-star")
+	require.NoError(t, err)
+
+	priceA, priceB := 1000, 1500
+	res := postSetOwnedCards(t, client, ts.URL, setID, api.SetOwnedCardsInput{
+		Cards: []api.OwnedCardInput{
+			{CardID: cardID, Copies: []api.OwnedCardCopyInput{
+				{PricePaidCents: &priceA},
+				{PricePaidCents: &priceB},
+			}},
+		},
+	})
+	require.Equal(t, http.StatusNoContent, res.StatusCode)
+
+	res, err = client.Get(ts.URL + "/api/owned-sets/" + setID + "/cards")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	var owned []api.OwnedCardInput
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&owned))
+	require.Len(t, owned, 1)
+	require.Len(t, owned[0].Copies, 2)
+	keepID := owned[0].Copies[0].ID
+
+	correctedPrice := 1250
+	res = postSetOwnedCards(t, client, ts.URL, setID, api.SetOwnedCardsInput{
+		Cards: []api.OwnedCardInput{
+			{CardID: cardID, Copies: []api.OwnedCardCopyInput{
+				{ID: keepID, PricePaidCents: &correctedPrice},
+			}},
+		},
+	})
+	require.Equal(t, http.StatusNoContent, res.StatusCode)
+
+	res, err = client.Get(ts.URL + "/api/owned-sets/" + setID + "/cards")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&owned))
+	require.Len(t, owned, 1)
+	require.Equal(t, 1, owned[0].Quantity, "the omitted copy must be gone, not just the price changed")
+	require.Len(t, owned[0].Copies, 1)
+	require.Equal(t, keepID, owned[0].Copies[0].ID, "the same physical copy, not a replacement")
+	require.NotNil(t, owned[0].Copies[0].PricePaidCents)
+	require.Equal(t, correctedPrice, *owned[0].Copies[0].PricePaidCents)
 }
 
 func TestSetOwnedCardsForSet_UnknownCardIsRejected(t *testing.T) {

@@ -9,13 +9,15 @@ import {
   Set as SetT,
 } from '../types';
 import Button from './ui/Button';
+import CardCopyBrowseStack, { OwnedCopy } from './ui/CardCopyBrowseStack';
 import CardThumbnail from './ui/CardThumbnail';
 import EbayIcon from './ui/EbayIcon';
 import EbayListingsCheck from './ui/EbayListingsCheck';
 import RefreshIcon from './ui/RefreshIcon';
 import TrendIcon from './ui/TrendIcon';
 import { ebaySearchUrl } from '../ebay';
-import { formatFreshness } from '../priceFreshness';
+import { computeMarketDelta } from '../marketDelta';
+import { formatFreshness, lastKnownPriceLabel } from '../priceFreshness';
 import { useGlobalData } from '../useGlobalData';
 import styles from './SetDetail.module.css';
 
@@ -26,6 +28,13 @@ import styles from './SetDetail.module.css';
 // less specific state worth saying plainly rather than guessing.
 const marketUnavailableLabel = (card: Card): string =>
   card.market_checked_at != null ? 'Out of Stock' : 'Not tracked yet';
+
+// Maps computeMarketDelta's tone to this page's existing delta CSS classes.
+const deltaToneClass = {
+  good: styles.deltaGood,
+  bad: styles.deltaBad,
+  muted: styles.deltaMuted,
+};
 
 // Only the price value itself links out to card.market_url (a TCG
 // Republic category listing page - not a page dedicated to this one card,
@@ -84,6 +93,21 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // a card missing here just means "unknown," same as an unowned card
   // missing from `owned` above.
   const [ownedPrices, setOwnedPrices] = useState<Record<string, number>>({});
+  // card_id -> each owned copy's own id/price (#108 follow-up) - what
+  // CardCopyBrowseStack cycles through, so a card's market price (which
+  // only ever reflects one copy) can be compared against one specific
+  // copy's own price instead of the card's aggregate total. Only
+  // populated for owned cards, same condition as `owned`/`ownedPrices`.
+  const [ownedCopies, setOwnedCopies] = useState<Record<string, OwnedCopy[]>>(
+    {},
+  );
+  // Which of a card's copies the browse stack is currently showing -
+  // mirrors OnboardCards' identical state for the editable version.
+  const [activeIndexByCard, setActiveIndexByCard] = useState<
+    Record<string, number>
+  >({});
+  // Which single card's stack is mid-cycle-animation, if any.
+  const [shufflingCard, setShufflingCard] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Deleting is a destructive, unrecoverable action (it clears card
   // ownership too, not just the set marker) - confirmingDelete gates a
@@ -209,16 +233,22 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
         const ownedCards: OwnedCardInput[] = await ownedRes.json();
         const ownedMap: Record<string, number> = {};
         const pricesMap: Record<string, number> = {};
+        const copiesMap: Record<string, OwnedCopy[]> = {};
         for (const oc of ownedCards) {
           if (oc.quantity > 0) {
             ownedMap[oc.card_id] = oc.quantity;
             if (oc.price_paid_cents != null) {
               pricesMap[oc.card_id] = oc.price_paid_cents;
             }
+            copiesMap[oc.card_id] = (oc.copies ?? []).map((c) => ({
+              id: c.id ?? '',
+              price_paid_cents: c.price_paid_cents,
+            }));
           }
         }
         setOwned(ownedMap);
         setOwnedPrices(pricesMap);
+        setOwnedCopies(copiesMap);
         setCards(await cardsRes.json());
 
         // Not fatal if this one fails - the eBay fallback link just falls
@@ -331,6 +361,24 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       .finally(() => {
         setEbayLoadingCardId(null);
       });
+  };
+
+  // Advances CardCopyBrowseStack to the next copy - same cycling logic as
+  // OnboardCards' editable version, minus anything to write back (this
+  // view never changes ownership, only which copy is currently shown).
+  const cycleCopy = (cardID: string) => {
+    const count = (ownedCopies[cardID] ?? []).length;
+    if (count <= 1 || shufflingCard) {
+      return;
+    }
+    setShufflingCard(cardID);
+    setTimeout(() => {
+      setActiveIndexByCard((prev) => ({
+        ...prev,
+        [cardID]: ((prev[cardID] ?? 0) + 1) % count,
+      }));
+    }, 170);
+    setTimeout(() => setShufflingCard(null), 420);
   };
 
   const handleDelete = () => {
@@ -684,6 +732,11 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
           <div className={styles.grid}>
             {visibleCards.map((card) => {
               const quantity = owned?.[card.id] ?? 0;
+              const copies = ownedCopies[card.id] ?? [];
+              const activeIndex = Math.min(
+                activeIndexByCard[card.id] ?? 0,
+                Math.max(0, copies.length - 1),
+              );
               return (
                 <div
                   key={card.id}
@@ -693,7 +746,17 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                       : styles.tile
                   }
                 >
-                  <CardThumbnail cardId={card.id} dimmed={quantity === 0} />
+                  {quantity > 1 ? (
+                    <CardCopyBrowseStack
+                      card={card}
+                      copies={copies}
+                      activeIndex={activeIndex}
+                      shuffling={shufflingCard === card.id}
+                      onCycle={() => cycleCopy(card.id)}
+                    />
+                  ) : (
+                    <CardThumbnail cardId={card.id} dimmed={quantity === 0} />
+                  )}
                   <div className={styles.tileName}>{card.name}</div>
                   <div className={styles.tileCode}>{card.code}</div>
                   <span className={styles.rarityChip}>{card.rarity}</span>
@@ -710,91 +773,113 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                     )}
                   </div>
                   {priceSource === 'tcg' &&
-                    (quantity > 0
-                      ? // Owned: paid vs. market, when there's something to
-                        // compare - a card the user hasn't priced yet, or one
-                        // with no current market data, just shows what it
-                        // does have rather than a misleading delta.
-                        (ownedPrices[card.id] != null ||
-                          card.market_price_cents != null) && (
+                    (quantity > 1
+                      ? // 2+ copies: CardCopyBrowseStack (above) already
+                        // shows one specific copy's price against the
+                        // market price, which is the only comparison
+                        // that's actually apples-to-apples (market_price_
+                        // cents is always a single copy's price - see
+                        // api.Card's doc comment). Repeating an aggregate
+                        // Market/delta line down here too was redundant
+                        // and made a multi-copy tile noticeably taller
+                        // than every other tile in the grid for no new
+                        // information - freshness (the refresh/trend
+                        // controls) still shows, since that's independent
+                        // of the paid-vs-market comparison itself.
+                        card.market_checked_at != null && (
                           <div className={styles.compareRow}>
-                            {card.market_price_cents != null ? (
-                              <>
-                                <div className={styles.compareLine}>
-                                  <span>Market</span>
-                                  <MarketPriceLink card={card}>
-                                    $
-                                    {(card.market_price_cents / 100).toFixed(2)}
-                                  </MarketPriceLink>
-                                </div>
-                                {ownedPrices[card.id] != null &&
-                                  (() => {
-                                    const deltaCents =
-                                      ownedPrices[card.id] -
-                                      card.market_price_cents!;
-                                    if (deltaCents === 0) {
-                                      return (
-                                        <div
-                                          className={`${styles.delta} ${styles.deltaMuted}`}
-                                        >
-                                          At market price
-                                        </div>
-                                      );
-                                    }
-                                    const under = deltaCents < 0;
-                                    return (
-                                      <div
-                                        className={`${styles.delta} ${under ? styles.deltaGood : styles.deltaBad}`}
-                                      >
-                                        {under ? '▼' : '▲'} $
-                                        {(Math.abs(deltaCents) / 100).toFixed(
-                                          2,
-                                        )}{' '}
-                                        {under ? 'under' : 'over'} market
-                                      </div>
-                                    );
-                                  })()}
-                              </>
-                            ) : (
-                              <div
-                                className={`${styles.delta} ${styles.deltaMuted}`}
-                              >
-                                {marketUnavailableLabel(card)}
-                              </div>
-                            )}
                             {renderFreshness(card)}
                           </div>
                         )
-                      : // Missing: no "paid" to compare against, so just the
-                        // raw market price (or why there isn't one) - nothing
-                        // extra when this card has never been tracked at
-                        // all, "Missing" above already says enough for that
-                        // case.
-                        (card.market_price_cents != null ||
-                          card.market_checked_at != null) && (
-                          <>
-                            <div
-                              className={
-                                card.market_price_cents != null
-                                  ? styles.marketPill
-                                  : `${styles.marketPill} ${styles.marketPillMuted}`
-                              }
-                            >
+                      : quantity > 0
+                        ? // Exactly 1 copy: no stack, so this is the only
+                          // paid-vs-market comparison this tile has - shown
+                          // when there's something to compare (a card the
+                          // user hasn't priced yet, or one with no current
+                          // market data, just shows what it does have
+                          // rather than a misleading delta).
+                          (ownedPrices[card.id] != null ||
+                            card.market_price_cents != null) && (
+                            <div className={styles.compareRow}>
                               {card.market_price_cents != null ? (
                                 <>
-                                  Market{' '}
-                                  <MarketPriceLink card={card}>
-                                    $
-                                    {(card.market_price_cents / 100).toFixed(2)}
-                                  </MarketPriceLink>
+                                  <div className={styles.compareLine}>
+                                    <span>Market</span>
+                                    <MarketPriceLink card={card}>
+                                      $
+                                      {(card.market_price_cents / 100).toFixed(
+                                        2,
+                                      )}
+                                    </MarketPriceLink>
+                                  </div>
+                                  {ownedPrices[card.id] != null &&
+                                    (() => {
+                                      const delta = computeMarketDelta(
+                                        ownedPrices[card.id],
+                                        card.market_price_cents!,
+                                      );
+                                      return (
+                                        <div
+                                          className={`${styles.delta} ${deltaToneClass[delta.tone]}`}
+                                        >
+                                          {delta.label}
+                                        </div>
+                                      );
+                                    })()}
                                 </>
                               ) : (
-                                marketUnavailableLabel(card)
+                                <div
+                                  className={`${styles.delta} ${styles.deltaMuted}`}
+                                >
+                                  {card.last_known_market_price_cents != null
+                                    ? lastKnownPriceLabel(
+                                        card.last_known_market_price_cents,
+                                        card.last_known_market_checked_at,
+                                      )
+                                    : marketUnavailableLabel(card)}
+                                </div>
                               )}
+                              {renderFreshness(card)}
                             </div>
-                            {renderFreshness(card)}
-                          </>
-                        ))}
+                          )
+                        : // Missing: no "paid" to compare against, so just the
+                          // raw market price (or why there isn't one) - nothing
+                          // extra when this card has never been tracked at
+                          // all, "Missing" above already says enough for that
+                          // case.
+                          (card.market_price_cents != null ||
+                            card.market_checked_at != null) && (
+                            <>
+                              <div
+                                className={
+                                  card.market_price_cents != null
+                                    ? styles.marketPill
+                                    : `${styles.marketPill} ${styles.marketPillMuted}`
+                                }
+                              >
+                                {card.market_price_cents != null ? (
+                                  <>
+                                    Market{' '}
+                                    <MarketPriceLink card={card}>
+                                      $
+                                      {(card.market_price_cents / 100).toFixed(
+                                        2,
+                                      )}
+                                    </MarketPriceLink>
+                                  </>
+                                ) : card.last_known_market_price_cents !=
+                                  null ? (
+                                  lastKnownPriceLabel(
+                                    card.last_known_market_price_cents,
+                                    card.last_known_market_checked_at,
+                                  )
+                                ) : (
+                                  marketUnavailableLabel(card)
+                                )}
+                              </div>
+                              {renderFreshness(card)}
+                            </>
+                          ))}
                   {priceSource === 'ebay' &&
                     (ebayListingsEnabled ? (
                       <EbayListingsCheck

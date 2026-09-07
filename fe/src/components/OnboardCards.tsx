@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Card, OwnedCardInput, Set as SetT } from '../types';
 import Button from './ui/Button';
-import CardThumbnail from './ui/CardThumbnail';
+import CardCopyStack, { CardCopyDraft } from './ui/CardCopyStack';
 import QuantityStepper from './ui/QuantityStepper';
 import EbayIcon from './ui/EbayIcon';
 import { ebaySearchUrl } from '../ebay';
@@ -24,25 +24,32 @@ const OnboardCards = () => {
   // same field for why this is its own fetch rather than a single-set
   // lookup endpoint.
   const [setName, setSetName] = useState<string | null>(null);
-  // card_id -> quantity is the *only* ownership state now - there's no
-  // separate checkbox to keep in sync with it. A card's presence in this
-  // map (not its value) is what decides whether it gets submitted at all:
-  // populated on load from every row the server already has (including an
-  // explicit 0 one, if a previous edit left it that way), and added to
-  // lazily the first time this session's stepper touches a card the
-  // server never had a row for. 0 just means "not owned," submitted the
-  // same way any other quantity would be - no separate "explicitly
-  // cleared" case to track, because there's no longer a second piece of
-  // state that could drift from it.
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
-  // Dollar-amount text as typed, not cents - kept as a string (rather than
-  // a number) so a card with no known price is a genuinely empty input,
-  // not a "0" the user would have to delete first, and so mid-edit text
-  // like "12." isn't clobbered by re-parsing on every keystroke.
-  const [prices, setPrices] = useState<Record<string, string>>({});
+  // card_id -> its owned copies (#108) is the *only* ownership state now -
+  // quantity is just copies.length, there's no separate number to keep in
+  // sync with it. A card's presence in this map (not the array's length)
+  // is what decides whether it gets submitted at all: populated on load
+  // from every card the server already returned any copies for, and added
+  // lazily (starting from an empty array) the first time this session's
+  // stepper touches a card the server never had a row for. An empty array
+  // is submitted the same way a non-empty one would be - "own zero copies"
+  // is a real, submittable state, not a reason to leave the card out.
+  const [copiesByCard, setCopiesByCard] = useState<
+    Record<string, CardCopyDraft[]>
+  >({});
+  // Which of a card's copies the stack is currently showing - only
+  // meaningful once a card has 2+ copies (CardCopyStack ignores it
+  // otherwise), but tracked for every card uniformly rather than only
+  // ones past that threshold.
+  const [activeIndexByCard, setActiveIndexByCard] = useState<
+    Record<string, number>
+  >({});
+  // Which single card's stack is mid-cycle-animation, if any - a plain
+  // cardID rather than a per-card boolean map, since only one stack can
+  // reasonably be cycling at a time (one click, one card).
+  const [shufflingCard, setShufflingCard] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // Filtering only affects which rows render below - quantities/prices stay
+  // Filtering only affects which rows render below - copiesByCard stays
   // keyed by card.id regardless, so toggling a filter never loses input on
   // a row that's momentarily hidden.
   const [search, setSearch] = useState('');
@@ -82,20 +89,22 @@ const OnboardCards = () => {
         }
 
         const owned: OwnedCardInput[] = await ownedRes.json();
-        // Every returned row seeds the quantities map, including an
-        // explicit 0 one - it still needs to be "touched" so re-saving
-        // without changing it submits that same 0 again, not silently
-        // drops the row from the request entirely.
-        const ownedNow: Record<string, number> = {};
-        const initialPrices: Record<string, string> = {};
+        // Every returned card seeds copiesByCard, including one whose
+        // copies array is empty (see the field's own doc comment above) -
+        // it still needs to be "touched" so re-saving without changing it
+        // submits that same empty list again, not silently drops the card
+        // from the request entirely.
+        const initialCopies: Record<string, CardCopyDraft[]> = {};
         for (const oc of owned) {
-          ownedNow[oc.card_id] = oc.quantity;
-          if (oc.quantity > 0 && oc.price_paid_cents != null) {
-            initialPrices[oc.card_id] = (oc.price_paid_cents / 100).toFixed(2);
-          }
+          initialCopies[oc.card_id] = (oc.copies ?? []).map((c) => ({
+            id: c.id,
+            price:
+              c.price_paid_cents != null
+                ? (c.price_paid_cents / 100).toFixed(2)
+                : '',
+          }));
         }
-        setQuantities(ownedNow);
-        setPrices(initialPrices);
+        setCopiesByCard(initialCopies);
 
         setCards(await cardsRes.json());
 
@@ -112,59 +121,102 @@ const OnboardCards = () => {
       });
   }, [setID]);
 
-  // Used by both QuantityStepper's arrows and typing directly into its
-  // field - either way, 0 is a real, valid value (not owned), just never
-  // negative.
+  // Used by QuantityStepper's arrows and typing directly into its field
+  // alike, same as pre-#108. Growing the array appends blank-priced
+  // copies at the end - a new copy never guesses a price from the last
+  // one, since "different prices for different copies" is the whole
+  // reason #108 exists - and the stack jumps straight to the newest copy
+  // so its price box is ready to type into immediately. Shrinking drops
+  // from the end too (slice(0, target) keeps only the first target
+  // entries) - the most-recently-added copies go first, not whichever the
+  // stack happens to be showing, matching the backend's own LIFO default
+  // for the legacy quantity-only path (reconcileOwnedCardCopies) so
+  // reviewing an older copy via the cycle button and then decreasing
+  // never deletes the one you were just looking at instead of the newest.
   const setQuantityDirect = (cardID: string, quantity: number) => {
-    setQuantities((prev) => ({ ...prev, [cardID]: Math.max(0, quantity) }));
+    const target = Math.max(0, quantity);
+    setCopiesByCard((prev) => {
+      const current = prev[cardID] ?? [];
+      const updated =
+        target > current.length
+          ? [
+              ...current,
+              ...Array.from({ length: target - current.length }, () => ({
+                price: '',
+              })),
+            ]
+          : current.slice(0, target);
+      setActiveIndexByCard((prevActive) => ({
+        ...prevActive,
+        [cardID]: Math.max(0, updated.length - 1),
+      }));
+      return { ...prev, [cardID]: updated };
+    });
   };
 
-  const setPrice = (cardID: string, value: string) => {
-    setPrices((prev) => ({ ...prev, [cardID]: value }));
-  };
-
-  // undefined for "no price entered" (blank, or not a real number yet
-  // mid-typing) - cents (rounded, to sidestep float cruft like 12.1*100)
-  // for a real amount.
-  const priceCentsFor = (cardID: string): number | undefined => {
-    const raw = prices[cardID];
-    if (!raw || raw.trim() === '') {
-      return undefined;
-    }
-    const dollars = Number(raw);
-    if (Number.isNaN(dollars)) {
-      return undefined;
-    }
-    return Math.round(dollars * 100);
-  };
-
-  // Normalizes the displayed text to a real "dollars.cents" shape (e.g.
-  // "12" -> "12.00", "12.5" -> "12.50") once the user's done editing a
-  // field, rather than fighting them mid-keystroke - re-formatting on
-  // every change would clobber typing something like "12." before the
-  // second decimal digit exists yet. Built on priceCentsFor's own
-  // rounding rather than a separate toFixed(2) on the raw string, so
-  // what's displayed after blur always matches exactly what submitting
-  // would actually send. Leaves an empty/invalid field alone - blank
-  // means "no price entered," not "$0.00".
-  const formatPriceOnBlur = (cardID: string) => {
-    const cents = priceCentsFor(cardID);
-    if (cents == null) {
+  const cycleCopy = (cardID: string) => {
+    const count = (copiesByCard[cardID] ?? []).length;
+    if (count <= 1 || shufflingCard) {
       return;
     }
-    setPrices((prev) => ({ ...prev, [cardID]: (cents / 100).toFixed(2) }));
+    setShufflingCard(cardID);
+    setTimeout(() => {
+      setActiveIndexByCard((prev) => ({
+        ...prev,
+        [cardID]: ((prev[cardID] ?? 0) + 1) % count,
+      }));
+    }, 170);
+    setTimeout(() => setShufflingCard(null), 420);
+  };
+
+  const setActiveCopyPrice = (cardID: string, value: string) => {
+    setCopiesByCard((prev) => {
+      const current = prev[cardID] ?? [];
+      const active = activeIndexByCard[cardID] ?? current.length - 1;
+      return {
+        ...prev,
+        [cardID]: current.map((c, i) =>
+          i === active ? { ...c, price: value } : c,
+        ),
+      };
+    });
+  };
+
+  // Normalizes the active copy's price text to a real "dollars.cents"
+  // shape (e.g. "12" -> "12.00", "12.5" -> "12.50") once the user's done
+  // editing, rather than fighting them mid-keystroke - re-formatting on
+  // every change would clobber typing something like "12." before the
+  // second decimal digit exists yet. Leaves an empty/invalid field alone -
+  // blank means "no price entered," not "$0.00".
+  const formatActiveCopyPriceOnBlur = (cardID: string) => {
+    setCopiesByCard((prev) => {
+      const current = prev[cardID] ?? [];
+      const active = activeIndexByCard[cardID] ?? current.length - 1;
+      const copy = current[active];
+      if (!copy) {
+        return prev;
+      }
+      const cents = dollarsToCents(copy.price);
+      if (cents == null) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [cardID]: current.map((c, i) =>
+          i === active ? { ...c, price: (cents / 100).toFixed(2) } : c,
+        ),
+      };
+    });
   };
 
   // Onboards the set (idempotent either way) and, if any cards are passed,
   // records their ownership in the same submit. "Skip for now" calls this
-  // with an empty list regardless of what quantities are set or were
-  // previously owned - it never touches card ownership, only the set
-  // itself.
+  // with an empty list regardless of what's been edited or previously
+  // owned - it never touches card ownership, only the set itself.
   const submit = (
     selectedCards: {
       card_id: string;
-      quantity: number;
-      price_paid_cents?: number;
+      copies: { id?: string; price_paid_cents?: number }[];
     }[],
   ) => {
     if (!setID) {
@@ -204,23 +256,21 @@ const OnboardCards = () => {
       });
   };
 
-  // A card only gets submitted if it's actually in the quantities map -
-  // one the server already had a row for, or one this session's stepper
-  // touched. A card nobody has ever interacted with (never owned, never
-  // clicked this session) is left out entirely, same as before - no need
-  // to create a "never interacted" row for it. Price is only ever sent
-  // alongside a real (>0) quantity - a card sitting at 0 has no meaningful
-  // price to keep either.
+  // A card only gets submitted if it's actually in copiesByCard - one the
+  // server already had a row for, or one this session's stepper touched.
+  // A card nobody has ever interacted with (never owned, never clicked
+  // this session) is left out entirely, same as before.
   const handleSave = () => {
     const toSubmit = cards ?? [];
     submit(
       toSubmit
-        .filter((card) => card.id in quantities)
+        .filter((card) => card.id in copiesByCard)
         .map((card) => ({
           card_id: card.id,
-          quantity: quantities[card.id],
-          price_paid_cents:
-            quantities[card.id] > 0 ? priceCentsFor(card.id) : undefined,
+          copies: (copiesByCard[card.id] ?? []).map((c) => ({
+            id: c.id,
+            price_paid_cents: dollarsToCents(c.price) ?? undefined,
+          })),
         })),
     );
   };
@@ -240,7 +290,7 @@ const OnboardCards = () => {
     if (rarityFilter !== 'all' && card.rarity !== rarityFilter) {
       return false;
     }
-    const isOwned = (quantities[card.id] ?? 0) > 0;
+    const isOwned = (copiesByCard[card.id]?.length ?? 0) > 0;
     if (ownershipFilter === 'owned' && !isOwned) {
       return false;
     }
@@ -325,39 +375,36 @@ const OnboardCards = () => {
         <div className={styles.gridWrap}>
           <div className={styles.grid}>
             {visibleCards.map((card) => {
-              const quantity = quantities[card.id] ?? 0;
+              const copies = copiesByCard[card.id] ?? [];
+              const activeIndex = Math.min(
+                activeIndexByCard[card.id] ?? 0,
+                Math.max(0, copies.length - 1),
+              );
               return (
                 <div key={card.id} className={styles.tile}>
-                  <CardThumbnail cardId={card.id} />
+                  <CardCopyStack
+                    cardId={card.id}
+                    cardName={card.name}
+                    copies={copies}
+                    activeIndex={activeIndex}
+                    shuffling={shufflingCard === card.id}
+                    onCycle={() => cycleCopy(card.id)}
+                    onPriceChange={(value) =>
+                      setActiveCopyPrice(card.id, value)
+                    }
+                    onPriceBlur={() => formatActiveCopyPriceOnBlur(card.id)}
+                    disabled={submitting}
+                  />
                   <div className={styles.tileName}>{card.name}</div>
                   <div className={styles.tileCode}>{card.code}</div>
                   <span className={styles.rarityChip}>{card.rarity}</span>
                   <div className={styles.tileControls}>
                     <QuantityStepper
-                      value={quantity}
+                      value={copies.length}
                       onChange={(next) => setQuantityDirect(card.id, next)}
                       ariaLabel={`quantity of ${card.name}`}
                       disabled={submitting}
                     />
-                    <span className={styles.priceInputWrap}>
-                      <span className={styles.priceCurrency} aria-hidden="true">
-                        $
-                      </span>
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        placeholder="0"
-                        aria-label={`Price paid for ${card.name}`}
-                        className={styles.priceInput}
-                        value={prices[card.id] ?? ''}
-                        onChange={(event) =>
-                          setPrice(card.id, event.target.value)
-                        }
-                        onBlur={() => formatPriceOnBlur(card.id)}
-                        disabled={quantity === 0 || submitting}
-                      />
-                    </span>
                   </div>
                   <a
                     href={ebaySearchUrl(setName, card.code)}
@@ -391,6 +438,22 @@ const OnboardCards = () => {
       )}
     </div>
   );
+};
+
+// undefined for "no price entered" (blank, or not a real number yet
+// mid-typing) - cents (rounded, to sidestep float cruft like 12.1*100) for
+// a real amount. A plain function (not a hook/component method) since it
+// has no dependency on component state - just parses whatever string it's
+// given.
+const dollarsToCents = (raw: string): number | undefined => {
+  if (!raw || raw.trim() === '') {
+    return undefined;
+  }
+  const dollars = Number(raw);
+  if (Number.isNaN(dollars)) {
+    return undefined;
+  }
+  return Math.round(dollars * 100);
 };
 
 export default OnboardCards;

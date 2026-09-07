@@ -40,3 +40,24 @@ export const formatFreshness = (checkedAt?: Time | null): Freshness | null => {
   const diffDays = Math.round(diffHours / 24);
   return { amount: `${diffDays}d`, suffix: 'ago' };
 };
+
+// "last seen $6.50 · 3d ago" - the small caption for a currently-
+// out-of-stock card's last real price (api.Card's LastKnownMarket*
+// fields), shared by every place that shows it (SetDetail's single-copy
+// compare row, its "Missing" market pill, and CardCopyBrowseStack's
+// per-copy comparison) so the wording never drifts between them. Falls
+// back to just the price with no "· Nd ago" if checkedAt is somehow
+// missing (shouldn't happen in practice - a last-known price always came
+// from a real, timestamped card_price_history row - but a caller can't
+// prove that from the type alone).
+export const lastKnownPriceLabel = (
+  priceCents: number,
+  checkedAt?: Time | null,
+): string => {
+  const price = `last seen $${(priceCents / 100).toFixed(2)}`;
+  const freshness = formatFreshness(checkedAt);
+  if (!freshness) {
+    return price;
+  }
+  return `${price} · ${freshness.amount}${freshness.suffix ? ` ${freshness.suffix}` : ''}`;
+};

@@ -28,14 +28,21 @@ export interface Card {
   market_price_cents?: number;
   market_checked_at?: Time;
   market_url?: string;
+  last_known_market_price_cents?: number;
+  last_known_market_checked_at?: Time;
 }
 export interface AddOwnedSetInput {
   set_id: string;
+}
+export interface OwnedCardCopyInput {
+  id?: string;
+  price_paid_cents?: number;
 }
 export interface OwnedCardInput {
   card_id: string;
   quantity: number;
   price_paid_cents?: number;
+  copies?: OwnedCardCopyInput[];
 }
 export interface SetOwnedCardsInput {
   cards: OwnedCardInput[];
