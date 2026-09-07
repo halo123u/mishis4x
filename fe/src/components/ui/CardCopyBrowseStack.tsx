@@ -1,7 +1,6 @@
 import { FC } from 'react';
-import type { Card, Time } from '../../types';
+import type { Card } from '../../types';
 import { computeMarketDelta } from '../../marketDelta';
-import { formatFreshness } from '../../priceFreshness';
 import CardThumbnail from './CardThumbnail';
 import RefreshIcon from './RefreshIcon';
 import styles from './CardCopyStack.module.css';
@@ -50,31 +49,21 @@ const CardCopyBrowseStack: FC<CardCopyBrowseStackProps> = ({
       ) : (
         <span className={styles.browsePriceUnknown}>not recorded</span>
       )}
-      {copy?.price_paid_cents != null &&
-        (card.market_price_cents != null ? (
-          <MarketDeltaLine
-            paidCents={copy.price_paid_cents}
-            marketCents={card.market_price_cents}
-          />
-        ) : (
-          // Out of stock right now, but this card has had a real price
-          // before (#108 follow-up: "for the out of stock, would it be
-          // possible to get the last known price?") - still worth
-          // comparing this copy against, just clearly labeled as a
-          // historical figure rather than a live one.
-          card.last_known_market_price_cents != null && (
-            <>
-              <MarketDeltaLine
-                paidCents={copy.price_paid_cents}
-                marketCents={card.last_known_market_price_cents}
-              />
-              <span className={styles.copyIndex}>
-                vs. last known price
-                {formatLastKnownSuffix(card.last_known_market_checked_at)}
-              </span>
-            </>
-          )
-        ))}
+      {/* Deliberately no last-known-price fallback here when out of
+          stock (unlike SetDetail's single-copy compare row and its
+          "Missing" pill, which do show it - see api.Card's LastKnown*
+          doc comment) - those two are a straight text swap ("Out of
+          Stock" -> "last seen $X"), same line count either way. Here it
+          would add two whole new lines (a delta + a "vs. last known
+          price" caption) on top of the price this copy already shows,
+          which made a priced copy's stack noticeably taller than a
+          card with nothing to compare at all. */}
+      {copy?.price_paid_cents != null && card.market_price_cents != null && (
+        <MarketDeltaLine
+          paidCents={copy.price_paid_cents}
+          marketCents={card.market_price_cents}
+        />
+      )}
     </div>
   );
 
@@ -145,18 +134,6 @@ const CardCopyBrowseStack: FC<CardCopyBrowseStackProps> = ({
       {detail(active, `Copy ${activeIndex + 1} of ${quantity}`)}
     </div>
   );
-};
-
-// " · 3d ago" - deliberately just the freshness half of
-// priceFreshness.ts's lastKnownPriceLabel, not the whole "last seen $X"
-// string, since the price itself is already implied by the delta line
-// right above this (repeating it here would be redundant).
-const formatLastKnownSuffix = (checkedAt?: Time | null): string => {
-  const freshness = formatFreshness(checkedAt);
-  if (!freshness) {
-    return '';
-  }
-  return ` · ${freshness.amount}${freshness.suffix ? ` ${freshness.suffix}` : ''}`;
 };
 
 const deltaToneClass = {
