@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	htmlpkg "html"
 	"io"
 	"net/http"
 	"time"
@@ -108,4 +109,21 @@ func (s *Service) SendInviteEmail(ctx context.Context, to, signupURL string) err
 <p>This link only works once.</p>`, signupURL)
 
 	return s.Send(ctx, to, "You're invited to mishis4x", html)
+}
+
+// SendInviteRequestNotification tells the owner a new invite request came
+// in, linking straight to the admin page (adminURL, already the complete
+// absolute URL - same convention as SendInviteEmail's signupURL) instead
+// of leaving them to notice a pending request some other way. Sent
+// best-effort by handlers.RequestInvite - see that function's doc comment
+// for why a failure here never affects the requester's own response.
+//
+// requesterEmail is untrusted, user-submitted input (unlike signupURL
+// above, which the server builds itself) - HTML-escaped before going into
+// the message body, not just trusted as already-safe text.
+func (s *Service) SendInviteRequestNotification(ctx context.Context, to, requesterEmail, adminURL string) error {
+	html := fmt.Sprintf(`<p>%s just requested access to mishis4x.</p>
+<p><a href="%s">Review the request</a></p>`, htmlpkg.EscapeString(requesterEmail), adminURL)
+
+	return s.Send(ctx, to, "New mishis4x invite request", html)
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -203,6 +204,19 @@ func loadAdminUserID() int {
 	return id
 }
 
+// loadAdminNotificationEmail reads ADMIN_NOTIFICATION_EMAIL - where
+// RequestInvite sends "someone wants access" to (see
+// handlers.Data.AdminNotificationEmail's doc comment for why this is its
+// own config value, not derived from ADMIN_USER_ID or a users row).
+// TrimSpace for the same reason loadAppBaseURL trims APP_BASE_URL - a
+// stray copy-pasted space wouldn't fail an == "" check, it'd just quietly
+// break the address at send time. Returns "" if unset; RequestInvite
+// treats that as "notifications not configured" and just skips sending,
+// same non-fatal degrade as EmailService/AppBaseURL being unset.
+func loadAdminNotificationEmail() string {
+	return strings.TrimSpace(os.Getenv("ADMIN_NOTIFICATION_EMAIL"))
+}
+
 // loadEmailServiceForServer wraps loadEmailService (be/cmd/invite.go)
 // with a non-fatal outcome, matching loadEbayService's own convention:
 // an environment that hasn't configured RESEND_API_KEY yet just doesn't
@@ -337,6 +351,7 @@ var httpCMD = &cobra.Command{
 			loadAdminUserID(),
 			loadEmailServiceForServer(),
 			loadAppBaseURL(),
+			loadAdminNotificationEmail(),
 		)
 
 		// Shares the same DB pool/connection the request handlers already

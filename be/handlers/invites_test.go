@@ -2,11 +2,15 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 
+	"example.com/mishis4x/email"
 	"example.com/mishis4x/persist"
 	"github.com/stretchr/testify/require"
 )
@@ -98,6 +102,101 @@ func TestRequestInvite_DuplicateStillReturnsGenericSuccess(t *testing.T) {
 		}
 	}
 	require.Equal(t, 1, count, "a duplicate submission must not mint a second code")
+}
+
+// capturedEmail mirrors just the JSON fields of email package's own
+// unexported sendRequest that these tests actually need to assert on -
+// can't decode into that type directly from outside the package, but the
+// wire shape (what actually left this process) is what matters here
+// anyway, not the internal Go type.
+type capturedEmail struct {
+	To      []string `json:"to"`
+	Subject string   `json:"subject"`
+	HTML    string   `json:"html"`
+}
+
+// fakeResendServerCapturing is fakeResendServerForAdmin (admin_test.go),
+// but keeping every request it receives instead of just succeeding
+// blindly - these tests care about content/count, not just "did the
+// request-invite endpoint still 201."
+func fakeResendServerCapturing(t *testing.T) (*httptest.Server, *[]capturedEmail) {
+	t.Helper()
+	var mu sync.Mutex
+	var received []capturedEmail
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body capturedEmail
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		received = append(received, body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"fake-id"}`))
+	}))
+	t.Cleanup(server.Close)
+	return server, &received
+}
+
+func TestRequestInvite_NotifiesAdmin(t *testing.T) {
+	db := testDB(t)
+	fake, received := fakeResendServerCapturing(t)
+	emailSvc := email.NewServiceWithURL("test-key", "invites@mishis4x.com", fake.URL)
+	d := newTestDataWithAdminNotification(db, emailSvc, "https://mishis4x.com", "owner@example.com")
+	ts := httptest.NewServer(d.NewRouter())
+	t.Cleanup(ts.Close)
+	client := newClient(t)
+
+	requesterEmail := testInviteEmail(t, db)
+	res := postJSON(t, client, ts.URL+"/api/invites/request", map[string]string{
+		"email_address": requesterEmail,
+	})
+	require.Equal(t, http.StatusCreated, res.StatusCode)
+
+	require.Len(t, *received, 1, "exactly one notification email must go out for one new request")
+	notification := (*received)[0]
+	require.Equal(t, []string{"owner@example.com"}, notification.To)
+	require.Contains(t, notification.Subject, "invite request")
+	require.Contains(t, notification.HTML, "https://mishis4x.com/admin", "must link straight to the approve page")
+	require.Contains(t, notification.HTML, requesterEmail, "must say who's asking")
+}
+
+func TestRequestInvite_DuplicateDoesNotReNotify(t *testing.T) {
+	db := testDB(t)
+	fake, received := fakeResendServerCapturing(t)
+	emailSvc := email.NewServiceWithURL("test-key", "invites@mishis4x.com", fake.URL)
+	d := newTestDataWithAdminNotification(db, emailSvc, "https://mishis4x.com", "owner@example.com")
+	ts := httptest.NewServer(d.NewRouter())
+	t.Cleanup(ts.Close)
+	client := newClient(t)
+
+	requesterEmail := testInviteEmail(t, db)
+	for range 2 {
+		res := postJSON(t, client, ts.URL+"/api/invites/request", map[string]string{
+			"email_address": requesterEmail,
+		})
+		require.Equal(t, http.StatusCreated, res.StatusCode)
+	}
+
+	require.Len(t, *received, 1, "resubmitting an already-pending request must not re-notify")
+}
+
+// TestRequestInvite_NotConfiguredSkipsSilently covers the default,
+// unconfigured case (newTestServer's plain Data has no EmailService/
+// AppBaseURL/AdminNotificationEmail at all) - the real point of this test
+// is simply that RequestInvite still succeeds rather than erroring or
+// panicking on a nil EmailService, since every existing
+// TestRequestInvite_* test above already exercises that path implicitly;
+// this one just says so explicitly.
+func TestRequestInvite_NotConfiguredSkipsSilently(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+	requesterEmail := testInviteEmail(t, db)
+
+	res := postJSON(t, client, ts.URL+"/api/invites/request", map[string]string{
+		"email_address": requesterEmail,
+	})
+	require.Equal(t, http.StatusCreated, res.StatusCode)
 }
 
 func TestRequestInvite_RateLimiting(t *testing.T) {
