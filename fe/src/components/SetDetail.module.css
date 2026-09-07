@@ -405,8 +405,75 @@
   stroke: var(--hairline);
 }
 
+.point {
+  transition:
+    r 0.1s ease,
+    fill 0.1s ease;
+}
+
+.pointUp {
+  fill: var(--good);
+}
+
+.pointDown {
+  fill: var(--bad);
+}
+
+/* Neutral - either the series' first point (no prior day to compare
+   against) or a day unchanged from the one before it, same convention
+   .segmentFlat uses. */
+.pointFlat {
+  fill: var(--hairline);
+}
+
 .pointLatest {
   fill: var(--teal);
+}
+
+/* Invisible, generous hover target layered over each real (small, exact)
+   dot - at this chart's real on-screen size (inside a ~9.5rem-wide tile),
+   the visible dots alone would be a frustratingly small target to aim
+   for. cursor: pointer signals it's interactive even though nothing here
+   is clickable, just hoverable. */
+.pointHitArea {
+  fill: transparent;
+  cursor: pointer;
+}
+
+/* Real viewport coordinates (see hoveredTrendPoint's doc comment), so
+   this is positioned exactly like CardThumbnail's own floating hover
+   preview - fixed, not absolute, specifically so it escapes the tile's
+   small bounds instead of getting clipped or squished inside it.
+   pointer-events: none so the tooltip itself is never what a mouseleave
+   fires against. */
+.trendTooltip {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 0.5rem));
+  z-index: 100;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05rem;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.4rem;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+}
+
+.trendTooltipDate {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--ash);
+}
+
+.trendTooltipPrice {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .change {
