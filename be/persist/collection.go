@@ -32,6 +32,10 @@ type Card struct {
 	Code      string
 	Rarity    string
 	CreatedAt time.Time
+	// CharacterModelCharCode is the character_models row this card links
+	// to (see that table's own migration), nil if unset - most cards
+	// won't have one.
+	CharacterModelCharCode *string
 }
 
 // CreateSet inserts a new set and returns its generated UUIDv7 ID.
@@ -472,7 +476,7 @@ func sortCardsForDisplay(cards []Card) {
 // ListCardsBySet returns every card belonging to setID, sorted per
 // sortCardsForDisplay's doc comment.
 func (p *Persist) ListCardsBySet(ctx context.Context, setID string) ([]Card, error) {
-	rows, err := sq.Select("id", "set_id", "name", "code", "rarity", "created_at").
+	rows, err := sq.Select("id", "set_id", "name", "code", "rarity", "created_at", "character_model_char_code").
 		From("cards").
 		Where(sq.Eq{"set_id": setID}).
 		OrderBy("code").
@@ -490,7 +494,7 @@ func (p *Persist) ListCardsBySet(ctx context.Context, setID string) ([]Card, err
 	var cards []Card
 	for rows.Next() {
 		var c Card
-		if err := rows.Scan(&c.ID, &c.SetID, &c.Name, &c.Code, &c.Rarity, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.SetID, &c.Name, &c.Code, &c.Rarity, &c.CreatedAt, &c.CharacterModelCharCode); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)

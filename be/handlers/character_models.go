@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	"example.com/mishis4x/api"
 	"example.com/mishis4x/persist"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
@@ -55,6 +56,43 @@ func (d *Data) GetCharacterModelTexture(w http.ResponseWriter, r *http.Request) 
 	serveCharacterModelAsset(w, r, d.P, func(m persist.CharacterModel) ([]byte, string) {
 		return m.Texture, m.TextureContentType
 	})
+}
+
+// SetCardCharacterModel links (or unlinks, if char_code is null) the card
+// named by the {cardID} path variable to a character model - see
+// api.SetCardCharacterModelInput's doc comment on the request body, and
+// cards.character_model_char_code's own migration for why this is a
+// plain nullable column on cards rather than a join table. Gated by
+// modelOnlyMiddleware like every other /api/models/... route, even
+// though it's cards this actually writes to - the ability to point a
+// catalog card at a character model only has meaning for whoever can
+// already see those models.
+func (d *Data) SetCardCharacterModel(w http.ResponseWriter, r *http.Request) {
+	cardID := mux.Vars(r)["cardID"]
+
+	var body api.SetCardCharacterModelInput
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	if err := d.P.SetCardCharacterModel(ctx, cardID, body.CharCode); err != nil {
+		if errors.Is(err, persist.ErrCardNotFound) {
+			writeJSONError(w, http.StatusNotFound, "Card not found.")
+			return
+		}
+		// A charCode that doesn't match any imported character_models row
+		// fails here too, via the column's FK constraint - genuinely rare
+		// (the frontend only ever offers already-imported codes) and not
+		// worth a more specific status than 500 for.
+		log.Error().Err(err).Str("cardID", cardID).Msg("error setting card's character model")
+		writeJSONError(w, http.StatusInternalServerError, "Something went wrong.")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 // serveCharacterModelAsset is the shared lookup/streaming path for all

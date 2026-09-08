@@ -45,6 +45,21 @@ type Card struct {
 	// record at all.
 	LastKnownMarketPriceCents *int       `json:"last_known_market_price_cents,omitempty"`
 	LastKnownMarketCheckedAt  *time.Time `json:"last_known_market_checked_at,omitempty"`
+	// CharacterModelCharCode is the character_models row this card links
+	// to (see be/persist/character_models.go), omitted when unset - most
+	// cards won't have one. Frontend uses it to decide whether to show a
+	// "view model" link, and which /api/models/{charCode}/... to point
+	// it at.
+	CharacterModelCharCode *string `json:"character_model_char_code,omitempty"`
+}
+
+// SetCardCharacterModelInput is the PUT /api/models/cards/{cardID} request
+// body. CharCode nil clears the card's link entirely - this is a full
+// "set" endpoint (PUT semantics), not a partial patch, so there's no
+// ambiguity between "omitted" and "explicit null" to worry about; both
+// mean the same thing here.
+type SetCardCharacterModelInput struct {
+	CharCode *string `json:"char_code"`
 }
 
 // AddOwnedSetInput is the POST /api/owned-sets request body - onboards

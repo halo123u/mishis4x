@@ -90,3 +90,40 @@ func (p *Persist) ListCharacterModels(ctx context.Context) ([]string, error) {
 
 	return codes, rows.Err()
 }
+
+// SetCardCharacterModel links cardID to charCode (or clears the link, if
+// charCode is nil) - see cards.character_model_char_code's own migration
+// for why this is a plain nullable column rather than a join table (a
+// card never needs more than one model at a time, even though several
+// cards commonly share the same one across rarities). Returns
+// ErrCardNotFound if cardID doesn't match a real card.
+//
+// Existence is checked as a separate SELECT rather than trusting the
+// UPDATE's own RowsAffected==0, unlike ConsumePasswordReset/RedeemInvite's
+// WHERE-clause-as-concurrency-guard pattern elsewhere in this package:
+// this connection doesn't set CLIENT_FOUND_ROWS, so MySQL's UPDATE only
+// counts rows whose value actually *changed* - re-setting a card to the
+// char_code it's already linked to (or clearing an already-clear link,
+// e.g. a retried request) would otherwise misreport as "card not found"
+// even though the card is right there. A charCode that doesn't match any
+// imported character_models row still fails loudly via the column's own
+// FK constraint on the UPDATE itself - not checked separately here, same
+// "let the database enforce it" convention as UpsertCard's set_id FK.
+func (p *Persist) SetCardCharacterModel(ctx context.Context, cardID string, charCode *string) error {
+	var exists int
+	err := sq.Select("1").From("cards").Where(sq.Eq{"id": cardID}).
+		RunWith(p.DB).QueryRowContext(ctx).Scan(&exists)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrCardNotFound
+		}
+		return err
+	}
+
+	_, err = sq.Update("cards").
+		Set("character_model_char_code", charCode).
+		Where(sq.Eq{"id": cardID}).
+		RunWith(p.DB).
+		ExecContext(ctx)
+	return err
+}

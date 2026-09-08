@@ -302,11 +302,12 @@ func (d *Data) ListCardsForSet(w http.ResponseWriter, r *http.Request) {
 	resp := make([]api.Card, 0, len(cards))
 	for _, c := range cards {
 		card := api.Card{
-			ID:     c.ID,
-			SetID:  c.SetID,
-			Name:   c.Name,
-			Code:   c.Code,
-			Rarity: c.Rarity,
+			ID:                     c.ID,
+			SetID:                  c.SetID,
+			Name:                   c.Name,
+			Code:                   c.Code,
+			Rarity:                 c.Rarity,
+			CharacterModelCharCode: c.CharacterModelCharCode,
 		}
 		if mp, ok := marketPrices[c.ID]; ok {
 			card.MarketPriceCents = mp.PriceCents

@@ -10,6 +10,7 @@ import {
 } from '../types';
 import Button from './ui/Button';
 import CardCopyBrowseStack, { OwnedCopy } from './ui/CardCopyBrowseStack';
+import CardModelLink from './ui/CardModelLink';
 import CardThumbnail from './ui/CardThumbnail';
 import EbayIcon from './ui/EbayIcon';
 import EbayListingsCheck from './ui/EbayListingsCheck';
@@ -185,6 +186,17 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // doc comment). Showing the icon only to hide it again a moment later
   // once the real flag arrives would be worse than a brief absence.
   const priceTrendsEnabled = globalData?.price_trends_enabled ?? false;
+  // Same off-by-default-until-resolved shape as priceTrendsEnabled above -
+  // see GlobalData.model_viewer_enabled's own doc comment for why this
+  // gate exists at all (copyright, not eBay ToS or app administration).
+  const modelViewerEnabled = globalData?.model_viewer_enabled ?? false;
+  // Every char_code model-import has ever stored, for CardModelLink's
+  // picker - fetched once (not per-card), same "list what's available"
+  // shape as the price-trends fetch below. A 403 here (shouldn't happen
+  // given modelViewerEnabled already gates the fetch, but the backend's
+  // own gate is the real enforcement) just leaves this empty - the
+  // picker still renders, it just has nothing to offer.
+  const [availableModelCodes, setAvailableModelCodes] = useState<string[]>([]);
   // card_id -> trend, only for cards with at least 2 days of TCG
   // Republic history in the last week (see GetPriceTrendsForSet's doc
   // comment) - a card missing from this map just doesn't get a trend
@@ -213,6 +225,23 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
     top: number;
     left: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (!modelViewerEnabled) {
+      return;
+    }
+
+    fetch('/api/models')
+      .then(async (res) => {
+        if (res.status === 200) {
+          setAvailableModelCodes(await res.json());
+        }
+      })
+      .catch(() => {
+        // Not fatal - same "nice-to-have overlay" tolerance as the
+        // price-trends fetch below; the picker just has nothing to offer.
+      });
+  }, [modelViewerEnabled]);
 
   useEffect(() => {
     if (!setID || !priceTrendsEnabled) {
@@ -388,6 +417,21 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
       .finally(() => {
         setEbayLoadingCardId(null);
       });
+  };
+
+  // CardModelLink already made the PUT itself by the time this runs -
+  // just reflects the new link (or lack of one) in local state so the
+  // picker and the "view model" link update immediately without
+  // refetching the whole card list.
+  const handleCardModelLinked = (cardId: string, charCode: string | null) => {
+    setCards(
+      (prev) =>
+        prev?.map((card) =>
+          card.id === cardId
+            ? { ...card, character_model_char_code: charCode ?? undefined }
+            : card,
+        ) ?? null,
+    );
   };
 
   // Advances CardCopyBrowseStack to the next copy - same cycling logic as
@@ -1039,6 +1083,13 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                         <EbayIcon />
                       </a>
                     ))}
+                  {modelViewerEnabled && (
+                    <CardModelLink
+                      card={card}
+                      availableCodes={availableModelCodes}
+                      onLinked={handleCardModelLinked}
+                    />
+                  )}
                 </div>
               );
             })}
