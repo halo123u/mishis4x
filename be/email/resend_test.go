@@ -97,3 +97,22 @@ func TestSendInviteRequestNotification_IncludesLinkAndEscapesRequesterEmail(t *t
 	require.Contains(t, gotBody.HTML, "foo&amp;bar@example.com")
 	require.NotContains(t, gotBody.HTML, "foo&bar@example.com")
 }
+
+func TestSendPasswordResetEmail_IncludesLink(t *testing.T) {
+	var gotBody sendRequest
+
+	ts := fakeResendServer(t, func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+		w.WriteHeader(http.StatusOK)
+	})
+
+	s := NewService("test-key", "invites@mishis4x.com")
+	s.client = ts.Client()
+	s.apiURL = ts.URL
+	err := s.SendPasswordResetEmail(t.Context(), "someone@example.com", "https://mishis4x.com/reset-password?token=abc123")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"someone@example.com"}, gotBody.To)
+	require.Contains(t, gotBody.Subject, "Reset")
+	require.Contains(t, gotBody.HTML, "https://mishis4x.com/reset-password?token=abc123")
+}

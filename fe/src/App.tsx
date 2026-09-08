@@ -3,6 +3,8 @@ import { GlobalDataProvider } from './GlobalDataProvider';
 import Login from './components/Login.tsx';
 import Signup from './components/Signup.tsx';
 import RequestInvite from './components/RequestInvite.tsx';
+import ForgotPassword from './components/ForgotPassword.tsx';
+import ResetPassword from './components/ResetPassword.tsx';
 import AdminInvites from './components/AdminInvites.tsx';
 import Home from './components/Home.tsx';
 import ChangePassword from './components/ChangePassword.tsx';
@@ -23,6 +25,8 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/sign-up" element={<Signup />} />
             <Route path="/request-invite" element={<RequestInvite />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/admin" element={<AdminInvites />} />
             <Route path="/account" element={<ChangePassword />} />
             <Route path="/collection" element={<CollectionDashboard />} />

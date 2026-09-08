@@ -52,6 +52,9 @@ const Login: FC = () => {
         <Link to="/request-invite" className={styles.link}>
           Request an invite
         </Link>
+        <Link to="/forgot-password" className={styles.link}>
+          Forgot your password?
+        </Link>
       </div>
     </div>
   );

@@ -96,6 +96,10 @@ type Data struct {
 	// distinguish here the way a wrong password is one), so it's really
 	// just a submission cap per address per window.
 	InviteRequestLimiter *attemptLimiter
+	// PasswordResetLimiter throttles the public "forgot password" form
+	// (RequestPasswordReset) by email address - same shape/reasoning as
+	// InviteRequestLimiter, just for a different public form.
+	PasswordResetLimiter *attemptLimiter
 	// CollectionOwnerUserID and CollectionAllowAllUsers back
 	// canAccessCollection/ownerOnlyMiddleware (see their doc comments) -
 	// not currently wired into any route. They gated the whole collection
@@ -192,6 +196,7 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 		LoginLimiter:            newAttemptLimiter(),
 		SignupLimiter:           newAttemptLimiter(),
 		InviteRequestLimiter:    newAttemptLimiter(),
+		PasswordResetLimiter:    newAttemptLimiter(),
 		CollectionOwnerUserID:   collectionOwnerUserID,
 		CollectionAllowAllUsers: collectionAllowAllUsers,
 		Ebay:                    ebaySvc,
@@ -223,6 +228,8 @@ func (d *Data) NewRouter() *mux.Router {
 	api.HandleFunc("/user/login", d.UserLogin).Methods("POST")
 	api.HandleFunc("/user/create", d.UserCreate).Methods("POST")
 	api.HandleFunc("/invites/request", d.RequestInvite).Methods("POST")
+	api.HandleFunc("/user/password-reset/request", d.RequestPasswordReset).Methods("POST")
+	api.HandleFunc("/user/password-reset/confirm", d.ConfirmPasswordReset).Methods("POST")
 
 	// // Protected routes
 	api.HandleFunc("/logout", d.UserLogout)
@@ -437,7 +444,8 @@ func (d Data) AuthMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" || r.URL.Path == "/api/invites/request" {
+		if r.URL.Path == "/api/user/login" || r.URL.Path == "/api/user/create" || r.URL.Path == "/api/invites/request" ||
+			r.URL.Path == "/api/user/password-reset/request" || r.URL.Path == "/api/user/password-reset/confirm" {
 			next.ServeHTTP(w, r)
 			return
 		}
