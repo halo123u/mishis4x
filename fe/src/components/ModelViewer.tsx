@@ -214,7 +214,19 @@ const ModelViewer = () => {
         context.gl.clearColor(0, 0, 0, 0);
         context.gl.clear(context.gl.COLOR_BUFFER_BIT);
         renderer.begin();
-        renderer.drawSkeleton(skeleton, true);
+        // false, not true: this .png is straight (not premultiplied)
+        // alpha. Passing true here (the value every Spine WebGL example
+        // defaults to, since Spine Editor's own PNG export IS
+        // premultiplied) silently blows out any soft/semi-transparent
+        // edge toward white instead of erroring - on this asset it
+        // wrecked exactly the face (skin shading, blush - lots of
+        // partial alpha) while fully-opaque areas like hair and jacket
+        // fabric looked completely unaffected, which is what made this
+        // so easy to mistake for a missing-region/data problem instead
+        // of a blend-mode flag. Confirmed by cropping the source PNG at
+        // face_main's own atlas coordinates directly - the pixels are
+        // real, detailed skin art, not blank.
+        renderer.drawSkeleton(skeleton, false);
         renderer.end();
 
         rafHandle = requestAnimationFrame(loop);
