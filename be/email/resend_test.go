@@ -73,3 +73,27 @@ func TestSendInviteEmail_IncludesLink(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, gotBody.HTML, "https://mishis4x.com/sign-up?invite=abc123")
 }
+
+func TestSendInviteRequestNotification_IncludesLinkAndEscapesRequesterEmail(t *testing.T) {
+	var gotBody sendRequest
+
+	ts := fakeResendServer(t, func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+		w.WriteHeader(http.StatusOK)
+	})
+
+	s := NewService("test-key", "invites@mishis4x.com")
+	s.client = ts.Client()
+	s.apiURL = ts.URL
+	// "&" is a valid unquoted RFC 5322 local-part character - a real
+	// address this could actually see, and exactly the kind of thing
+	// that needs escaping (to "&amp;") rather than dropped straight into
+	// the HTML body as-is.
+	err := s.SendInviteRequestNotification(t.Context(), "owner@example.com", "foo&bar@example.com", "https://mishis4x.com/admin")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"owner@example.com"}, gotBody.To)
+	require.Contains(t, gotBody.HTML, "https://mishis4x.com/admin")
+	require.Contains(t, gotBody.HTML, "foo&amp;bar@example.com")
+	require.NotContains(t, gotBody.HTML, "foo&bar@example.com")
+}

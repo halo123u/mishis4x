@@ -164,13 +164,27 @@ type Data struct {
 	// AppBaseURL is the public URL admin-approve builds a sign-up link
 	// against (e.g. https://mishis4x.com) - empty when APP_BASE_URL isn't
 	// set, in which case the approve endpoint fails with a clear error
-	// rather than emailing a broken link.
+	// rather than emailing a broken link. Also what RequestInvite links
+	// the admin-notification email's "review the request" button to
+	// (AppBaseURL + "/admin") - the one place both features share.
 	AppBaseURL string
+	// AdminNotificationEmail is where RequestInvite sends a "someone
+	// wants access" email, linking to /admin - deliberately its own
+	// config value, not derived from AdminUserID (an authorization
+	// concern, not necessarily a real inbox) or users.email_address
+	// (nullable - the seeded/earliest accounts, very plausibly including
+	// whoever AdminUserID actually is, predate that column entirely, see
+	// its own migration's doc comment). Empty when
+	// ADMIN_NOTIFICATION_EMAIL isn't set, in which case RequestInvite
+	// just skips sending - same non-fatal degrade EmailService/AppBaseURL
+	// being unset already gets, never something that should block a real
+	// user's request from going through.
+	AdminNotificationEmail string
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
 // its own internal state (the login/signup rate limiters).
-func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service, ebayListingsDisabled bool, priceTrendsEnabled bool, adminUserID int, emailSvc *email.Service, appBaseURL string) *Data {
+func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service, ebayListingsDisabled bool, priceTrendsEnabled bool, adminUserID int, emailSvc *email.Service, appBaseURL string, adminNotificationEmail string) *Data {
 	return &Data{
 		P:                       p,
 		Lobby:                   lobby,
@@ -186,6 +200,7 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 		AdminUserID:             adminUserID,
 		EmailService:            emailSvc,
 		AppBaseURL:              appBaseURL,
+		AdminNotificationEmail:  adminNotificationEmail,
 	}
 }
 

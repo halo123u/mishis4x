@@ -73,6 +73,24 @@ func (d *Data) RequestInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only a genuinely new request notifies - not a duplicate of one
+	// already pending (err is ErrInviteRequestExists), so someone
+	// impatiently resubmitting doesn't re-notify the admin for a request
+	// they've already seen. Best-effort and never affects the response
+	// below either way: this is a nice-to-have (the admin can always
+	// still find it via `be invite-list`/the /admin page on their own),
+	// not something a real signup request should ever fail over. Skips
+	// silently, not even a log line, when email/AppBaseURL/
+	// AdminNotificationEmail aren't all configured - same as
+	// ApproveInviteRequest's own degrade, just non-fatal here since
+	// nothing here is admin-initiated.
+	if err == nil && d.EmailService != nil && d.AppBaseURL != "" && d.AdminNotificationEmail != "" {
+		adminURL := d.AppBaseURL + "/admin"
+		if sendErr := d.EmailService.SendInviteRequestNotification(ctx, d.AdminNotificationEmail, body.EmailAddress, adminURL); sendErr != nil {
+			log.Error().Err(sendErr).Str("email", body.EmailAddress).Msg("invite request recorded, but the admin notification email failed to send")
+		}
+	}
+
 	// Same generic response whether this was a brand new request or a
 	// duplicate of one already pending - not confirming/denying whether
 	// a given address already has an outstanding request.

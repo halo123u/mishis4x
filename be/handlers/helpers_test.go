@@ -91,6 +91,7 @@ func newTestDataWithEbay(db *sql.DB, ebaySvc *ebay.Service) *Data {
 		0,
 		nil,
 		"",
+		"",
 	)
 }
 
@@ -111,6 +112,7 @@ func newTestDataWithPriceTrends(db *sql.DB) *Data {
 		0,
 		nil,
 		"",
+		"",
 	)
 }
 
@@ -118,7 +120,12 @@ func newTestDataWithPriceTrends(db *sql.DB) *Data {
 // the admin and a real (fake-server-backed) email.Service - for
 // admin_test.go's tests, which need both to exercise the actual
 // approve-and-email flow rather than just the 403-if-not-admin gate.
-func newTestDataWithAdmin(db *sql.DB, adminUserID int, emailSvc *email.Service, appBaseURL string) *Data {
+// adminNotificationEmail is separately what invites_test.go's own
+// notification tests need (RequestInvite is public/unauthenticated, so
+// those tests don't go through this function's admin-login setup at all -
+// see newTestDataWithAdminNotification) - most admin_test.go callers pass
+// "" here since they're not exercising that path.
+func newTestDataWithAdmin(db *sql.DB, adminUserID int, emailSvc *email.Service, appBaseURL string, adminNotificationEmail string) *Data {
 	return NewData(
 		persist.Persist{DB: db},
 		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
@@ -131,6 +138,29 @@ func newTestDataWithAdmin(db *sql.DB, adminUserID int, emailSvc *email.Service, 
 		adminUserID,
 		emailSvc,
 		appBaseURL,
+		adminNotificationEmail,
+	)
+}
+
+// newTestDataWithAdminNotification is newTestData, but with EmailService/
+// AppBaseURL/AdminNotificationEmail all set - for invites_test.go's own
+// tests of RequestInvite's best-effort notification email. No admin user
+// log-in involved (unlike newTestDataWithAdmin) - RequestInvite is public
+// and unauthenticated, and doesn't care who (if anyone) AdminUserID is.
+func newTestDataWithAdminNotification(db *sql.DB, emailSvc *email.Service, appBaseURL, adminNotificationEmail string) *Data {
+	return NewData(
+		persist.Persist{DB: db},
+		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
+		testSessionCookieConfig(),
+		0,
+		false,
+		nil,
+		false,
+		false,
+		0,
+		emailSvc,
+		appBaseURL,
+		adminNotificationEmail,
 	)
 }
 

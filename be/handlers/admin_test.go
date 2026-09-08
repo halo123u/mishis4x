@@ -42,7 +42,7 @@ func newTestServerWithAdmin(t *testing.T, db *sql.DB, emailSvc *email.Service) (
 	username := testUsername(t, db)
 	adminUserID := createTestUser(t, db, username, "correctpass123")
 
-	d := newTestDataWithAdmin(db, adminUserID, emailSvc, "https://mishis4x.com")
+	d := newTestDataWithAdmin(db, adminUserID, emailSvc, "https://mishis4x.com", "")
 	ts := httptest.NewServer(d.NewRouter())
 	t.Cleanup(ts.Close)
 
