@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,10 +41,14 @@ const modelDownloadTimeout = 30 * time.Second
 func init() {
 	rootCMD.AddCommand(modelImportCMD)
 	modelImportCMD.Flags().StringArrayVarP(&modelImportChars, "char", "c", nil, "Character code to import (repeatable, e.g. -c 002406 -c 002407)")
+	modelImportCMD.Flags().StringVar(&modelImportSetName, "set-name", "", "Set the --card codes belong to (its real name, e.g. \"Brown Dust 2\" - see persist.GetSetIDByName). Required if --card is given.")
+	modelImportCMD.Flags().StringArrayVar(&modelImportCards, "card", nil, "Card code (e.g. BRD/W139-001S) to link the imported model to (repeatable) - the whole reason this is manual: several cards commonly share one model across rarities. Requires exactly one --char and --set-name.")
 	modelImportCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to connect to")
 }
 
 var modelImportChars []string
+var modelImportSetName string
+var modelImportCards []string
 
 var modelImportCMD = &cobra.Command{
 	Use:   "model-import",
@@ -66,12 +71,39 @@ ever updates a model.
 A single char code's download failure (network error, unexpected status,
 one of the three files missing) is logged and skipped rather than
 aborting the rest of the list - the same per-item tolerance
-process-set uses for a malformed CSV row.`,
+process-set uses for a malformed CSV row.
+
+--card optionally links the imported model to one or more catalog cards
+in the same run, given --set-name to say which set they belong to -
+there's no separate linking command, or a picker in the collection UI
+either (see fe/src/components/ui/CardModelLink.tsx's own doc comment):
+with a model actually getting imported at all being this rare and
+deliberate, doing the link as part of the same manual step it's already
+a manual step for is simpler than a second tool. Only makes sense
+alongside exactly one --char - linking is refused outright with more
+than one, since there'd be no way to say which model a given --card
+should point at.
+
+  model-import --char 002406 --set-name "Brown Dust 2" \
+    --card BRD/W139-001S --card BRD/W139-003S
+
+A --card code that doesn't match a real card in --set-name is logged
+and skipped, same tolerance as everything else here - the model itself
+is already imported and stored by the time linking runs, so one bad
+card code shouldn't be treated as if the whole command failed.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		logger.Init(env)
 
 		if len(modelImportChars) == 0 {
 			log.Fatal().Msg("model-import requires at least one --char")
+		}
+		if len(modelImportCards) > 0 {
+			if modelImportSetName == "" {
+				log.Fatal().Msg("--card requires --set-name")
+			}
+			if len(modelImportChars) != 1 {
+				log.Fatal().Msg("--card requires exactly one --char - otherwise there's no way to say which model a --card should link to")
+			}
 		}
 
 		db, err := persist.NewDB(env)
@@ -79,8 +111,13 @@ process-set uses for a malformed CSV row.`,
 			log.Fatal().Err(err).Msg("error connecting to db")
 		}
 		p := &persist.Persist{DB: db}
+		ctx := context.Background()
 
-		modelImport(context.Background(), p, modelImportChars)
+		modelImport(ctx, p, modelImportChars)
+
+		if len(modelImportCards) > 0 {
+			linkCardsToCharacterModel(ctx, p, modelImportSetName, modelImportChars[0], modelImportCards)
+		}
 	},
 }
 
@@ -99,6 +136,43 @@ func modelImport(ctx context.Context, p *persist.Persist, charCodes []string) {
 	}
 
 	log.Info().Int("imported", imported).Int("skipped", skipped).Msg("model-import finished")
+}
+
+// linkCardsToCharacterModel resolves setName to a set (must already
+// exist - unlike process-set, this never creates one) and points each of
+// cardCodes at charCode via persist.SetCardCharacterModel. Doesn't stop
+// on a bad card code or a resolve error partway through - see this
+// command's own doc comment on --card for why.
+func linkCardsToCharacterModel(ctx context.Context, p *persist.Persist, setName, charCode string, cardCodes []string) {
+	setID, err := p.GetSetIDByName(ctx, setName)
+	if err != nil {
+		log.Error().Err(err).Str("set", setName).Msg("error resolving set, skipping all --card linking")
+		return
+	}
+
+	var linked, skipped int
+	for _, code := range cardCodes {
+		cardID, err := p.GetCardIDByCode(ctx, setID, code)
+		if err != nil {
+			if errors.Is(err, persist.ErrCardNotFound) {
+				log.Error().Str("code", code).Str("set", setName).Msg("no matching card for this code, skipping")
+			} else {
+				log.Error().Err(err).Str("code", code).Msg("error resolving card, skipping")
+			}
+			skipped++
+			continue
+		}
+
+		if err := p.SetCardCharacterModel(ctx, cardID, &charCode); err != nil {
+			log.Error().Err(err).Str("code", code).Str("charCode", charCode).Msg("error linking card, skipping")
+			skipped++
+			continue
+		}
+		linked++
+		log.Info().Str("code", code).Str("charCode", charCode).Msg("linked card to character model")
+	}
+
+	log.Info().Int("linked", linked).Int("skipped", skipped).Msg("--card linking finished")
 }
 
 // importCharacterModel downloads all three of one character's asset files

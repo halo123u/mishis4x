@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -111,4 +112,82 @@ func TestModelImport_PartialFailureStoresNothing(t *testing.T) {
 
 	_, err := p.GetCharacterModel(t.Context(), charCode)
 	require.ErrorIs(t, err, persist.ErrCharacterModelNotFound, "a character missing even one of its three files must not be stored at all")
+}
+
+// createTestSetAndCardForLinking creates a fresh set (with a unique-ish
+// name) and one card in it, returning the set's name (what
+// linkCardsToCharacterModel resolves by) and the card's code.
+func createTestSetAndCardForLinking(t *testing.T, db *sql.DB) (setName, cardCode string) {
+	t.Helper()
+	p := &persist.Persist{DB: db}
+
+	setName = "model-import link test set " + testModelCharCode(t)
+	setID, err := p.CreateSet(t.Context(), setName, 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardCode = "TEST-" + testModelCharCode(t)
+	_, err = p.CreateCard(t.Context(), setID, "Test Card", cardCode, "SR 1-star")
+	require.NoError(t, err)
+
+	return setName, cardCode
+}
+
+func TestLinkCardsToCharacterModel_LinksMatchingCards(t *testing.T) {
+	db := testDB(t)
+	p := &persist.Persist{DB: db}
+	charCode := testModelCharCode(t)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM character_models WHERE char_code = ?", charCode)
+	})
+	require.NoError(t, p.UpsertCharacterModel(t.Context(), charCode, []byte("s"), []byte("a"), []byte("t"), "image/png"))
+
+	setName, cardCode := createTestSetAndCardForLinking(t, db)
+
+	linkCardsToCharacterModel(t.Context(), p, setName, charCode, []string{cardCode})
+
+	setID, err := p.GetSetIDByName(t.Context(), setName)
+	require.NoError(t, err)
+	cards, err := p.ListCardsBySet(t.Context(), setID)
+	require.NoError(t, err)
+	require.Len(t, cards, 1)
+	require.NotNil(t, cards[0].CharacterModelCharCode)
+	require.Equal(t, charCode, *cards[0].CharacterModelCharCode)
+}
+
+func TestLinkCardsToCharacterModel_UnknownCardCodeSkipsNotFatal(t *testing.T) {
+	db := testDB(t)
+	p := &persist.Persist{DB: db}
+	charCode := testModelCharCode(t)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM character_models WHERE char_code = ?", charCode)
+	})
+	require.NoError(t, p.UpsertCharacterModel(t.Context(), charCode, []byte("s"), []byte("a"), []byte("t"), "image/png"))
+
+	setName, realCode := createTestSetAndCardForLinking(t, db)
+
+	// One code that doesn't exist, alongside one that does - the bad one
+	// must not stop the good one from linking (same per-item tolerance as
+	// model-import's own asset downloads).
+	linkCardsToCharacterModel(t.Context(), p, setName, charCode, []string{"DOES-NOT-EXIST", realCode})
+
+	setID, err := p.GetSetIDByName(t.Context(), setName)
+	require.NoError(t, err)
+	cards, err := p.ListCardsBySet(t.Context(), setID)
+	require.NoError(t, err)
+	require.Len(t, cards, 1)
+	require.NotNil(t, cards[0].CharacterModelCharCode, "the real card code must still link despite the bad one earlier in the list")
+}
+
+func TestLinkCardsToCharacterModel_UnknownSetDoesNotPanic(t *testing.T) {
+	db := testDB(t)
+	p := &persist.Persist{DB: db}
+	charCode := testModelCharCode(t)
+
+	// Just needs to not panic/crash - there's nothing else to assert
+	// against when the set itself doesn't resolve.
+	linkCardsToCharacterModel(t.Context(), p, "no such set at all", charCode, []string{"whatever"})
 }
