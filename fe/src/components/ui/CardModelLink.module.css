@@ -1,32 +1,10 @@
-.row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-top: var(--space-1);
-}
-
 .viewLink {
   display: inline-flex;
   align-items: center;
+  margin-top: var(--space-1);
   color: var(--teal);
 }
 
 .viewLink:hover {
   filter: brightness(1.3);
-}
-
-.select {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  background: var(--paper);
-  color: var(--ink);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  padding: 0.1rem 0.3rem;
-  max-width: 6rem;
-}
-
-.error {
-  font-size: var(--text-xs);
-  color: var(--bad);
 }
