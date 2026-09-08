@@ -131,6 +131,15 @@ func (d *Data) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
 	defer cancel()
 
+	// The token is spent the instant this returns successfully - it's not
+	// (and can't easily be) in the same transaction as the password write
+	// below, since bcrypt hashing happens in Go, between the two DB
+	// calls. If either of the next two steps fails, the token is already
+	// burned but the password never actually changed - "Please try
+	// again" is misleading in that specific case (there's nothing left to
+	// retry the same link with), and going back to /forgot-password for
+	// a fresh one is the only real recovery. Known gap, not fixed here -
+	// see issue #120 for the tradeoffs of the options considered.
 	userID, err := d.P.ConsumePasswordReset(ctx, body.Token)
 	if err != nil {
 		if errors.Is(err, persist.ErrPasswordResetInvalid) {
