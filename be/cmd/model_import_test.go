@@ -191,3 +191,54 @@ func TestLinkCardsToCharacterModel_UnknownSetDoesNotPanic(t *testing.T) {
 	// against when the set itself doesn't resolve.
 	linkCardsToCharacterModel(t.Context(), p, "no such set at all", charCode, []string{"whatever"})
 }
+
+func TestLinkCardIDsToCharacterModel_LinksMatchingCards(t *testing.T) {
+	db := testDB(t)
+	p := &persist.Persist{DB: db}
+	charCode := testModelCharCode(t)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM character_models WHERE char_code = ?", charCode)
+	})
+	require.NoError(t, p.UpsertCharacterModel(t.Context(), charCode, []byte("s"), []byte("a"), []byte("t"), "image/png"))
+
+	setName, cardCode := createTestSetAndCardForLinking(t, db)
+	setID, err := p.GetSetIDByName(t.Context(), setName)
+	require.NoError(t, err)
+	cardID, err := p.GetCardIDByCode(t.Context(), setID, cardCode)
+	require.NoError(t, err)
+
+	linkCardIDsToCharacterModel(t.Context(), p, charCode, []string{cardID})
+
+	cards, err := p.ListCardsBySet(t.Context(), setID)
+	require.NoError(t, err)
+	require.Len(t, cards, 1)
+	require.NotNil(t, cards[0].CharacterModelCharCode)
+	require.Equal(t, charCode, *cards[0].CharacterModelCharCode)
+}
+
+func TestLinkCardIDsToCharacterModel_UnknownIDSkipsNotFatal(t *testing.T) {
+	db := testDB(t)
+	p := &persist.Persist{DB: db}
+	charCode := testModelCharCode(t)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM character_models WHERE char_code = ?", charCode)
+	})
+	require.NoError(t, p.UpsertCharacterModel(t.Context(), charCode, []byte("s"), []byte("a"), []byte("t"), "image/png"))
+
+	setName, cardCode := createTestSetAndCardForLinking(t, db)
+	setID, err := p.GetSetIDByName(t.Context(), setName)
+	require.NoError(t, err)
+	realID, err := p.GetCardIDByCode(t.Context(), setID, cardCode)
+	require.NoError(t, err)
+
+	// A bad id (well-formed enough to not error building the query, just
+	// not matching any real card) must not stop the real one from
+	// linking - same tolerance as linkCardsToCharacterModel's own
+	// unknown-code case.
+	linkCardIDsToCharacterModel(t.Context(), p, charCode, []string{"does-not-exist", realID})
+
+	cards, err := p.ListCardsBySet(t.Context(), setID)
+	require.NoError(t, err)
+	require.Len(t, cards, 1)
+	require.NotNil(t, cards[0].CharacterModelCharCode, "the real card id must still link despite the bad one earlier in the list")
+}

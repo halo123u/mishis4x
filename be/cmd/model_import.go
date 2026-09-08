@@ -43,12 +43,14 @@ func init() {
 	modelImportCMD.Flags().StringArrayVarP(&modelImportChars, "char", "c", nil, "Character code to import (repeatable, e.g. -c 002406 -c 002407)")
 	modelImportCMD.Flags().StringVar(&modelImportSetName, "set-name", "", "Set the --card codes belong to (its real name, e.g. \"Brown Dust 2\" - see persist.GetSetIDByName). Required if --card is given.")
 	modelImportCMD.Flags().StringArrayVar(&modelImportCards, "card", nil, "Card code (e.g. BRD/W139-001S) to link the imported model to (repeatable) - the whole reason this is manual: several cards commonly share one model across rarities. Requires exactly one --char and --set-name.")
+	modelImportCMD.Flags().StringArrayVar(&modelImportCardIDs, "card-id", nil, "Card id (the UUID, not the code) to link the imported model to (repeatable) - skips the --set-name/code lookup entirely when you already have the id, e.g. copied from the collection UI's URL or a prior API response. Requires exactly one --char, same as --card.")
 	modelImportCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to connect to")
 }
 
 var modelImportChars []string
 var modelImportSetName string
 var modelImportCards []string
+var modelImportCardIDs []string
 
 var modelImportCMD = &cobra.Command{
 	Use:   "model-import",
@@ -90,19 +92,26 @@ should point at.
 A --card code that doesn't match a real card in --set-name is logged
 and skipped, same tolerance as everything else here - the model itself
 is already imported and stored by the time linking runs, so one bad
-card code shouldn't be treated as if the whole command failed.`,
+card code shouldn't be treated as if the whole command failed.
+
+--card-id is the same idea but skips --set-name/code resolution
+entirely, linking a card by its actual id (e.g. copied straight out of
+the collection UI's own URL, or a GET /api/sets/{setID}/cards response) -
+the more direct option when you already have it rather than the code:
+
+  model-import --char 002406 --card-id 01900000-0000-7000-8000-000000000011`,
 	Run: func(cmd *cobra.Command, args []string) {
 		logger.Init(env)
 
 		if len(modelImportChars) == 0 {
 			log.Fatal().Msg("model-import requires at least one --char")
 		}
-		if len(modelImportCards) > 0 {
-			if modelImportSetName == "" {
+		if len(modelImportCards) > 0 || len(modelImportCardIDs) > 0 {
+			if len(modelImportCards) > 0 && modelImportSetName == "" {
 				log.Fatal().Msg("--card requires --set-name")
 			}
 			if len(modelImportChars) != 1 {
-				log.Fatal().Msg("--card requires exactly one --char - otherwise there's no way to say which model a --card should link to")
+				log.Fatal().Msg("--card/--card-id require exactly one --char - otherwise there's no way to say which model they should link to")
 			}
 		}
 
@@ -117,6 +126,9 @@ card code shouldn't be treated as if the whole command failed.`,
 
 		if len(modelImportCards) > 0 {
 			linkCardsToCharacterModel(ctx, p, modelImportSetName, modelImportChars[0], modelImportCards)
+		}
+		if len(modelImportCardIDs) > 0 {
+			linkCardIDsToCharacterModel(ctx, p, modelImportChars[0], modelImportCardIDs)
 		}
 	},
 }
@@ -173,6 +185,30 @@ func linkCardsToCharacterModel(ctx context.Context, p *persist.Persist, setName,
 	}
 
 	log.Info().Int("linked", linked).Int("skipped", skipped).Msg("--card linking finished")
+}
+
+// linkCardIDsToCharacterModel is linkCardsToCharacterModel's simpler
+// counterpart for --card-id: no set/code resolution, just
+// persist.SetCardCharacterModel directly against each id - a bad id
+// surfaces as persist.ErrCardNotFound from that call itself rather than
+// a separate lookup step, but is logged and skipped the same way.
+func linkCardIDsToCharacterModel(ctx context.Context, p *persist.Persist, charCode string, cardIDs []string) {
+	var linked, skipped int
+	for _, cardID := range cardIDs {
+		if err := p.SetCardCharacterModel(ctx, cardID, &charCode); err != nil {
+			if errors.Is(err, persist.ErrCardNotFound) {
+				log.Error().Str("cardID", cardID).Msg("no matching card for this id, skipping")
+			} else {
+				log.Error().Err(err).Str("cardID", cardID).Msg("error linking card, skipping")
+			}
+			skipped++
+			continue
+		}
+		linked++
+		log.Info().Str("cardID", cardID).Str("charCode", charCode).Msg("linked card to character model")
+	}
+
+	log.Info().Int("linked", linked).Int("skipped", skipped).Msg("--card-id linking finished")
 }
 
 // importCharacterModel downloads all three of one character's asset files
