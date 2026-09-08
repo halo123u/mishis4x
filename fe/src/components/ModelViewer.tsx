@@ -166,20 +166,20 @@ const ModelViewer = () => {
         animationState.setAnimation(0, animationName, true);
       }
 
-      // BD2 characters split facial expressions out into their own
-      // "_face0"-style animation, played on a second track simultaneously
-      // with the body animation (confirmed against the reference viewer's
-      // own animation list, which lists "_face0"/"_face0_talk"/etc.
-      // alongside "idle"/"motion") - the setup pose's own default face
-      // attachment is otherwise left blank/neutral, since it's the "idle"
-      // and "_face0" timelines together, not the setup pose, that select
-      // a real expression.
-      const faceAnimationName = skeletonData.animations.find((a) =>
-        a.name.startsWith('_face'),
-      )?.name;
-      if (faceAnimationName) {
-        animationState.setAnimation(1, faceAnimationName, true);
-      }
+      // No second "_face0" track: BD2 skeletons list those alongside
+      // "idle"/"motion" (see the reference viewer's own animation
+      // dropdown), and it's tempting to play one simultaneously for a
+      // "real" expression - but they carry baked keyframes for body
+      // bones too (a common Spine export artifact: an animation clip
+      // duplicated from the base rig, then only its face bones actually
+      // hand-edited), so applying one on any track stamps its body pose
+      // over "idle"'s own - confirmed by comparing against the reference
+      // viewer, which stays seated for "idle" the whole time, unlike
+      // this component briefly did with a "_face0" track added. Not
+      // needed anyway: the setup pose already carries a fully-detailed
+      // default face (see TolerantAttachmentLoader's doc comment for the
+      // one real gap in it) - what looked like a missing expression was
+      // actually the premultiplied-alpha bug below.
 
       // Center the camera on the skeleton's own setup-pose bounds, with a
       // little breathing room - this is a fixed character-sized viewport,
