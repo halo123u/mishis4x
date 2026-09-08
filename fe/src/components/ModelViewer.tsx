@@ -3,9 +3,10 @@ import { Link, useParams } from 'react-router-dom';
 import {
   AnimationState,
   AnimationStateData,
-  AssetManager,
+  AssetManagerBase,
   AtlasAttachmentLoader,
   Downloader,
+  GLTexture,
   ManagedWebGLRenderingContext,
   ResizeMode,
   SceneRenderer,
@@ -15,6 +16,52 @@ import {
   Vector2,
 } from '@esotericsoftware/spine-webgl';
 import styles from './ModelViewer.module.css';
+
+// This source PNG has straight (non-premultiplied) alpha, but spine-webgl's
+// Multiply blend mode (used by a couple of this character's shadow/overlay
+// slots) hardcodes a blend formula that only produces correct results
+// against a premultiplied source - there's no straight-alpha variant of it
+// to opt into (see WebGLBlendModeConverter.getSourceColorGLBlendMode:
+// Multiply always resolves to DST_COLOR regardless of the premultipliedAlpha
+// flag passed to drawSkeleton). Feeding it straight-alpha pixels blows out
+// any translucent-edged multiply decal toward white - visible as a
+// "flashlight" glow anywhere a soft shadow/highlight overlay meets skin.
+// Premultiplying the texture ourselves once at load time (synchronously,
+// via a scratch 2D canvas - the image is already decoded by the time this
+// runs) satisfies both blend modes at once, so drawSkeleton can use a
+// single, honestly-true premultipliedAlpha flag throughout instead of the
+// straight-alpha workaround from an earlier version of this component.
+function loadPremultipliedTexture(
+  context: ManagedWebGLRenderingContext,
+  image: HTMLImageElement | ImageBitmap,
+): GLTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    // No 2D context available - fall back to the source image as-is
+    // rather than failing the whole load; Normal-blend slots (most of
+    // the skeleton) still render correctly, only Multiply-blend ones
+    // would show the glow this function exists to avoid.
+    return new GLTexture(context, image);
+  }
+  ctx.drawImage(image, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3] / 255;
+    data[i] *= a;
+    data[i + 1] *= a;
+    data[i + 2] *= a;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  // GLTexture's declared type only accepts HTMLImageElement | ImageBitmap,
+  // but its own upload path is just gl.texImage2D(..., this._image) - a
+  // canvas is a valid TexImageSource at the real WebGL API level even
+  // though these bindings don't say so.
+  return new GLTexture(context, canvas as unknown as HTMLImageElement);
+}
 
 // This Spine version's AtlasAttachmentLoader throws when an attachment's
 // named region is missing from the atlas, aborting the entire skeleton
@@ -99,13 +146,17 @@ const ModelViewer = () => {
 
     const context = new ManagedWebGLRenderingContext(canvas, { alpha: true });
     const renderer = new SceneRenderer(canvas, context);
-    // spine-webgl's AssetManager (this exact version) defaults its
-    // downloader param to a literal `null`, not `undefined` - its
-    // superclass only supplies its own `new Downloader()` default for a
-    // genuinely omitted (undefined) argument, so an explicit null skips
-    // that default and every load call dies on a null-downloader
-    // TypeError. Passing one explicitly here works around it.
-    const assetManager = new AssetManager(context, '', new Downloader());
+    // Not spine-webgl's own AssetManager subclass: it hardcodes its
+    // textureLoader to a plain `new GLTexture(context, image)`, and
+    // loadPremultipliedTexture (above) needs to be that callback instead
+    // so every texture - not just this one page - gets premultiplied on
+    // the way in. AssetManagerBase (the base class that subclass just
+    // wraps) takes the loader directly as its first constructor argument.
+    const assetManager = new AssetManagerBase(
+      (image) => loadPremultipliedTexture(context, image),
+      '',
+      new Downloader(),
+    );
 
     const skeletonPath = `/api/models/${charCode}/skeleton`;
     const atlasPath = `/api/models/${charCode}/atlas`;
@@ -214,19 +265,14 @@ const ModelViewer = () => {
         context.gl.clearColor(0, 0, 0, 0);
         context.gl.clear(context.gl.COLOR_BUFFER_BIT);
         renderer.begin();
-        // false, not true: this .png is straight (not premultiplied)
-        // alpha. Passing true here (the value every Spine WebGL example
-        // defaults to, since Spine Editor's own PNG export IS
-        // premultiplied) silently blows out any soft/semi-transparent
-        // edge toward white instead of erroring - on this asset it
-        // wrecked exactly the face (skin shading, blush - lots of
-        // partial alpha) while fully-opaque areas like hair and jacket
-        // fabric looked completely unaffected, which is what made this
-        // so easy to mistake for a missing-region/data problem instead
-        // of a blend-mode flag. Confirmed by cropping the source PNG at
-        // face_main's own atlas coordinates directly - the pixels are
-        // real, detailed skin art, not blank.
-        renderer.drawSkeleton(skeleton, false);
+        // true: textures are premultiplied by loadPremultipliedTexture
+        // above, so this now matches reality throughout - see that
+        // function's doc comment for why straight alpha (this component's
+        // very first fix here) had to be abandoned rather than kept: it
+        // fixed Normal-blend slots (the face) but broke Multiply-blend
+        // ones (shadow/highlight decals), which have no straight-alpha
+        // path in this runtime at all.
+        renderer.drawSkeleton(skeleton, true);
         renderer.end();
 
         rafHandle = requestAnimationFrame(loop);
