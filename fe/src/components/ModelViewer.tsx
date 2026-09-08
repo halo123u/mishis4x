@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   AnimationState,
   AnimationStateData,
@@ -131,6 +131,7 @@ class TolerantAttachmentLoader extends AtlasAttachmentLoader {
 // keeps the render loop cancelable on unmount.
 const ModelViewer = () => {
   const { charCode } = useParams<{ charCode: string }>();
+  const navigate = useNavigate();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -306,9 +307,18 @@ const ModelViewer = () => {
 
   return (
     <div className={styles.stage}>
-      <Link to="/models" className={styles.back}>
+      {/* Real browser back, not a fixed /models link: this route is
+          reachable both from the model picker (/models) and directly
+          from a linked card in the collection tracker (CardModelLink,
+          SetDetail.tsx) - going back should return to wherever the user
+          actually came from, not always the picker. */}
+      <button
+        type="button"
+        onClick={() => navigate(-1)}
+        className={styles.back}
+      >
         ← Back
-      </Link>
+      </button>
       {loading && !error && <p className={styles.status}>Loading…</p>}
       {error && <p className={styles.status}>{error}</p>}
       <canvas ref={canvasRef} className={styles.canvas} />

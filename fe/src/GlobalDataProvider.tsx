@@ -48,13 +48,28 @@ export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
         // undefined here means the response wasn't a 200 (see above) - the
         // redirect/error handling already happened, nothing further to do.
         if (res) {
-          let path = window.location.pathname;
+          const currentPath = window.location.pathname;
+          let path = currentPath;
           if (publicOnlyPaths.includes(path)) {
             path = '/';
           }
 
           setGlobalData(res);
-          navigate(path);
+          // Only navigate when it actually changes the path (the
+          // already-authenticated-but-landed-on-a-public-page redirect
+          // above). navigate() pushes a new history entry by default even
+          // when called with the current path unchanged - calling it
+          // unconditionally here, on *every* successful /api/data check,
+          // meant every mount (StrictMode's dev-only double-invoke made
+          // this two pushes, not one) and every popstate (the effect
+          // below, firing on every browser back/forward) silently pushed
+          // a redundant duplicate entry back onto the stack, which
+          // defeated back/forward navigation app-wide: each Back press
+          // immediately got "canceled out" by this pushing the same page
+          // right back on top, so the button visibly did nothing.
+          if (path !== currentPath) {
+            navigate(path);
+          }
         }
       })
       .catch((err) => {
