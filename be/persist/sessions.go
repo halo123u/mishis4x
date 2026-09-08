@@ -92,3 +92,14 @@ func (p *Persist) DeleteOtherSessions(ctx context.Context, userID int, keepToken
 	_, err := p.DB.ExecContext(ctx, q, userID, keepToken)
 	return err
 }
+
+// DeleteAllSessions removes every session for userID, no exceptions -
+// used on password reset (unlike ChangePassword's DeleteOtherSessions),
+// where there's no "current session" to preserve since the caller isn't
+// logged in at all during a reset. If a forgotten password was itself the
+// result of someone else having gotten in, this is what actually kicks
+// them out.
+func (p *Persist) DeleteAllSessions(ctx context.Context, userID int) error {
+	_, err := p.DB.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?;`, userID)
+	return err
+}

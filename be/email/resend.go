@@ -127,3 +127,17 @@ func (s *Service) SendInviteRequestNotification(ctx context.Context, to, request
 
 	return s.Send(ctx, to, "New mishis4x invite request", html)
 }
+
+// SendPasswordResetEmail sends the "forgot password" link. resetURL should
+// already be the complete, absolute URL (same convention as
+// SendInviteEmail's signupURL) - this package doesn't know the app's own
+// domain. Unlike a user-submitted address or comment, resetURL is built
+// server-side from a random token, not typed by anyone, so there's
+// nothing here that needs HTML-escaping before going into the body.
+func (s *Service) SendPasswordResetEmail(ctx context.Context, to, resetURL string) error {
+	html := fmt.Sprintf(`<p>Someone requested a password reset for your mishis4x account.</p>
+<p><a href="%s">Click here to choose a new password</a></p>
+<p>This link expires in an hour and only works once. If you didn't request this, you can ignore this email - your password won't change.</p>`, resetURL)
+
+	return s.Send(ctx, to, "Reset your mishis4x password", html)
+}

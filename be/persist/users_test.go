@@ -88,3 +88,52 @@ func TestGetUser_NotFound(t *testing.T) {
 	_, err = p.GetUserByID(t.Context(), -1)
 	require.ErrorIs(t, err, ErrUserNotFound)
 }
+
+func TestGetUserByEmail(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+
+	username := fmt.Sprintf("email-test-user-%d", os.Getpid())
+	email := fmt.Sprintf("email-test-%d@example.com", os.Getpid())
+	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM users WHERE username = ?", username) })
+
+	id, err := p.CreateUser(t.Context(), User{Username: username, Status: "active", Password: "hashedpw", EmailAddress: &email})
+	require.NoError(t, err)
+
+	found, err := p.GetUserByEmail(t.Context(), email)
+	require.NoError(t, err)
+	require.Equal(t, id, found.ID)
+	require.Equal(t, username, found.Username)
+}
+
+func TestGetUserByEmail_NotFound(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+
+	_, err := p.GetUserByEmail(t.Context(), fmt.Sprintf("does-not-exist-%d@example.com", os.Getpid()))
+	require.ErrorIs(t, err, ErrUserNotFound)
+}
+
+// TestGetUserByEmail_MultipleMatchesTreatedAsNotFound proves the real
+// point of GetUserByEmail's own doc comment: email_address has no unique
+// constraint, so two accounts can share one address, and this must never
+// arbitrarily pick one of them to reset the password on.
+func TestGetUserByEmail_MultipleMatchesTreatedAsNotFound(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+
+	email := fmt.Sprintf("shared-email-test-%d@example.com", os.Getpid())
+	usernameA := fmt.Sprintf("shared-email-user-a-%d", os.Getpid())
+	usernameB := fmt.Sprintf("shared-email-user-b-%d", os.Getpid())
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM users WHERE username IN (?, ?)", usernameA, usernameB)
+	})
+
+	_, err := p.CreateUser(t.Context(), User{Username: usernameA, Status: "active", Password: "hashedpw", EmailAddress: &email})
+	require.NoError(t, err)
+	_, err = p.CreateUser(t.Context(), User{Username: usernameB, Status: "active", Password: "hashedpw", EmailAddress: &email})
+	require.NoError(t, err)
+
+	_, err = p.GetUserByEmail(t.Context(), email)
+	require.ErrorIs(t, err, ErrUserNotFound, "an ambiguous match must not resolve to either account")
+}

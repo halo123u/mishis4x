@@ -95,3 +95,28 @@ func TestDeleteOtherSessions(t *testing.T) {
 	_, err = p.GetSession(t.Context(), other2.ID)
 	require.ErrorIs(t, err, ErrSessionNotFound)
 }
+
+func TestDeleteAllSessions(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+
+	username := fmt.Sprintf("session-revoke-all-test-user-%d", os.Getpid())
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM users WHERE username = ?", username)
+	})
+
+	userID, err := p.CreateUser(t.Context(), User{Username: username, Status: "active", Password: "hashedpw"})
+	require.NoError(t, err)
+
+	first, err := p.CreateSession(t.Context(), userID, time.Hour)
+	require.NoError(t, err)
+	second, err := p.CreateSession(t.Context(), userID, time.Hour)
+	require.NoError(t, err)
+
+	require.NoError(t, p.DeleteAllSessions(t.Context(), userID))
+
+	_, err = p.GetSession(t.Context(), first.ID)
+	require.ErrorIs(t, err, ErrSessionNotFound, "unlike DeleteOtherSessions, there's no session to preserve here")
+	_, err = p.GetSession(t.Context(), second.ID)
+	require.ErrorIs(t, err, ErrSessionNotFound)
+}

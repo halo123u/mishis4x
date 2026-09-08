@@ -6,7 +6,13 @@ import { GlobalDataContext } from './globalDataContext';
 // Pages an unauthenticated visitor is expected to land on directly -
 // never bounce away from these, and treat them as the fallback landing
 // spot once actually authenticated.
-const publicOnlyPaths = ['/login', '/sign-up', '/request-invite'];
+const publicOnlyPaths = [
+  '/login',
+  '/sign-up',
+  '/request-invite',
+  '/forgot-password',
+  '/reset-password',
+];
 
 export const GlobalDataProvider: FC<{ children: ReactNode }> = ({
   children,
