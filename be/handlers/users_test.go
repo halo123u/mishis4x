@@ -77,6 +77,7 @@ func newTestServerWithEbayDisabled(t *testing.T, db *sql.DB, ebaySvc *ebay.Servi
 		nil,
 		"",
 		"",
+		0,
 	)
 	ts := httptest.NewServer(d.NewRouter())
 	t.Cleanup(ts.Close)

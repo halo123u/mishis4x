@@ -14,6 +14,8 @@ import AddSet from './components/AddSet.tsx';
 import OnboardCards from './components/OnboardCards.tsx';
 import SetDetail from './components/SetDetail.tsx';
 import DeckInsights from './components/DeckInsights.tsx';
+import ModelList from './components/ModelList.tsx';
+import ModelViewer from './components/ModelViewer.tsx';
 
 function App() {
   return (
@@ -40,6 +42,8 @@ function App() {
               element={<DeckInsights />}
             />
             <Route path="/collection/:setID" element={<SetDetail />} />
+            <Route path="/models" element={<ModelList />} />
+            <Route path="/models/:charCode" element={<ModelViewer />} />
           </Route>
         </Routes>
       </GlobalDataProvider>

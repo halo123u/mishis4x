@@ -39,6 +39,11 @@ const Navigation = () => {
                 <Link to="/admin">Admin</Link>
               </li>
             )}
+            {globalData.model_viewer_enabled && (
+              <li>
+                <Link to="/models">Models</Link>
+              </li>
+            )}
             <li>
               <Link to="/account">Account</Link>
             </li>

@@ -204,6 +204,27 @@ func loadAdminUserID() int {
 	return id
 }
 
+// loadModelViewerUserID reads MODEL_VIEWER_USER_ID - the one users.id
+// allowed to see /api/models/... routes (see
+// handlers.Data.ModelViewerUserID's doc comment for why this is a
+// separate config value from ADMIN_USER_ID/COLLECTION_OWNER_USER_ID).
+// Unset/empty returns 0, which handlers.canAccessModels treats as
+// "nobody" - failing closed by default, same convention as
+// loadAdminUserID/loadCollectionOwnerUserID.
+func loadModelViewerUserID() int {
+	raw := os.Getenv("MODEL_VIEWER_USER_ID")
+	if raw == "" {
+		return 0
+	}
+
+	id, err := strconv.Atoi(raw)
+	if err != nil {
+		log.Fatal().Err(err).Str("MODEL_VIEWER_USER_ID", raw).Msg("invalid MODEL_VIEWER_USER_ID")
+	}
+
+	return id
+}
+
 // loadAdminNotificationEmail reads ADMIN_NOTIFICATION_EMAIL - where
 // RequestInvite sends "someone wants access" to (see
 // handlers.Data.AdminNotificationEmail's doc comment for why this is its
@@ -352,6 +373,7 @@ var httpCMD = &cobra.Command{
 			loadEmailServiceForServer(),
 			loadAppBaseURL(),
 			loadAdminNotificationEmail(),
+			loadModelViewerUserID(),
 		)
 
 		// Shares the same DB pool/connection the request handlers already

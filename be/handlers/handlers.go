@@ -184,11 +184,24 @@ type Data struct {
 	// being unset already gets, never something that should block a real
 	// user's request from going through.
 	AdminNotificationEmail string
+	// ModelViewerUserID is the one users.id allowed to see
+	// /api/models/... routes - same single-owner, fail-closed-by-default
+	// shape as AdminUserID (unset/0 means nobody, not everybody), but a
+	// deliberately separate config value rather than a reuse of
+	// AdminUserID or CollectionOwnerUserID - see canAccessAdmin's own doc
+	// comment for why this codebase keeps single-owner gates separate
+	// even when they currently resolve to the same person. The reasoning
+	// here is specifically copyright, not eBay ToS (CollectionOwnerUserID)
+	// or app administration (AdminUserID): character_models stores
+	// unofficially-extracted, copyrighted Neowiz game assets, not
+	// something this app has any license to show a public/anonymous
+	// audience. See canAccessModels/modelOnlyMiddleware.
+	ModelViewerUserID int
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
 // its own internal state (the login/signup rate limiters).
-func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service, ebayListingsDisabled bool, priceTrendsEnabled bool, adminUserID int, emailSvc *email.Service, appBaseURL string, adminNotificationEmail string) *Data {
+func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookieConfig, collectionOwnerUserID int, collectionAllowAllUsers bool, ebaySvc *ebay.Service, ebayListingsDisabled bool, priceTrendsEnabled bool, adminUserID int, emailSvc *email.Service, appBaseURL string, adminNotificationEmail string, modelViewerUserID int) *Data {
 	return &Data{
 		P:                       p,
 		Lobby:                   lobby,
@@ -206,6 +219,7 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 		EmailService:            emailSvc,
 		AppBaseURL:              appBaseURL,
 		AdminNotificationEmail:  adminNotificationEmail,
+		ModelViewerUserID:       modelViewerUserID,
 	}
 }
 
@@ -276,6 +290,17 @@ func (d *Data) NewRouter() *mux.Router {
 	admin.HandleFunc("/invites", d.ListPendingInvites).Methods("GET")
 	admin.HandleFunc("/invites/{id}/approve", d.ApproveInviteRequest).Methods("POST")
 	admin.HandleFunc("/invites/{id}/deny", d.DenyInviteRequest).Methods("POST")
+
+	// Character model routes: gated by modelOnlyMiddleware - see
+	// ModelViewerUserID's doc comment for why. {charCode} is the source
+	// viewer's own 6-digit internal character ID (see character_models'
+	// migration), not one of this app's own catalog card ids.
+	models := api.PathPrefix("/models").Subrouter()
+	models.Use(d.modelOnlyMiddleware)
+	models.HandleFunc("", d.ListCharacterModels).Methods("GET")
+	models.HandleFunc("/{charCode}/skeleton", d.GetCharacterModelSkeleton).Methods("GET")
+	models.HandleFunc("/{charCode}/atlas", d.GetCharacterModelAtlas).Methods("GET")
+	models.HandleFunc("/{charCode}/texture", d.GetCharacterModelTexture).Methods("GET")
 
 	// healthcheck
 	r.PathPrefix("/healthcheck").HandlerFunc(d.Healthcheck).Methods("GET")
@@ -497,6 +522,29 @@ func (d Data) adminOnlyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := userIDFromContext(r)
 		if !ok || !d.canAccessAdmin(userID) {
+			writeJSONError(w, http.StatusForbidden, "Not available on this account.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// canAccessModels is the rule modelOnlyMiddleware enforces: does userID
+// match ModelViewerUserID. Deliberately its own check, not a reuse of
+// canAccessAdmin or canAccessCollection - see ModelViewerUserID's own doc
+// comment for why.
+func (d Data) canAccessModels(userID int) bool {
+	return d.ModelViewerUserID != 0 && userID == d.ModelViewerUserID
+}
+
+// modelOnlyMiddleware restricts a route to whoever canAccessModels
+// allows. Must run after AuthMiddleware (relies on userIDFromContext
+// already being set) - 401 still means "not logged in at all", this
+// returns 403 for "logged in, but not allowed to see this".
+func (d Data) modelOnlyMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := userIDFromContext(r)
+		if !ok || !d.canAccessModels(userID) {
 			writeJSONError(w, http.StatusForbidden, "Not available on this account.")
 			return
 		}

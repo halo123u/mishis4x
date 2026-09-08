@@ -11,4 +11,11 @@ type GlobalData struct {
 	// price-trend icon at all - see handlers.Data.PriceTrendsEnabled's
 	// doc comment for why this ships off by default rather than on.
 	PriceTrendsEnabled bool `json:"price_trends_enabled"`
+	// ModelViewerEnabled gates whether the frontend shows any link to the
+	// character model viewer - true only for the one account
+	// handlers.Data.ModelViewerUserID names, same single-owner shape as
+	// IsAdmin above but a deliberately separate check (copyright
+	// reasoning, not app administration - see ModelViewerUserID's own doc
+	// comment).
+	ModelViewerEnabled bool `json:"model_viewer_enabled"`
 }

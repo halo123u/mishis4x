@@ -10,6 +10,7 @@ export interface GlobalData {
   user: User;
   ebay_listings_enabled: boolean;
   price_trends_enabled: boolean;
+  model_viewer_enabled: boolean;
 }
 export interface Time {}
 export interface Set {

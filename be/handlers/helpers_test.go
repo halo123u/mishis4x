@@ -92,6 +92,7 @@ func newTestDataWithEbay(db *sql.DB, ebaySvc *ebay.Service) *Data {
 		nil,
 		"",
 		"",
+		0,
 	)
 }
 
@@ -113,6 +114,7 @@ func newTestDataWithPriceTrends(db *sql.DB) *Data {
 		nil,
 		"",
 		"",
+		0,
 	)
 }
 
@@ -139,6 +141,7 @@ func newTestDataWithAdmin(db *sql.DB, adminUserID int, emailSvc *email.Service, 
 		emailSvc,
 		appBaseURL,
 		adminNotificationEmail,
+		0,
 	)
 }
 
@@ -161,6 +164,29 @@ func newTestDataWithAdminNotification(db *sql.DB, emailSvc *email.Service, appBa
 		emailSvc,
 		appBaseURL,
 		adminNotificationEmail,
+		0,
+	)
+}
+
+// newTestDataWithModelViewer is newTestData, but with modelViewerUserID
+// recognized as the one account allowed to see /api/models/... routes -
+// for character_models_test.go, which needs to exercise both the 403-if-
+// not-that-account gate and the real asset-serving behavior once past it.
+func newTestDataWithModelViewer(db *sql.DB, modelViewerUserID int) *Data {
+	return NewData(
+		persist.Persist{DB: db},
+		&matchmaking.Lobby{Games: []*matchmaking.Game{}, GameID: 1},
+		testSessionCookieConfig(),
+		0,
+		false,
+		nil,
+		false,
+		false,
+		0,
+		nil,
+		"",
+		"",
+		modelViewerUserID,
 	)
 }
 
