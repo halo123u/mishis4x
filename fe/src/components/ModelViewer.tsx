@@ -144,6 +144,11 @@ const ModelViewer = () => {
     const canvas = canvasRef.current;
     let disposed = false;
     let rafHandle = 0;
+    // Assigned once the skeleton's actually loaded (see load() below) -
+    // declared out here, not inside load(), so the cleanup function below
+    // can still reach it to remove the listener regardless of how far
+    // load() got before this effect unmounts.
+    let onTap: (() => void) | null = null;
 
     const context = new ManagedWebGLRenderingContext(canvas, { alpha: true });
     const renderer = new SceneRenderer(canvas, context);
@@ -217,6 +222,42 @@ const ModelViewer = () => {
       if (animationName) {
         animationState.setAnimation(0, animationName, true);
       }
+
+      // Tap-to-react: BD2's own character screen plays a one-shot "motion"
+      // clip on tap/click before settling back on idle - see the reference
+      // viewer's animation dropdown, which lists "motion" alongside "idle"
+      // for every character checked so far. Not every imported skeleton is
+      // guaranteed to have one (same "log and skip" tolerance as a missing
+      // atlas region above), so this is a plain existence check rather than
+      // an assumption - tapping a character without a "motion" clip is a
+      // harmless no-op instead of a console error.
+      const hasMotionClip = skeletonData.animations.some(
+        (a) => a.name === 'motion',
+      );
+      // Guards against a rapid double-tap restarting "motion" mid-playback
+      // (which would cut the queued return-to-idle below short and never
+      // fire) - cleared by the "complete" listener once motion actually
+      // finishes, not on a timer, so it tracks the real animation length
+      // regardless of clip duration.
+      let motionPlaying = false;
+      animationState.addListener({
+        complete: (entry) => {
+          if (entry.animation?.name === 'motion') {
+            motionPlaying = false;
+          }
+        },
+      });
+      onTap = () => {
+        if (!hasMotionClip || motionPlaying) {
+          return;
+        }
+        motionPlaying = true;
+        animationState.setAnimation(0, 'motion', false);
+        if (animationName) {
+          animationState.addAnimation(0, animationName, true, 0);
+        }
+      };
+      canvas.addEventListener('click', onTap);
 
       // No second "_face0" track: BD2 skeletons list those alongside
       // "idle"/"motion" (see the reference viewer's own animation
@@ -297,6 +338,9 @@ const ModelViewer = () => {
 
     return () => {
       disposed = true;
+      if (onTap) {
+        canvas.removeEventListener('click', onTap);
+      }
       if (rafHandle) {
         cancelAnimationFrame(rafHandle);
       }
