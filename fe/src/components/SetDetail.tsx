@@ -10,6 +10,7 @@ import {
 } from '../types';
 import Button from './ui/Button';
 import CardCopyBrowseStack, { OwnedCopy } from './ui/CardCopyBrowseStack';
+import CardModelLink from './ui/CardModelLink';
 import CardThumbnail from './ui/CardThumbnail';
 import EbayIcon from './ui/EbayIcon';
 import EbayListingsCheck from './ui/EbayListingsCheck';
@@ -185,6 +186,10 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
   // doc comment). Showing the icon only to hide it again a moment later
   // once the real flag arrives would be worse than a brief absence.
   const priceTrendsEnabled = globalData?.price_trends_enabled ?? false;
+  // Same off-by-default-until-resolved shape as priceTrendsEnabled above -
+  // see GlobalData.model_viewer_enabled's own doc comment for why this
+  // gate exists at all (copyright, not eBay ToS or app administration).
+  const modelViewerEnabled = globalData?.model_viewer_enabled ?? false;
   // card_id -> trend, only for cards with at least 2 days of TCG
   // Republic history in the last week (see GetPriceTrendsForSet's doc
   // comment) - a card missing from this map just doesn't get a trend
@@ -1039,6 +1044,7 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                         <EbayIcon />
                       </a>
                     ))}
+                  {modelViewerEnabled && <CardModelLink card={card} />}
                 </div>
               );
             })}

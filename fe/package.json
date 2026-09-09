@@ -28,6 +28,8 @@
     "vite": "^8.2.1"
   },
   "dependencies": {
+    "@esotericsoftware/spine-core": "4.1.11",
+    "@esotericsoftware/spine-webgl": "4.1.11",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2"

@@ -10,6 +10,7 @@ export interface GlobalData {
   user: User;
   ebay_listings_enabled: boolean;
   price_trends_enabled: boolean;
+  model_viewer_enabled: boolean;
 }
 export interface Time {}
 export interface Set {
@@ -30,6 +31,7 @@ export interface Card {
   market_url?: string;
   last_known_market_price_cents?: number;
   last_known_market_checked_at?: Time;
+  character_model_char_code?: string;
 }
 export interface AddOwnedSetInput {
   set_id: string;
@@ -75,4 +77,7 @@ export interface AdminInviteRequest {
   id: number;
   email_address: string;
   created_at: Time;
+}
+export interface SetCardCharacterModelInput {
+  char_code?: string;
 }
