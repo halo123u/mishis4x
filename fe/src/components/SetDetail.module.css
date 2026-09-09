@@ -170,6 +170,23 @@
   opacity: 0.55;
 }
 
+/* Briefly marks the tile the user just scrolled back to from a model
+   view (SetDetail.tsx's scroll-to-hash effect) - a ring that fades out
+   on its own, not something that needs manual removal beyond the
+   highlightedCardID state clearing itself on a timer. */
+.tileHighlighted {
+  animation: tile-highlight 1.5s ease-out;
+}
+
+@keyframes tile-highlight {
+  0% {
+    box-shadow: 0 0 0 2px var(--teal);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
 .owned {
   color: var(--teal);
   font-weight: 600;
