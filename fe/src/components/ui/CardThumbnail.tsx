@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
+import { isLandscapeCard } from '../../cardOrientation';
 import styles from './CardThumbnail.module.css';
 
 // Must match .preview's CSS - used here purely to keep the preview
-// on-screen, never to size it (that's CSS's job).
+// on-screen, never to size it (that's CSS's job). Portrait's the default
+// shape (63:88, real trading-card proportions) - landscapeHeight below is
+// what showPreview actually uses for a landscape card (RRR/CR - see
+// cardOrientation.ts), the same ratio flipped (88:63).
 const PREVIEW_WIDTH = 260;
 const PREVIEW_HEIGHT = (PREVIEW_WIDTH * 88) / 63;
+const PREVIEW_HEIGHT_LANDSCAPE = (PREVIEW_WIDTH * 63) / 88;
 const GAP = 12;
 
 // (hover: hover) is the standard way to ask "does this input mechanism
@@ -41,6 +46,13 @@ const useSupportsHover = () => {
 
 type CardThumbnailProps = {
   cardId: string;
+  // Decides portrait (default) vs. landscape display shape - see
+  // cardOrientation.ts's isLandscapeCard. Optional only because a couple
+  // of call sites (loading-state placeholders with no real card data
+  // yet) genuinely don't have a rarity to check; defaults to portrait,
+  // the common case, rather than forcing every caller to thread one
+  // through even where it doesn't matter yet.
+  rarity?: string;
   // Renders a solid gray layer over just the small thumbnail - e.g. for a
   // "missing" row - deliberately NOT implemented as a wrapping opacity:
   // opacity on an ancestor composites its entire subtree as one
@@ -58,7 +70,12 @@ type CardThumbnailProps = {
 // next to the cursor on devices with real hover; tapping opens a
 // full-screen preview instead on touch devices, where there's no cursor
 // position to float a small box near anyway.
-const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
+const CardThumbnail = ({
+  cardId,
+  rarity,
+  dimmed = false,
+}: CardThumbnailProps) => {
+  const landscape = rarity != null && isLandscapeCard(rarity);
   const supportsHover = useSupportsHover();
   const [preview, setPreview] = useState<{
     top: number;
@@ -110,9 +127,10 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
       left = rect.left - GAP - PREVIEW_WIDTH;
     }
 
+    const previewHeight = landscape ? PREVIEW_HEIGHT_LANDSCAPE : PREVIEW_HEIGHT;
     let top = rect.top;
-    if (top + PREVIEW_HEIGHT > window.innerHeight) {
-      top = window.innerHeight - PREVIEW_HEIGHT - GAP;
+    if (top + previewHeight > window.innerHeight) {
+      top = window.innerHeight - previewHeight - GAP;
     }
     top = Math.max(GAP, top);
 
@@ -125,14 +143,25 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
     <>
       <span className={styles.wrapper}>
         {imageFailed ? (
-          <span className={styles.placeholder} aria-hidden="true">
+          <span
+            className={
+              landscape
+                ? `${styles.placeholder} ${styles.placeholderLandscape}`
+                : styles.placeholder
+            }
+            aria-hidden="true"
+          >
             <span className={styles.placeholderLabel}>Coming soon</span>
           </span>
         ) : (
           <img
             src={`/api/cards/${cardId}/image`}
             alt=""
-            className={styles.thumbnail}
+            className={
+              landscape
+                ? `${styles.thumbnail} ${styles.thumbnailLandscape}`
+                : styles.thumbnail
+            }
             // Sets running 100+ cards render every thumbnail at once - the
             // browser's native lazy-loading defers each image's actual
             // network request until it's near the viewport, instead of
@@ -158,7 +187,11 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
           <img
             src={`/api/cards/${cardId}/image`}
             alt=""
-            className={styles.previewImage}
+            className={
+              landscape
+                ? `${styles.previewImage} ${styles.previewImageLandscape}`
+                : styles.previewImage
+            }
           />
           {dimmed && (
             <span className={styles.previewDimOverlay} aria-hidden="true" />
@@ -190,7 +223,11 @@ const CardThumbnail = ({ cardId, dimmed = false }: CardThumbnailProps) => {
             <img
               src={`/api/cards/${cardId}/image`}
               alt=""
-              className={styles.fullscreenImage}
+              className={
+                landscape
+                  ? `${styles.fullscreenImage} ${styles.fullscreenImageLandscape}`
+                  : styles.fullscreenImage
+              }
             />
             {dimmed && (
               <span

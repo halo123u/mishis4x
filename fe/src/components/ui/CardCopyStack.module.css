@@ -60,6 +60,13 @@
   cursor: pointer;
 }
 
+/* RRR/CR cards are genuinely landscape-printed (see
+   fe/src/cardOrientation.ts) - the .peek layers below fill this box via
+   inset: 0, so fixing the stack's own shape is all they need too. */
+.stackLandscape {
+  aspect-ratio: 88 / 63;
+}
+
 .peek {
   position: absolute;
   inset: 0;

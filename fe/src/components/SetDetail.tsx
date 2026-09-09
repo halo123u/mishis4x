@@ -936,7 +936,11 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
                       onCycle={() => cycleCopy(card.id)}
                     />
                   ) : (
-                    <CardThumbnail cardId={card.id} dimmed={quantity === 0} />
+                    <CardThumbnail
+                      cardId={card.id}
+                      rarity={card.rarity}
+                      dimmed={quantity === 0}
+                    />
                   )}
                   <div className={styles.tileName}>{card.name}</div>
                   <div className={styles.tileCode}>{card.code}</div>

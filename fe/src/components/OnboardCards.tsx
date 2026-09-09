@@ -385,6 +385,7 @@ const OnboardCards = () => {
                   <CardCopyStack
                     cardId={card.id}
                     cardName={card.name}
+                    rarity={card.rarity}
                     copies={copies}
                     activeIndex={activeIndex}
                     shuffling={shufflingCard === card.id}
