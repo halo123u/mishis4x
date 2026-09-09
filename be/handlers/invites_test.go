@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -27,6 +28,40 @@ func testInviteEmail(t *testing.T, db *sql.DB) string {
 	email := fmt.Sprintf("ht-request-%d-%d@example.com", os.Getpid(), testInviteEmailCounter)
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM invites WHERE email_address = ?`, email) })
 	return email
+}
+
+// TestValidateEmailAddress is a plain unit test (no DB, no server) - the
+// HTTP-level tests below cover the same behavior end to end, but this is
+// the fast, exhaustive place to enumerate edge cases like the missing-TLD
+// one that prompted the dot-in-domain check in the first place.
+func TestValidateEmailAddress(t *testing.T) {
+	cases := []struct {
+		name  string
+		email string
+		valid bool
+	}{
+		{"valid", "someone@example.com", true},
+		{"valid with subdomain", "someone@mail.example.com", true},
+		{"valid short TLD", "someone@example.io", true},
+		{"empty", "", false},
+		{"missing @", "not-an-email", false},
+		{"display name syntax rejected", "Someone <someone@example.com>", false},
+		{"missing TLD entirely", "oswaldo.almazo@gmail", false},
+		{"trailing dot, nothing after", "someone@example.", false},
+		{"single-char TLD", "someone@example.c", false},
+		{"too long", strings.Repeat("a", maxEmailLen) + "@example.com", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			msg := validateEmailAddress(c.email)
+			if c.valid {
+				require.Empty(t, msg, "expected %q to be accepted", c.email)
+			} else {
+				require.NotEmpty(t, msg, "expected %q to be rejected", c.email)
+			}
+		})
+	}
 }
 
 func TestRequestInvite_Success(t *testing.T) {
@@ -59,6 +94,23 @@ func TestRequestInvite_InvalidEmail(t *testing.T) {
 
 	res := postJSON(t, client, ts.URL+"/api/invites/request", map[string]string{
 		"email_address": "not-an-email",
+	})
+	require.Equal(t, http.StatusBadRequest, res.StatusCode)
+	require.Equal(t, "Please enter a valid email address.", decodeError(t, res))
+}
+
+// TestRequestInvite_EmailMissingTLD covers the exact gap found live: a
+// domain with no dot at all (e.g. a typo'd "gmail" instead of
+// "gmail.com") is syntactically valid RFC 5322 - net/mail.ParseAddress
+// accepts it with no error - so validateEmailAddress needs its own
+// explicit dot-in-domain check on top of that, not just delegate to
+// ParseAddress.
+func TestRequestInvite_EmailMissingTLD(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServer(t, db)
+
+	res := postJSON(t, client, ts.URL+"/api/invites/request", map[string]string{
+		"email_address": "oswaldo.almazo@gmail",
 	})
 	require.Equal(t, http.StatusBadRequest, res.StatusCode)
 	require.Equal(t, "Please enter a valid email address.", decodeError(t, res))
