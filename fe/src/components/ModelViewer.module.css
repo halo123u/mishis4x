@@ -15,6 +15,10 @@
   width: 100%;
   height: 100%;
   display: block;
+  /* Tapping/clicking the character plays its one-shot "motion" clip (see
+     ModelViewer.tsx's onTap) - unlike CardThumbnail's hover, this is a
+     real action, so a hand cursor earns its keep here. */
+  cursor: pointer;
 }
 
 .back {
