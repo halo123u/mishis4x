@@ -302,6 +302,20 @@ const ModelViewer = () => {
       }
       assetManager.dispose();
       renderer.dispose();
+      // Explicitly releases the GPU memory behind this context right
+      // now, rather than waiting on the canvas element itself to get
+      // garbage collected (not a fixed timeline, especially on mobile).
+      // This is the one thing actually under this component's control
+      // for the "leaving the model reloads the whole page" complaint on
+      // phones: the texture this canvas holds is large enough that
+      // mobile Safari/Chrome will otherwise treat this as a heavy page
+      // and evict it from the back-cache the moment memory gets tight,
+      // turning a normal "go back" into a full network reload instead of
+      // an instant restore. Freeing the GPU allocation as soon as this
+      // route unmounts - not once GC eventually gets around to it - is
+      // the most this component can do to make that less likely; it
+      // can't force the browser to keep the previous page cached.
+      context.gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
   }, [charCode]);
 

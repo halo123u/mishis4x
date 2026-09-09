@@ -91,6 +91,11 @@ const SetDetail = () => {
 
 const SetDetailContent = ({ setID }: { setID?: string }) => {
   const [cards, setCards] = useState<Card[] | null>(null);
+  // Which card (if any) to briefly highlight after scrolling back to it
+  // from a model view - see the scroll-to-hash effect below.
+  const [highlightedCardID, setHighlightedCardID] = useState<string | null>(
+    null,
+  );
   // Only needed for the plain eBay search link's query, shown as a
   // fallback when ebayListingsEnabled is false (see EbayListingsCheck's
   // real listings flow, which computes its own query server-side and
@@ -295,6 +300,52 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
         setError('Could not reach the server. Please try again.');
       });
   }, [setID]);
+
+  // Scrolls back to (and briefly highlights) whichever card the user
+  // tapped into a model from - see CardModelLink's own comment for why
+  // this reads the URL hash rather than any in-memory state: on a phone,
+  // ModelViewer's WebGL canvas is heavy enough that backing out is often
+  // a genuine fresh reload (the browser evicting the page from its
+  // back-cache under memory pressure), not a client-side pop - anything
+  // that only lived in JS state is already gone by the time this effect
+  // runs, but the hash survived because it's part of the URL itself.
+  // Gated on `cards` (not just [setID]/mount): the target tile doesn't
+  // exist in the DOM until the cards fetch above actually resolves, so
+  // scrolling any earlier would have nothing to scroll to yet.
+  useEffect(() => {
+    if (!cards || !window.location.hash.startsWith('#card-')) {
+      return;
+    }
+
+    const cardID = window.location.hash.slice('#card-'.length);
+    const el = document.getElementById(`card-${cardID}`);
+    if (!el) {
+      return;
+    }
+
+    el.scrollIntoView({ block: 'center' });
+
+    // Clears the hash once it's been acted on - a plain history rewrite,
+    // not a react-router navigate(), so it doesn't itself push/replace
+    // an entry on top of the one CardModelLink already set up.
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + window.location.search,
+    );
+
+    // Deferred rather than called directly in the effect body - setting
+    // state synchronously inside an effect triggers a cascading render
+    // React itself warns against; a timer callback (even at 0ms) is a
+    // genuine async boundary instead.
+    const highlightTimer = setTimeout(() => setHighlightedCardID(cardID), 0);
+    const clearTimer = setTimeout(() => setHighlightedCardID(null), 1500);
+
+    return () => {
+      clearTimeout(highlightTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [cards]);
 
   // Re-checks just this card's shared price-source url (POST
   // /api/cards/{id}/refresh-price - see be/handlers/refresh_price.go,
@@ -867,11 +918,14 @@ const SetDetailContent = ({ setID }: { setID?: string }) => {
               return (
                 <div
                   key={card.id}
-                  className={
-                    quantity === 0
-                      ? `${styles.tile} ${styles.tileMissing}`
-                      : styles.tile
-                  }
+                  id={`card-${card.id}`}
+                  className={[
+                    styles.tile,
+                    quantity === 0 && styles.tileMissing,
+                    highlightedCardID === card.id && styles.tileHighlighted,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                 >
                   {quantity > 1 ? (
                     <CardCopyBrowseStack
