@@ -1,4 +1,5 @@
 import { FC } from 'react';
+import { isLandscapeCard } from '../../cardOrientation';
 import CardThumbnail from './CardThumbnail';
 import RefreshIcon from './RefreshIcon';
 import styles from './CardCopyStack.module.css';
@@ -18,6 +19,7 @@ export type CardCopyDraft = {
 type CardCopyStackProps = {
   cardId: string;
   cardName: string;
+  rarity: string;
   copies: CardCopyDraft[];
   activeIndex: number;
   shuffling: boolean;
@@ -44,6 +46,7 @@ type CardCopyStackProps = {
 const CardCopyStack: FC<CardCopyStackProps> = ({
   cardId,
   cardName,
+  rarity,
   copies,
   activeIndex,
   shuffling,
@@ -54,6 +57,7 @@ const CardCopyStack: FC<CardCopyStackProps> = ({
 }) => {
   const quantity = copies.length;
   const active = copies[activeIndex];
+  const landscape = isLandscapeCard(rarity);
 
   const priceBox = (copy: CardCopyDraft | undefined, label: string) => (
     <span className={styles.priceInputWrap}>
@@ -78,7 +82,7 @@ const CardCopyStack: FC<CardCopyStackProps> = ({
   if (quantity <= 1) {
     return (
       <div className={styles.single}>
-        <CardThumbnail cardId={cardId} />
+        <CardThumbnail cardId={cardId} rarity={rarity} />
         {priceBox(copies[0], `Price paid for ${cardName}`)}
       </div>
     );
@@ -87,7 +91,11 @@ const CardCopyStack: FC<CardCopyStackProps> = ({
   return (
     <div className={styles.wrapper}>
       <div
-        className={[styles.stack, shuffling ? styles.shuffling : '']
+        className={[
+          styles.stack,
+          landscape ? styles.stackLandscape : '',
+          shuffling ? styles.shuffling : '',
+        ]
           .filter(Boolean)
           .join(' ')}
         role="button"
@@ -113,7 +121,7 @@ const CardCopyStack: FC<CardCopyStackProps> = ({
         )}
         <span className={`${styles.peek} ${styles.peek1}`} aria-hidden="true" />
         <span className={styles.front}>
-          <CardThumbnail cardId={cardId} />
+          <CardThumbnail cardId={cardId} rarity={rarity} />
         </span>
         <button
           type="button"

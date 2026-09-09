@@ -19,6 +19,15 @@
   transition: filter 0.15s ease;
 }
 
+/* RRR/CR cards are genuinely landscape-printed (see
+   fe/src/cardOrientation.ts) - the same 63:88 card proportions, just
+   flipped, not a different shape entirely. Applied alongside .thumbnail,
+   not instead of it - only overrides the one property that needs to
+   differ. */
+.thumbnailLandscape {
+  aspect-ratio: 88 / 63;
+}
+
 /* A brightness lift signals "hovering this does something" without
    overpromising the way cursor: pointer would - there's no click here,
    only hover (it floats the preview), so a hand cursor would imply an
@@ -45,6 +54,10 @@
   border-radius: var(--radius-md);
   background: var(--surface);
   border: 1px dashed var(--hairline);
+}
+
+.placeholderLandscape {
+  aspect-ratio: 88 / 63;
 }
 
 .placeholderLabel {
@@ -85,6 +98,10 @@
   height: auto;
   object-fit: cover;
   border-radius: var(--radius-md);
+}
+
+.previewImageLandscape {
+  aspect-ratio: 88 / 63;
 }
 
 /* Same technique as .dimOverlay (a real layer, not opacity on .preview
@@ -143,6 +160,15 @@
   object-fit: cover;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
+}
+
+/* A wider cap than .fullscreenImage's own 22rem - a landscape card at
+   that width is noticeably short (22rem * 63/88 ~= 15.75rem tall), so
+   this gives it more room to actually read as a full-screen preview
+   rather than a small strip; still bounded by 85vw either way. */
+.fullscreenImageLandscape {
+  aspect-ratio: 88 / 63;
+  width: min(85vw, 32rem);
 }
 
 /* Same technique as .dimOverlay/.previewDimOverlay - a real layer sized to

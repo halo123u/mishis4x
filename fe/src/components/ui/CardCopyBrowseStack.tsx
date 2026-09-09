@@ -1,5 +1,6 @@
 import { FC } from 'react';
 import type { Card } from '../../types';
+import { isLandscapeCard } from '../../cardOrientation';
 import { computeMarketDelta } from '../../marketDelta';
 import CardThumbnail from './CardThumbnail';
 import RefreshIcon from './RefreshIcon';
@@ -38,6 +39,7 @@ const CardCopyBrowseStack: FC<CardCopyBrowseStackProps> = ({
 }) => {
   const quantity = copies.length;
   const active = copies[activeIndex];
+  const landscape = isLandscapeCard(card.rarity);
 
   const detail = (copy: OwnedCopy | undefined, indexLabel?: string) => (
     <div className={styles.browseDetail}>
@@ -70,7 +72,7 @@ const CardCopyBrowseStack: FC<CardCopyBrowseStackProps> = ({
   if (quantity <= 1) {
     return (
       <div className={styles.single}>
-        <CardThumbnail cardId={card.id} />
+        <CardThumbnail cardId={card.id} rarity={card.rarity} />
         {detail(copies[0])}
       </div>
     );
@@ -79,7 +81,11 @@ const CardCopyBrowseStack: FC<CardCopyBrowseStackProps> = ({
   return (
     <div className={styles.wrapper}>
       <div
-        className={[styles.stack, shuffling ? styles.shuffling : '']
+        className={[
+          styles.stack,
+          landscape ? styles.stackLandscape : '',
+          shuffling ? styles.shuffling : '',
+        ]
           .filter(Boolean)
           .join(' ')}
         role="button"
@@ -101,7 +107,7 @@ const CardCopyBrowseStack: FC<CardCopyBrowseStackProps> = ({
         )}
         <span className={`${styles.peek} ${styles.peek1}`} aria-hidden="true" />
         <span className={styles.front}>
-          <CardThumbnail cardId={card.id} />
+          <CardThumbnail cardId={card.id} rarity={card.rarity} />
         </span>
         <button
           type="button"
