@@ -17,6 +17,11 @@ type inviteRequestBody struct {
 	EmailAddress string `json:"email_address"`
 }
 
+// validateEmailAddress is shared by every entry point that takes a raw,
+// user-typed email address (RequestInvite, RequestPasswordReset) -
+// UserCreate doesn't need its own copy, since signup only ever uses the
+// email already attached to an invite record, which went through this
+// same check when the invite was requested.
 func validateEmailAddress(emailAddress string) string {
 	switch {
 	case emailAddress == "":
@@ -29,6 +34,20 @@ func validateEmailAddress(emailAddress string) string {
 	// accept the bare address form, not that display-name syntax.
 	parsed, err := mail.ParseAddress(emailAddress)
 	if err != nil || parsed.Address != emailAddress {
+		return "Please enter a valid email address."
+	}
+
+	// mail.ParseAddress is pure RFC 5322 *syntax* parsing, not real-world
+	// domain shape - RFC 5322's addr-spec grammar genuinely permits a
+	// single-label domain with no dot at all, so "someone@gmail" (missing
+	// its own ".com") parses without error. Requiring a dot, with at
+	// least two characters after the last one (every real TLD is 2+
+	// chars), catches that without a DNS/MX lookup - not a guarantee the
+	// address is real or deliverable, just a cheap, obvious typo this
+	// would otherwise let straight through.
+	domain := emailAddress[strings.LastIndex(emailAddress, "@")+1:]
+	lastDot := strings.LastIndex(domain, ".")
+	if lastDot == -1 || len(domain)-lastDot-1 < 2 {
 		return "Please enter a valid email address."
 	}
 
