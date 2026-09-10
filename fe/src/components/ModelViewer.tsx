@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AnimationState,
   AnimationStateData,
@@ -145,14 +145,87 @@ class TolerantAttachmentLoader extends AtlasAttachmentLoader {
 // requiring a deliberate dismiss.
 const CONTROLS_HIDE_DELAY_MS = 3000;
 
+// Maps a flip mode to the CSS transform that produces it - a plain
+// lookup rather than building the transform string directly, so an
+// unrecognized value (bad query param, corrupted localStorage) falls
+// back to no transform at all instead of silently passing junk through
+// to the stylesheet. Order here is the cycle order the toggle button
+// steps through.
+const FLIP_MODES = ['x', 'y', '180'] as const;
+type FlipMode = (typeof FLIP_MODES)[number];
+const FLIP_TRANSFORMS: Record<FlipMode, string> = {
+  x: 'scaleX(-1)',
+  y: 'scaleY(-1)',
+  '180': 'rotate(180deg)',
+};
+
+// Scoped to this feature specifically (not a generic app-wide settings
+// key) since it's a physical-device quirk, not a user preference this
+// app has any other concept of.
+const FLIP_MODE_STORAGE_KEY = 'modelViewerFlipMode';
+
 const ModelViewer = () => {
   const { charCode } = useParams<{ charCode: string }>();
   const navigate = useNavigate();
   const stageRef = useRef<HTMLDivElement>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Physical Pepper's Ghost/acrylic-reflection rigs need the rendered
+  // character mirrored/rotated to come out correctly oriented once the
+  // reflection itself flips it again - not something a normal browser
+  // viewer of this page ever wants, so it defaults off. Settable two
+  // ways, kept in sync with each other: the ?flip=x|y|180 query param
+  // (handy for the "try it against the real acrylic" workflow, where
+  // editing a URL and reloading beats a redeploy per attempt), and the
+  // flipToggle button below it for a device that's actually mounted
+  // behind the acrylic, where there's no practical way to type a URL -
+  // see that button's own doc comment. localStorage is what makes the
+  // button's choice stick across navigating to a different character on
+  // the same physical device, without needing the URL's own help.
+  const [flipMode, setFlipMode] = useState<FlipMode | null>(() => {
+    const fromQuery = searchParams.get('flip');
+    if (fromQuery && (FLIP_MODES as readonly string[]).includes(fromQuery)) {
+      return fromQuery as FlipMode;
+    }
+    const stored = localStorage.getItem(FLIP_MODE_STORAGE_KEY);
+    return stored && (FLIP_MODES as readonly string[]).includes(stored)
+      ? (stored as FlipMode)
+      : null;
+  });
+  const flipTransform = flipMode ? FLIP_TRANSFORMS[flipMode] : undefined;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
+
+  // Steps null -> 'x' -> 'y' -> '180' -> null - persisted to
+  // localStorage (survives navigating to a different character on this
+  // same device/browser) and mirrored into the URL (survives a refresh,
+  // and keeps a manually-edited ?flip= URL and the button from fighting
+  // each other over which one's "right").
+  const cycleFlipMode = () => {
+    const next =
+      flipMode === null
+        ? FLIP_MODES[0]
+        : (FLIP_MODES[FLIP_MODES.indexOf(flipMode) + 1] ?? null);
+    setFlipMode(next);
+    if (next) {
+      localStorage.setItem(FLIP_MODE_STORAGE_KEY, next);
+    } else {
+      localStorage.removeItem(FLIP_MODE_STORAGE_KEY);
+    }
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        if (next) {
+          updated.set('flip', next);
+        } else {
+          updated.delete('flip');
+        }
+        return updated;
+      },
+      { replace: true },
+    );
+  };
 
   useEffect(() => {
     if (!charCode || !canvasRef.current) {
@@ -469,27 +542,56 @@ const ModelViewer = () => {
 
   return (
     <div className={styles.stage} ref={stageRef}>
-      {/* Real browser back, not a fixed /models link: this route is
-          reachable both from the model picker (/models) and directly
-          from a linked card in the collection tracker (CardModelLink,
-          SetDetail.tsx) - going back should return to wherever the user
-          actually came from, not always the picker. Bottom, not top-left:
-          top corners are the hardest part of a phone screen to reach
-          one-handed, exactly where this sat before - see
-          CONTROLS_HIDE_DELAY_MS above for why it also isn't permanently
-          on-screen once it's actually reachable. */}
-      <button
-        type="button"
-        onClick={() => navigate(-1)}
-        className={[styles.back, controlsVisible ? '' : styles.backHidden]
+      <div
+        className={[
+          styles.controls,
+          controlsVisible ? '' : styles.controlsHidden,
+        ]
           .filter(Boolean)
           .join(' ')}
       >
-        ← Back
-      </button>
+        {/* Real browser back, not a fixed /models link: this route is
+            reachable both from the model picker (/models) and directly
+            from a linked card in the collection tracker (CardModelLink,
+            SetDetail.tsx) - going back should return to wherever the
+            user actually came from, not always the picker. Bottom, not
+            top-left: top corners are the hardest part of a phone screen
+            to reach one-handed, exactly where this sat before - see
+            CONTROLS_HIDE_DELAY_MS above for why it also isn't
+            permanently on-screen once it's actually reachable. */}
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className={styles.back}
+        >
+          ← Back
+        </button>
+        {/* Same flip a ?flip= URL param already does (see FLIP_MODES'
+            own doc comment) - this is the on-screen way to reach it for
+            a device actually mounted behind a physical acrylic/Pepper's
+            Ghost reflector, where there's no address bar to type a URL
+            into at all, unlike a phone/desktop browser just testing the
+            page normally. */}
+        <button
+          type="button"
+          onClick={cycleFlipMode}
+          className={
+            flipMode
+              ? `${styles.flipToggle} ${styles.flipToggleActive}`
+              : styles.flipToggle
+          }
+          aria-label="Cycle the display flip mode, for a physical Pepper's Ghost/acrylic-reflection setup"
+        >
+          Flip: {flipMode ? flipMode.toUpperCase() : 'Off'}
+        </button>
+      </div>
       {loading && !error && <p className={styles.status}>Loading…</p>}
       {error && <p className={styles.status}>{error}</p>}
-      <canvas ref={canvasRef} className={styles.canvas} />
+      <canvas
+        ref={canvasRef}
+        className={styles.canvas}
+        style={flipTransform ? { transform: flipTransform } : undefined}
+      />
     </div>
   );
 };
