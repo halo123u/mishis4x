@@ -1,6 +1,7 @@
 -- Voice-line clips for a character model (see character_models' own
 -- migration for the base asset set this supplements). Same source as
--- the skeleton/atlas/texture assets (jelosus2/BD2-L2D-Viewer), same
+-- the skeleton/atlas/texture assets (see model-import's own doc comment
+-- for why that source host isn't named here or in committed code), same
 -- copyright/allowlist-only reasoning, same model-import CLI command -
 -- this table is populated by the same command, not a separate one.
 --
