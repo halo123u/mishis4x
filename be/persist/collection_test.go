@@ -12,7 +12,7 @@ func TestSetLifecycle(t *testing.T) {
 	p := &Persist{DB: db}
 
 	release := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	id, err := p.CreateSet(t.Context(), "Brown Dust 2", 100, &release, "pending")
+	id, err := p.CreateSet(t.Context(), "Test Card Set", 100, &release, "pending")
 	require.NoError(t, err)
 	require.NotEmpty(t, id)
 	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", id) })
@@ -20,7 +20,7 @@ func TestSetLifecycle(t *testing.T) {
 	fetched, err := p.GetSet(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, id, fetched.ID)
-	require.Equal(t, "Brown Dust 2", fetched.Name)
+	require.Equal(t, "Test Card Set", fetched.Name)
 	require.Equal(t, 100, fetched.CardCount)
 	require.Equal(t, "pending", fetched.Status)
 	require.NotNil(t, fetched.ReleaseDate)
@@ -52,7 +52,7 @@ func TestCardLifecycle(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 2, nil, "pending")
 	require.NoError(t, err)
 	// cards must go before sets - cards.set_id FKs to sets(id), so deleting
 	// the set first silently fails (err discarded here on purpose, same as
@@ -91,7 +91,7 @@ func TestCard_UniquePerSetAndCode(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)

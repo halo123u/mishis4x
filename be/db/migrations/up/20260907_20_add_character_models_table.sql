@@ -1,15 +1,16 @@
 -- Stores the Spine (colloquially "Live2D" - they're actually different,
 -- commonly-confused animation middleware products) model assets for a
--- curated allowlist of Brown Dust 2 characters: skeleton/animation data
--- (.skel), the texture-region mapping (.atlas), and the texture image
--- itself. All three are unofficially-extracted, copyrighted Neowiz game
--- assets (sourced via a fan viewer, not Neowiz directly) - this table is
--- deliberately populated only by the model-import CLI command against a
--- hand-picked list of char_codes, never by user-facing input, and every
--- route that serves these back out is gated to one account (see
--- handlers.Data.ModelViewerUserID) the same way collection-tracker's
--- eBay-sourced data is - see that field's doc comment for the parallel,
--- independently-motivated (copyright, not eBay ToS) reasoning.
+-- curated allowlist of characters from one mobile game: skeleton/
+-- animation data (.skel), the texture-region mapping (.atlas), and the
+-- texture image itself. All three are unofficially-extracted, copyrighted
+-- game assets (sourced via a fan viewer, not the game's publisher
+-- directly) - this table is deliberately populated only by the
+-- model-import CLI command against a hand-picked list of char_codes,
+-- never by user-facing input, and every route that serves these back out
+-- is gated to one account (see handlers.Data.ModelViewerUserID) the same
+-- way collection-tracker's eBay-sourced data is - see that field's doc
+-- comment for the parallel, independently-motivated (copyright, not eBay
+-- ToS) reasoning.
 --
 -- char_code is the source viewer's own 6-digit internal character ID
 -- (e.g. "002406") - the natural key here, not a surrogate id, same

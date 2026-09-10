@@ -53,7 +53,7 @@ looked up/created by name as they're encountered.
 placeholder card_count=0/release_date=nil/status="pending" that a
 name-only lookup would otherwise fall back to. JSON shape:
 
-  {"name": "Brown Dust 2", "card_count": 100, "release_date": "2026-07-03", "status": "active"}
+  {"name": "<real set name>", "card_count": 100, "release_date": "2026-07-03", "status": "active"}
 
 release_date is "YYYY-MM-DD" and optional (omit or leave "" for no date).
 
@@ -95,7 +95,7 @@ local layout - see be/.gitignore): --file, --set-file, and --images-dir
 are derived as sets/<name>/catalog.csv, sets/<name>/set.json, and
 sets/<name>/images, so a full run is just:
 
-  process-set --name brown-dust-2 --refresh
+  process-set --name <set-folder-name> --refresh
 
 Combining --name with any of --file/--set-file/--images-dir is refused
 rather than silently picking one - use the explicit flags directly for

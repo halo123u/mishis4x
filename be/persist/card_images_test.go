@@ -10,7 +10,7 @@ func TestGetCardImage_NoneStoredReturnsNotFound(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
@@ -28,7 +28,7 @@ func TestUpsertCardImage_StoreAndUpdate(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	// card_images isn't cleaned up separately - it cascades automatically
 	// when its card is deleted (see the migration's ON DELETE CASCADE).
@@ -71,7 +71,7 @@ func TestCardImage_CascadesOnCardDelete(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)

@@ -30,7 +30,7 @@ func fakeEbayServer(t *testing.T) *httptest.Server {
 			"itemSummaries": []map[string]any{
 				{
 					"itemId":     "v1|111|0",
-					"title":      "Weiss Schwarz Brown Dust 2 BRD/W139-086S",
+					"title":      "Weiss Schwarz Test Card Set BRD/W139-086S",
 					"price":      map[string]any{"value": "42.00", "currency": "USD"},
 					"condition":  "New",
 					"seller":     map[string]any{"username": "seller_a", "feedbackPercentage": "99.5"},

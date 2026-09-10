@@ -193,9 +193,9 @@ type Data struct {
 	// even when they currently resolve to the same person. The reasoning
 	// here is specifically copyright, not eBay ToS (CollectionOwnerUserID)
 	// or app administration (AdminUserID): character_models stores
-	// unofficially-extracted, copyrighted Neowiz game assets, not
-	// something this app has any license to show a public/anonymous
-	// audience. See canAccessModels/modelOnlyMiddleware.
+	// unofficially-extracted, copyrighted game assets, not something this
+	// app has any license to show a public/anonymous audience. See
+	// canAccessModels/modelOnlyMiddleware.
 	ModelViewerUserID int
 }
 

@@ -39,7 +39,7 @@ func TestListSets(t *testing.T) {
 	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
 
@@ -55,7 +55,7 @@ func TestListSets(t *testing.T) {
 	for _, s := range sets {
 		if s.ID == setID {
 			found = true
-			require.Equal(t, "Brown Dust 2", s.Name)
+			require.Equal(t, "Test Card Set", s.Name)
 			require.Equal(t, "pending", s.Status)
 		}
 	}
@@ -78,7 +78,7 @@ func TestListCardsForSet(t *testing.T) {
 	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 2, nil, "pending")
 	require.NoError(t, err)
 	// cards must go before sets - cards.set_id FKs to sets(id).
 	t.Cleanup(func() {
@@ -123,7 +123,7 @@ func TestGetCardImage_ReturnsStoredImage(t *testing.T) {
 	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
@@ -150,7 +150,7 @@ func TestGetCardImage_NoneStoredIsNotFound(t *testing.T) {
 	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
@@ -205,7 +205,7 @@ func TestListOwnedSets_StartsEmpty(t *testing.T) {
 	// starts empty until they onboard something, even though ListSets
 	// itself is non-empty.
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID) })
 
@@ -235,7 +235,7 @@ func TestAddOwnedSet_ThenListedAsOwned(t *testing.T) {
 	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
@@ -291,7 +291,7 @@ func TestDeleteOwnedSet_RemovesSetAndCards(t *testing.T) {
 	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -344,7 +344,7 @@ func TestListOwnedCardsForSet(t *testing.T) {
 	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -397,7 +397,7 @@ func TestSetOwnedCardsForSet_RecordsOwnership(t *testing.T) {
 	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 2, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -432,7 +432,7 @@ func TestSetOwnedCardsForSet_RecordsPricePaid(t *testing.T) {
 	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -478,7 +478,7 @@ func TestSetOwnedCardsForSet_ByID_EditsAndDeletesSpecificCopies(t *testing.T) {
 	userID := createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -537,7 +537,7 @@ func TestSetOwnedCardsForSet_UnknownCardIsRejected(t *testing.T) {
 	createAndLoginTestUser(t, db, client, ts.URL)
 
 	p := &persist.Persist{DB: db}
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)

@@ -3,8 +3,8 @@
 -- a model imported at all (model-import's own allowlist is deliberately
 -- small, see its doc comment), and a real FK rather than a loose string:
 -- a card can only point at a char_code that's actually been imported.
--- Several cards commonly point at the same char_code (the same BD2
--- character drawn at different rarities is usually the same model), so
+-- Several cards commonly point at the same char_code (the same character
+-- drawn at different rarities is usually the same model), so
 -- this is many-to-one, not a join table - a single card never needs more
 -- than one model at a time.
 --

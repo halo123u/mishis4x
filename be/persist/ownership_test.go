@@ -28,7 +28,7 @@ func TestOwnedSetLifecycle(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	// owned_sets before sets - owned_sets.set_id FKs to sets(id).
 	t.Cleanup(func() {
@@ -48,7 +48,7 @@ func TestSetOwnedSet_Idempotent(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
@@ -68,7 +68,7 @@ func TestOwnedCard_NotOwnedReturnsZeroQuantity(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	// cards must go before sets - cards.set_id FKs to sets(id).
 	t.Cleanup(func() {
@@ -89,7 +89,7 @@ func TestSetCardQuantity_UpsertAndUpdate(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	// owned_cards, then cards, then sets - each FKs to the previous.
 	t.Cleanup(func() {
@@ -119,7 +119,7 @@ func TestDeleteOwnedSet_RemovesSetAndItsCards(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -164,7 +164,7 @@ func TestSetOwnedCards_BulkUpsertAndUpdate(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -207,7 +207,7 @@ func TestSetOwnedCards_PricePaidCents(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -264,7 +264,7 @@ func TestListOwnedCardsBySet(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 2, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 2, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -324,7 +324,7 @@ func TestListOwnedSets(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, sets)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_sets WHERE user_id = ?", userID)
@@ -343,7 +343,7 @@ func TestListOwnedSets(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sets, 1)
 	require.Equal(t, setID, sets[0].ID)
-	require.Equal(t, "Brown Dust 2", sets[0].Name)
+	require.Equal(t, "Test Card Set", sets[0].Name)
 }
 
 // TestSetOwnedCards_IncrementalPriceOnlyAffectsNewCopy is #108's actual
@@ -356,7 +356,7 @@ func TestSetOwnedCards_IncrementalPriceOnlyAffectsNewCopy(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -403,7 +403,7 @@ func TestSetCardQuantity_DecreaseRemovesMostRecentCopyFirst(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -443,7 +443,7 @@ func TestSetOwnedCards_ByID_EditsAnArbitraryOlderCopy(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -495,7 +495,7 @@ func TestSetOwnedCards_ByID_DeletesOmittedCopyAndCreatesNew(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
@@ -553,7 +553,7 @@ func TestSetOwnedCards_ByID_ForeignIDIsIgnored(t *testing.T) {
 	p := &Persist{DB: db}
 	userID := setupOwnershipTestUser(t, p)
 
-	setID, err := p.CreateSet(t.Context(), "Brown Dust 2", 1, nil, "pending")
+	setID, err := p.CreateSet(t.Context(), "Test Card Set", 1, nil, "pending")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
