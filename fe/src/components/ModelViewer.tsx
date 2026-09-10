@@ -163,6 +163,7 @@ const FLIP_TRANSFORMS: Record<FlipMode, string> = {
 // key) since it's a physical-device quirk, not a user preference this
 // app has any other concept of.
 const FLIP_MODE_STORAGE_KEY = 'modelViewerFlipMode';
+const PEPPER_MODE_STORAGE_KEY = 'modelViewerPepperMode';
 
 const ModelViewer = () => {
   const { charCode } = useParams<{ charCode: string }>();
@@ -192,6 +193,29 @@ const ModelViewer = () => {
       : null;
   });
   const flipTransform = flipMode ? FLIP_TRANSFORMS[flipMode] : undefined;
+  // Pepper Mode is a second, independent concern from flipMode above -
+  // flipMode is about the character looking right to the *audience*
+  // seeing it through the acrylic's reflection; this is about whoever's
+  // physically operating the device being able to read/tap Back and the
+  // flip toggle at all. On a rig where the phone itself ends up mounted
+  // rotated 180° relative to the operator (the same mounting that makes
+  // the reflection work in the first place), the controls - normally
+  // bottom-of-screen, right-side-up - land upside-down and at the wrong
+  // physical edge for them. Pepper Mode counter-rotates the whole
+  // .controls cluster 180° and repositions it to the top of the DOM so
+  // that, once physically flipped, it both reads correctly and ends up
+  // at the edge that's actually "the bottom" from the operator's real
+  // vantage point. Same dual-source persistence as flipMode: ?pepper=1
+  // for the initial setup workflow, localStorage
+  // (PEPPER_MODE_STORAGE_KEY) for the on-screen toggle to stick across
+  // characters without needing the URL's help again.
+  const [pepperMode, setPepperMode] = useState<boolean>(() => {
+    const fromQuery = searchParams.get('pepper');
+    if (fromQuery !== null) {
+      return fromQuery === '1' || fromQuery === 'true';
+    }
+    return localStorage.getItem(PEPPER_MODE_STORAGE_KEY) === '1';
+  });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -220,6 +244,28 @@ const ModelViewer = () => {
           updated.set('flip', next);
         } else {
           updated.delete('flip');
+        }
+        return updated;
+      },
+      { replace: true },
+    );
+  };
+
+  const togglePepperMode = () => {
+    const next = !pepperMode;
+    setPepperMode(next);
+    if (next) {
+      localStorage.setItem(PEPPER_MODE_STORAGE_KEY, '1');
+    } else {
+      localStorage.removeItem(PEPPER_MODE_STORAGE_KEY);
+    }
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        if (next) {
+          updated.set('pepper', '1');
+        } else {
+          updated.delete('pepper');
         }
         return updated;
       },
@@ -546,6 +592,7 @@ const ModelViewer = () => {
         className={[
           styles.controls,
           controlsVisible ? '' : styles.controlsHidden,
+          pepperMode ? styles.controlsPepperMode : '',
         ]
           .filter(Boolean)
           .join(' ')}
@@ -583,6 +630,22 @@ const ModelViewer = () => {
           aria-label="Cycle the display flip mode, for a physical Pepper's Ghost/acrylic-reflection setup"
         >
           Flip: {flipMode ? flipMode.toUpperCase() : 'Off'}
+        </button>
+        {/* See pepperMode's own doc comment above - this rotates/
+            repositions this whole button row (itself included), not
+            just the character, so toggling it back off is still
+            readable/reachable the same way toggling it on was. */}
+        <button
+          type="button"
+          onClick={togglePepperMode}
+          className={
+            pepperMode
+              ? `${styles.flipToggle} ${styles.flipToggleActive}`
+              : styles.flipToggle
+          }
+          aria-label="Toggle Pepper Mode - rotates and repositions these controls for reading/tapping them on a device physically mounted upside-down for a Pepper's Ghost rig"
+        >
+          Pepper: {pepperMode ? 'On' : 'Off'}
         </button>
       </div>
       {loading && !error && <p className={styles.status}>Loading…</p>}

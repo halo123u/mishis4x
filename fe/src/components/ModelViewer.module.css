@@ -67,6 +67,23 @@
   }
 }
 
+/* Pepper Mode (see ModelViewer.tsx's pepperMode doc comment): the phone
+   itself ends up physically mounted rotated 180° relative to whoever's
+   operating it directly, on a rig built for someone else to view the
+   character's own reflection correctly - this rotates the controls the
+   same 180° so their labels read right-side-up despite that, and moves
+   them from bottom to top so that, once the physical rotation is
+   accounted for, they land at the edge that's actually closest to the
+   operator's reach. rotate(180deg), not scaleY(-1): a scale mirrors
+   button text into an unreadable, backwards shape, where a rotation
+   keeps it as ordinary upside-down text - legible the same way turning
+   a printed page upside-down still is. */
+.controlsPepperMode {
+  bottom: auto;
+  top: var(--space-4);
+  transform: translateX(-50%) rotate(180deg);
+}
+
 .back,
 .flipToggle {
   color: var(--ink);
