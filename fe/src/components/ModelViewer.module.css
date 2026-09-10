@@ -9,6 +9,15 @@
   align-items: center;
   justify-content: center;
   background: var(--paper);
+  /* Only actually claims anything on a notched/home-indicator iPhone when
+     launched standalone (see index.html's apple-mobile-web-app-capable
+     doc comment) - viewport-fit=cover is what makes the viewport cover
+     that area in the first place, this is what keeps content drawn inside
+     it rather than under the notch/home indicator. A no-op env() falls
+     back to 0 on every other device, so this is safe to leave on
+     unconditionally rather than gating it behind a standalone check. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .canvas {

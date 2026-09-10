@@ -1,9 +1,38 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover opts into the full physical screen on notched/
+         home-indicator iPhones (Safari's default viewport otherwise letterboxes
+         around those areas) - paired with env(safe-area-inset-*) padding on
+         ModelViewer's fullscreen .stage so that reclaimed space actually gets
+         used instead of just being unsafe-to-draw-in. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <!-- Standalone/home-screen-app meta tags: iOS Safari has no Fullscreen
+         API for arbitrary elements (only <video> gets one), so there is no
+         way to hide Safari's own chrome from within a normal browser tab -
+         this is the one real opt-in that does it, but only for someone who
+         has added this site to their Home Screen (Share -> Add to Home
+         Screen) and launches it from that icon rather than from Safari
+         itself. apple-mobile-web-app-capable is what actually switches that
+         launch to a chrome-less standalone window; the icon/title/status-bar
+         tags just make that shortcut look and feel like a real app rather
+         than a bookmark. Anyone who already added this site to their Home
+         Screen before these tags existed needs to remove and re-add it - iOS
+         reads this at add-time, not on every launch, so an existing icon
+         won't pick this up retroactively. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="mishis4x" />
+    <meta name="theme-color" content="#0f1215" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
