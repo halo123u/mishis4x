@@ -184,6 +184,77 @@ func TestGetCharacterModelAssets_NonOwnerForbidden(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, res.StatusCode)
 }
 
+func TestGetCharacterModelAudio_StreamsStoredClip(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+	charCode := testCharCode(t)
+	storeTestCharacterModel(t, db, charCode)
+	p := &persist.Persist{DB: db}
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM character_model_audio WHERE char_code = ?", charCode)
+	})
+	require.NoError(t, p.UpsertCharacterModelAudio(t.Context(), charCode, "JP", 1, []byte("not a real .webm, just test bytes"), "audio/webm"))
+
+	res, err := client.Get(ts.URL + "/api/models/" + charCode + "/audio/JP/1")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	require.Equal(t, "audio/webm", res.Header.Get("Content-Type"))
+}
+
+func TestGetCharacterModelAudio_NotImportedReturnsNotFound(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+	charCode := testCharCode(t)
+	storeTestCharacterModel(t, db, charCode)
+
+	// The model itself exists, but no clip was ever stored for this
+	// language/index - the ordinary "this character has fewer clips than
+	// the frontend probed for" case, not an error.
+	res, err := client.Get(ts.URL + "/api/models/" + charCode + "/audio/JP/3")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusNotFound, res.StatusCode)
+}
+
+func TestGetCharacterModelAudio_InvalidClipIndexBadRequest(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+	charCode := testCharCode(t)
+	storeTestCharacterModel(t, db, charCode)
+
+	res, err := client.Get(ts.URL + "/api/models/" + charCode + "/audio/JP/not-a-number")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusBadRequest, res.StatusCode)
+}
+
+func TestGetCharacterModelAudio_NonOwnerForbidden(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithModelViewer(t, db)
+	charCode := testCharCode(t)
+	storeTestCharacterModel(t, db, charCode)
+	p := &persist.Persist{DB: db}
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM character_model_audio WHERE char_code = ?", charCode)
+	})
+	require.NoError(t, p.UpsertCharacterModelAudio(t.Context(), charCode, "JP", 1, []byte("a"), "audio/webm"))
+
+	username := testUsername(t, db)
+	createTestUser(t, db, username, "correctpass123")
+	client := newClient(t)
+	loginRes := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, loginRes.StatusCode)
+
+	res, err := client.Get(ts.URL + "/api/models/" + charCode + "/audio/JP/1")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+}
+
 // createTestCardForModelLink creates a fresh set+card, returning both
 // ids - the setup every SetCardCharacterModel test needs, factored out
 // since none of them care about the set/card themselves beyond having a

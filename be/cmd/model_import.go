@@ -33,6 +33,31 @@ import (
 // outside tests.
 var modelAssetBaseURL = "https://jelosus2.github.io/BD2-L2D-Viewer/assets/spines"
 
+// modelAudioAssetBaseURL is the same source viewer's sibling asset path
+// for voice-line clips - confirmed by reading the viewer's own SpineViewer.vue
+// (getAudioAssetRoot()) and verifying directly against the real host:
+// {base}/{charCode}/{language}/Char{charCode}_BattleReady_{1,2,3}.webm,
+// no auth, same as the spine assets. A separate var (not modelAssetBaseURL
+// with "spines" swapped for "audios" at call time) purely so tests can
+// point it at a different fake server independently of the spine one -
+// see setModelAudioAssetBaseURLForTest in model_import_test.go.
+var modelAudioAssetBaseURL = "https://jelosus2.github.io/BD2-L2D-Viewer/assets/audios"
+
+// audioLanguages is deliberately JP-only, not both of the source
+// viewer's two tracks (it also stores "KR" - confirmed against its own
+// settingsStore.ts, AudioLanguage = 'JP' | 'KR' - there is no English
+// track): a product decision, not a technical limit - the schema
+// (character_model_audio.language) and every persist/handler function
+// here are already language-generic, so adding "KR" back (or any other
+// value the source ever stores) is just appending to this slice, not a
+// migration.
+var audioLanguages = []string{"JP"}
+
+// audioClipsPerLanguage is the source viewer's own hardcoded rotation
+// size (SpineViewer.vue: [1, 2, 3].map(...)) - confirmed directly too,
+// clip 4 404s.
+const audioClipsPerLanguage = 3
+
 // modelDownloadTimeout is per-file, matching ebay/email's own per-request
 // timeout convention - three files per character, each gets its own
 // budget rather than one timeout shared across all of them.
@@ -68,12 +93,21 @@ ever fetches char codes someone has deliberately chosen, one at a time.
 
 Re-running against an already-imported char code overwrites its stored
 assets (ON DUPLICATE KEY UPDATE) - safe to re-run if the source viewer
-ever updates a model.
+ever updates a model, and the only way to backfill voice audio onto a
+character imported before this command downloaded it.
 
 A single char code's download failure (network error, unexpected status,
 one of the three files missing) is logged and skipped rather than
 aborting the rest of the list - the same per-item tolerance
 process-set uses for a malformed CSV row.
+
+Voice-line audio (JP only - see audioLanguages' own doc comment - 3
+clips) is downloaded alongside the core skeleton/atlas/texture for
+every char code, tolerantly: unlike the three core files (all-or-nothing
+- an unrenderable model isn't worth partially storing), a missing audio
+clip just means that character has fewer lines than another, or none at
+all - it's logged and skipped per clip, never fatal to the character's
+import as a whole.
 
 --card optionally links the imported model to one or more catalog cards
 in the same run, given --set-name to say which set they belong to -
@@ -144,7 +178,9 @@ func modelImport(ctx context.Context, p *persist.Persist, charCodes []string) {
 			continue
 		}
 		imported++
-		log.Info().Str("charCode", charCode).Msg("imported character model")
+
+		audioStored, audioSkipped := importCharacterModelAudio(ctx, client, p, charCode)
+		log.Info().Str("charCode", charCode).Int("audioClipsStored", audioStored).Int("audioClipsSkipped", audioSkipped).Msg("imported character model")
 	}
 
 	log.Info().Int("imported", imported).Int("skipped", skipped).Msg("model-import finished")
@@ -211,10 +247,13 @@ func linkCardIDsToCharacterModel(ctx context.Context, p *persist.Persist, charCo
 	log.Info().Int("linked", linked).Int("skipped", skipped).Msg("--card-id linking finished")
 }
 
-// importCharacterModel downloads all three of one character's asset files
-// and stores them together. Fails as a whole (nothing partially stored)
-// if any one of the three can't be fetched - a model missing its texture
-// or atlas isn't renderable, so there's no useful partial state to keep.
+// importCharacterModel downloads all three of one character's core asset
+// files and stores them together. Fails as a whole (nothing partially
+// stored) if any one of the three can't be fetched - a model missing its
+// texture or atlas isn't renderable, so there's no useful partial state
+// to keep. Voice audio is deliberately not part of this all-or-nothing
+// group - see importCharacterModelAudio, called separately by
+// modelImport below only once this succeeds.
 func importCharacterModel(ctx context.Context, client *http.Client, p *persist.Persist, charCode string) error {
 	skeleton, err := downloadModelAsset(ctx, client, charCode, "skel")
 	if err != nil {
@@ -232,6 +271,73 @@ func importCharacterModel(ctx context.Context, client *http.Client, p *persist.P
 	}
 
 	return p.UpsertCharacterModel(ctx, charCode, skeleton, atlas, texture, http.DetectContentType(texture))
+}
+
+// importCharacterModelAudio downloads and stores every voice-line clip
+// it can find for charCode across every audioLanguages entry, tolerating a
+// missing clip/language the same way modelImport tolerates a whole
+// character failing - see this command's own doc comment on audio for
+// why this is per-clip tolerant rather than all-or-nothing like
+// importCharacterModel above it. Requires charCode to already have a
+// character_models row (this table's own FK enforces it) - callers
+// always run this after importCharacterModel succeeds, never before.
+func importCharacterModelAudio(ctx context.Context, client *http.Client, p *persist.Persist, charCode string) (stored, skipped int) {
+	for _, language := range audioLanguages {
+		for index := 1; index <= audioClipsPerLanguage; index++ {
+			audio, err := downloadAudioClip(ctx, client, charCode, language, index)
+			if err != nil {
+				// Not logged - a character having fewer than 3 clips in
+				// a language, or no clips in one language at all, is the
+				// ordinary case (most requests here are expected 404s,
+				// not real failures), so this stays quiet the same way a
+				// missing card image is elsewhere in this codebase.
+				skipped++
+				continue
+			}
+			// Not http.DetectContentType(audio) here, unlike the texture
+			// image above: Go's sniffer can't tell an audio-only WebM
+			// container apart from a video one and returns "video/webm"
+			// for these (confirmed against a real downloaded clip) -
+			// wrong enough to risk some browsers refusing it as an
+			// <audio> source. The source viewer's own files are always
+			// audio, by construction of this URL pattern, so this is
+			// hardcoded rather than sniffed.
+			if err := p.UpsertCharacterModelAudio(ctx, charCode, language, index, audio, "audio/webm"); err != nil {
+				log.Error().Err(err).Str("charCode", charCode).Str("language", language).Int("clipIndex", index).Msg("error storing audio clip, skipping")
+				skipped++
+				continue
+			}
+			stored++
+		}
+	}
+	return stored, skipped
+}
+
+// downloadAudioClip fetches one voice-line clip - index is 1-based,
+// matching the source viewer's own rotation. The clip's own name
+// ("Char{charCode}_BattleReady") is deterministic from charCode alone -
+// confirmed against the source viewer's character_list.ts, where every
+// entry's "audio" field follows this exact pattern - so there's no
+// separate per-character lookup table to maintain here.
+func downloadAudioClip(ctx context.Context, client *http.Client, charCode, language string, index int) ([]byte, error) {
+	url := fmt.Sprintf("%s/%s/%s/Char%s_BattleReady_%d.webm", modelAudioAssetBaseURL, charCode, language, charCode, index)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
+	}
+
+	return io.ReadAll(resp.Body)
 }
 
 // downloadModelAsset fetches one file for charCode - ext is "skel",

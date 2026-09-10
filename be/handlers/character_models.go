@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"example.com/mishis4x/api"
 	"example.com/mishis4x/persist"
@@ -56,6 +57,47 @@ func (d *Data) GetCharacterModelTexture(w http.ResponseWriter, r *http.Request) 
 	serveCharacterModelAsset(w, r, d.P, func(m persist.CharacterModel) ([]byte, string) {
 		return m.Texture, m.TextureContentType
 	})
+}
+
+// GetCharacterModelAudio streams one stored voice-line clip for the
+// character named by the {charCode} path variable, at the {language}
+// (e.g. "JP", "KR") and {clipIndex} (1-based) path variables. The
+// frontend is expected to probe clip_index 1, 2, 3 and stop at the
+// first 404 rather than calling a separate "list clips" endpoint first -
+// see GetCharacterModelAudioClip's own doc comment for why that's a
+// reasonable default here. A non-numeric {clipIndex} 400s rather than
+// panicking - real input from an untrusted client, same convention as
+// admin.go's inviteIDFromPath.
+func (d *Data) GetCharacterModelAudio(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	charCode := vars["charCode"]
+	language := vars["language"]
+
+	clipIndex, err := strconv.Atoi(vars["clipIndex"])
+	if err != nil {
+		http.Error(w, "Invalid clip index.", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	defer cancel()
+
+	clip, err := d.P.GetCharacterModelAudioClip(ctx, charCode, language, clipIndex)
+	if err != nil {
+		if errors.Is(err, persist.ErrCharacterModelAudioNotFound) {
+			http.Error(w, "Audio clip not found.", http.StatusNotFound)
+			return
+		}
+		log.Error().Err(err).Str("charCode", charCode).Str("language", language).Int("clipIndex", clipIndex).Msg("error getting character model audio clip")
+		http.Error(w, "Something went wrong.", http.StatusInternalServerError)
+		return
+	}
+
+	// Same caching convention as serveCharacterModelAsset - these only
+	// change on a deliberate model-import re-run.
+	w.Header().Set("Content-Type", clip.ContentType)
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	http.ServeContent(w, r, "", clip.UpdatedAt, bytes.NewReader(clip.Audio))
 }
 
 // SetCardCharacterModel links (or unlinks, if char_code is null) the card

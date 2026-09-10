@@ -51,6 +51,89 @@ func fakeModelAssetServer(t *testing.T, missingExt string) *httptest.Server {
 	return ts
 }
 
+// setModelAudioAssetBaseURLForTest is setModelAssetBaseURLForTest's
+// counterpart for modelAudioAssetBaseURL.
+func setModelAudioAssetBaseURLForTest(t *testing.T, url string) {
+	t.Helper()
+	original := modelAudioAssetBaseURL
+	modelAudioAssetBaseURL = url
+	t.Cleanup(func() { modelAudioAssetBaseURL = original })
+}
+
+// fakeModelAudioAssetServer stands in for the source viewer's audio host -
+// serves Char{charCode}_BattleReady_{index}.webm under /{charCode}/{language}/,
+// 404ing any index >= missingFromIndex (0 means "404 nothing", matching
+// how a real character might have fewer than audioClipsPerLanguage clips
+// in one or both languages).
+func fakeModelAudioAssetServer(t *testing.T, missingFromIndex int) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if missingFromIndex > 0 {
+			// The clip index is the digit right before ".webm" - good
+			// enough to parse out of the path without a full regex given
+			// this is fixed test-only URL shape.
+			path := r.URL.Path
+			indexChar := path[len(path)-len(".webm")-1]
+			if int(indexChar-'0') >= missingFromIndex {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("fake audio bytes for " + r.URL.Path))
+	}))
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func TestDownloadAudioClip_Success(t *testing.T) {
+	ts := fakeModelAudioAssetServer(t, 0)
+	setModelAudioAssetBaseURLForTest(t, ts.URL)
+	client := ts.Client()
+
+	data, err := downloadAudioClip(t.Context(), client, "002406", "JP", 1)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "002406/JP/Char002406_BattleReady_1.webm")
+}
+
+func TestDownloadAudioClip_NotFound(t *testing.T) {
+	ts := fakeModelAudioAssetServer(t, 1)
+	setModelAudioAssetBaseURLForTest(t, ts.URL)
+	client := ts.Client()
+
+	_, err := downloadAudioClip(t.Context(), client, "002406", "JP", 1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "404")
+}
+
+func TestImportCharacterModelAudio_StoresAvailableClipsSkipsMissing(t *testing.T) {
+	db := testDB(t)
+	p := &persist.Persist{DB: db}
+	charCode := testModelCharCode(t)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM character_model_audio WHERE char_code = ?", charCode)
+		_, _ = db.Exec("DELETE FROM character_models WHERE char_code = ?", charCode)
+	})
+	require.NoError(t, p.UpsertCharacterModel(t.Context(), charCode, []byte("s"), []byte("a"), []byte("t"), "image/png"))
+
+	// Only clip 1 exists in each language (missingFromIndex: 2) - real
+	// characters commonly have fewer than the full 3-clip rotation.
+	ts := fakeModelAudioAssetServer(t, 2)
+	client := ts.Client()
+	setModelAudioAssetBaseURLForTest(t, ts.URL)
+
+	stored, skipped := importCharacterModelAudio(t.Context(), client, p, charCode)
+	require.Equal(t, len(audioLanguages), stored, "exactly one clip per language should have been stored")
+	require.Equal(t, len(audioLanguages)*(audioClipsPerLanguage-1), skipped)
+
+	clip, err := p.GetCharacterModelAudioClip(t.Context(), charCode, "JP", 1)
+	require.NoError(t, err)
+	require.Contains(t, string(clip.Audio), "Char"+charCode+"_BattleReady_1.webm")
+
+	_, err = p.GetCharacterModelAudioClip(t.Context(), charCode, "JP", 2)
+	require.ErrorIs(t, err, persist.ErrCharacterModelAudioNotFound, "a clip the fake server 404'd must not be stored")
+}
+
 func TestDownloadModelAsset_Success(t *testing.T) {
 	ts := fakeModelAssetServer(t, "")
 	setModelAssetBaseURLForTest(t, ts.URL)
