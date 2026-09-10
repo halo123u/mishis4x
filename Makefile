@@ -34,7 +34,7 @@ run_prod_process_set:
 run_prod_set_price_sources:
 	@cd be && set -a && . infra/envs/prod/.env.local && set +a && go run main.go set-price-sources --env prod --name ${NAME}
 
-# make run_prod_model_import ARGS="--char 002406 --set-name 'Brown Dust 2' --card BRD/W139-001S --card BRD/W139-003S"
+# make run_prod_model_import ARGS="--char 002406 --set-name '<real set name>' --card BRD/W139-001S --card BRD/W139-003S"
 # ARGS is the whole flag string, not just --char, since --card/--set-name
 # are optional (see be/cmd/model_import.go's own doc comment) and there's
 # no single positional arg this target could sensibly default to instead.

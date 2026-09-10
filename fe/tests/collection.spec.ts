@@ -21,7 +21,7 @@ test("card manager: widget -> dashboard -> set detail -> back", async ({
 
   // The dashboard only lists onboarded (owned) sets, not the full catalog -
   // a fresh account starts empty here even though the catalog doesn't (see
-  // CollectionDashboard's own comment). Onboard "Brown Dust 2" via the real
+  // CollectionDashboard's own comment). Onboard "Test Card Set" via the real
   // Add-a-set flow if it isn't already: CI always starts from a fresh seed,
   // but a repeat run against a persistent local `make run_db` volume won't,
   // and the fixture only has this one set to onboard either way.
@@ -31,7 +31,7 @@ test("card manager: widget -> dashboard -> set detail -> back", async ({
   // shows up instead of guessing at the state before data has loaded.
   const alreadyOwned = await Promise.race([
     page
-      .getByText("Brown Dust 2")
+      .getByText("Test Card Set")
       .waitFor({ state: "visible" })
       .then(() => true),
     page
@@ -55,7 +55,7 @@ test("card manager: widget -> dashboard -> set detail -> back", async ({
     await expect(page).toHaveURL(/\/collection$/);
   }
 
-  await expect(page.getByText("Brown Dust 2")).toBeVisible();
+  await expect(page.getByText("Test Card Set")).toBeVisible();
 
   // The set name itself is plain text, not a link - each set now offers
   // two explicit actions ("View set" / "View insights") instead of the
@@ -114,7 +114,7 @@ test("card manager: a real non-owner account can access it too", async ({
   // Confirms GET /api/sets itself succeeds for this account too, not just
   // /api/owned-sets - the catalog picker is where that would show up.
   await page.getByRole("button", { name: "Add a set" }).click();
-  await expect(page.getByText("Brown Dust 2")).toBeVisible();
+  await expect(page.getByText("Test Card Set")).toBeVisible();
 });
 
 const login = async (page: Page, username: string, password: string) => {

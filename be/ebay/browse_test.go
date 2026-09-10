@@ -17,8 +17,8 @@ func TestSearchQuery(t *testing.T) {
 		code    string
 		want    string
 	}{
-		{"set name and full code", "Brown Dust 2", "BRD/W139-086S", "Brown Dust 2 086S"},
-		{"code with no dash - falls back to the whole thing", "Brown Dust 2", "086S", "Brown Dust 2 086S"},
+		{"set name and full code", "Test Card Set", "BRD/W139-086S", "Test Card Set 086S"},
+		{"code with no dash - falls back to the whole thing", "Test Card Set", "086S", "Test Card Set 086S"},
 		{"no set name - just the short code", "", "BRD/W139-086S", "086S"},
 	}
 	for _, tt := range tests {
@@ -72,14 +72,14 @@ func fakeEbayServer(t *testing.T) *httptest.Server {
 
 		q, err := url.QueryUnescape(r.URL.Query().Get("q"))
 		require.NoError(t, err)
-		require.Equal(t, "Brown Dust 2 086S", q)
+		require.Equal(t, "Test Card Set 086S", q)
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"itemSummaries": []map[string]any{
 				{
 					"itemId":    "v1|111|0",
-					"title":     "Weiss Schwarz Brown Dust 2 BRD/W139-086S",
+					"title":     "Weiss Schwarz Test Card Set BRD/W139-086S",
 					"price":     map[string]any{"value": "42.00", "currency": "USD"},
 					"condition": "New",
 					"seller": map[string]any{
@@ -114,7 +114,7 @@ func TestService_GetListings_FetchesLiveThenCaches(t *testing.T) {
 	server := fakeEbayServer(t)
 	svc := NewServiceWithURLs("app-id", "cert-id", server.URL+"/token", server.URL+"/search")
 
-	listings, err := svc.GetListings(t.Context(), "card-1", "Brown Dust 2 086S")
+	listings, err := svc.GetListings(t.Context(), "card-1", "Test Card Set 086S")
 	require.NoError(t, err)
 	require.Len(t, listings, 2)
 	require.Equal(t, "v1|111|0", listings[0].ItemID)

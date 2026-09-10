@@ -73,7 +73,7 @@ function loadPremultipliedTexture(
 
 // This Spine version's AtlasAttachmentLoader throws when an attachment's
 // named region is missing from the atlas, aborting the entire skeleton
-// load - real BD2 character data legitimately hits this (a mesh
+// load - real imported character data legitimately hits this (a mesh
 // belonging to a skin/variant the imported atlas doesn't cover). Later
 // Spine versions added an `allowMissingRegions` constructor flag for
 // exactly this; 4.1.11 doesn't have it, so this subclass gets the same
@@ -235,7 +235,7 @@ const ModelViewer = () => {
         animationState.setAnimation(0, animationName, true);
       }
 
-      // Tap-to-react: BD2's own character screen plays a one-shot "motion"
+      // Tap-to-react: the source game's own character screen plays a one-shot "motion"
       // clip on tap/click before settling back on idle - see the reference
       // viewer's animation dropdown, which lists "motion" alongside "idle"
       // for every character checked so far. Not every imported skeleton is
@@ -302,7 +302,7 @@ const ModelViewer = () => {
       };
       canvas.addEventListener('click', onTap);
 
-      // No second "_face0" track: BD2 skeletons list those alongside
+      // No second "_face0" track: these skeletons list those alongside
       // "idle"/"motion" (see the reference viewer's own animation
       // dropdown), and it's tempting to play one simultaneously for a
       // "real" expression - but they carry baked keyframes for body
