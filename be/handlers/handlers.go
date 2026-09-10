@@ -301,6 +301,7 @@ func (d *Data) NewRouter() *mux.Router {
 	models.HandleFunc("/{charCode}/skeleton", d.GetCharacterModelSkeleton).Methods("GET")
 	models.HandleFunc("/{charCode}/atlas", d.GetCharacterModelAtlas).Methods("GET")
 	models.HandleFunc("/{charCode}/texture", d.GetCharacterModelTexture).Methods("GET")
+	models.HandleFunc("/{charCode}/audio/{language}/{clipIndex}", d.GetCharacterModelAudio).Methods("GET")
 	models.HandleFunc("/cards/{cardID}", d.SetCardCharacterModel).Methods("PUT")
 
 	// healthcheck

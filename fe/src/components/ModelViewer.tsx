@@ -17,6 +17,14 @@ import {
 } from '@esotericsoftware/spine-webgl';
 import styles from './ModelViewer.module.css';
 
+// Matches be/cmd/model_import.go's audioClipsPerLanguage - the source
+// viewer's own hardcoded voice-line rotation size, confirmed directly
+// against the real host (clip 4 404s). Not fetched from the API: there's
+// no listing endpoint for it (see GetCharacterModelAudioClip's own doc
+// comment for why), so this is the same fixed convention the backend
+// already downloads by.
+const AUDIO_CLIPS_PER_LANGUAGE = 3;
+
 // This source PNG has straight (non-premultiplied) alpha, but spine-webgl's
 // Multiply blend mode (used by a couple of this character's shadow/overlay
 // slots) hardcodes a blend formula that only produces correct results
@@ -149,6 +157,10 @@ const ModelViewer = () => {
     // can still reach it to remove the listener regardless of how far
     // load() got before this effect unmounts.
     let onTap: (() => void) | null = null;
+    // Same reasoning as onTap just above - declared out here so cleanup
+    // can pause whatever voice clip is mid-playback on unmount, instead
+    // of letting it keep playing after navigating away from the model.
+    let currentAudio: HTMLAudioElement | null = null;
 
     const context = new ManagedWebGLRenderingContext(canvas, { alpha: true });
     const renderer = new SceneRenderer(canvas, context);
@@ -247,6 +259,36 @@ const ModelViewer = () => {
           }
         },
       });
+
+      // Voice line, cycled the same 1/2/3 round-robin the reference
+      // viewer's own playNextCharacterAudio does - and, like it, only
+      // triggered alongside a real "motion" play (its playCharacterMotion
+      // gates playNextCharacterAudio the same way), not independently. No
+      // "does this character have audio" probe beforehand: there's no
+      // listing endpoint (see GetCharacterModelAudioClip's own doc
+      // comment for why), so this is the same "just try it, tolerate a
+      // 404" approach as hasMotionClip's own tolerance for a missing
+      // clip - a character with no imported audio just plays nothing.
+      // JP only, by product decision (see model-import's own
+      // audioLanguages doc comment) - the API route is already
+      // language-generic (GET .../audio/{language}/{clipIndex}), so
+      // adding a language toggle later is a frontend-only change, not a
+      // backend one.
+      let nextAudioClipIndex = 1;
+      const playNextAudioClip = () => {
+        currentAudio?.pause();
+        const audio = new Audio(
+          `/api/models/${charCode}/audio/JP/${nextAudioClipIndex}`,
+        );
+        currentAudio = audio;
+        // A missing clip (character has none, or fewer than 3) rejects
+        // this promise - caught and ignored rather than logged, same
+        // tolerance as everything else optional about this feature.
+        void audio.play().catch(() => {});
+        nextAudioClipIndex =
+          (nextAudioClipIndex % AUDIO_CLIPS_PER_LANGUAGE) + 1;
+      };
+
       onTap = () => {
         if (!hasMotionClip || motionPlaying) {
           return;
@@ -256,6 +298,7 @@ const ModelViewer = () => {
         if (animationName) {
           animationState.addAnimation(0, animationName, true, 0);
         }
+        playNextAudioClip();
       };
       canvas.addEventListener('click', onTap);
 
@@ -341,6 +384,7 @@ const ModelViewer = () => {
       if (onTap) {
         canvas.removeEventListener('click', onTap);
       }
+      currentAudio?.pause();
       if (rafHandle) {
         cancelAnimationFrame(rafHandle);
       }
