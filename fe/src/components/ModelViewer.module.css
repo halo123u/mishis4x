@@ -30,10 +30,19 @@
   cursor: pointer;
 }
 
+/* Bottom-center, not top-left: the top corners of a phone screen are the
+   hardest part to reach one-handed, exactly where this sat before - see
+   ModelViewer.tsx's own comment on the button for the fuller reasoning,
+   and CONTROLS_HIDE_DELAY_MS there for why it also fades out rather than
+   sitting on-screen permanently now that it's actually in the way of the
+   character underneath it. Bottom-center rather than bottom-left/right:
+   reachable regardless of which hand is holding the phone, unlike a
+   corner that favors one side. */
 .back {
   position: absolute;
-  top: var(--space-4);
-  left: var(--space-4);
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1;
   color: var(--ink);
   text-decoration: none;
@@ -43,11 +52,28 @@
   border: 1px solid var(--hairline);
   border-radius: 6px;
   background: var(--surface);
+  opacity: 1;
+  transition: opacity 0.25s ease;
 }
 
 .back:hover,
 .back:focus-visible {
   border-color: var(--teal);
+}
+
+/* pointer-events: none while faded out - otherwise an invisible button
+   still sitting over the character would eat the tap meant to bring it
+   (and the motion/audio reaction) back, instead of both happening at
+   once the way ModelViewer.tsx's pointerdown listener intends. */
+.backHidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .back {
+    transition: none;
+  }
 }
 
 .status {

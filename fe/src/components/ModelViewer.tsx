@@ -137,12 +137,22 @@ class TolerantAttachmentLoader extends AtlasAttachmentLoader {
 // route unmounts (routing away, or React 18 StrictMode's dev-only
 // double-mount). Driving AssetManager/SceneRenderer directly instead
 // keeps the render loop cancelable on unmount.
+// How long the back button stays visible with no interaction before
+// fading out - long enough to read/react to a fresh screen, short
+// enough that it's actually out of the way for someone just watching
+// the model. Matches the general "video player controls" convention
+// (tap to bring the chrome back, it fades again on its own) rather than
+// requiring a deliberate dismiss.
+const CONTROLS_HIDE_DELAY_MS = 3000;
+
 const ModelViewer = () => {
   const { charCode } = useParams<{ charCode: string }>();
   const navigate = useNavigate();
+  const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(true);
 
   useEffect(() => {
     if (!charCode || !canvasRef.current) {
@@ -407,17 +417,73 @@ const ModelViewer = () => {
     };
   }, [charCode]);
 
+  // Auto-hides the back button after a stretch of no interaction, and
+  // brings it back on any tap/click anywhere in the stage (including one
+  // that also triggers the character's own tap-to-react motion+audio -
+  // there's no need to distinguish "tapped the character" from "tapped
+  // to bring controls back", both are true at once). A separate effect
+  // from the Spine setup above: this is pure UI chrome state, unrelated
+  // to loading/rendering the model itself, and touching it doesn't need
+  // to re-run any of that expensive setup.
+  //
+  // Deliberately not auto-hidden while loading or errored - someone
+  // stuck on a slow load or a failure needs an obvious, persistent way
+  // out, not one that fades away while they're waiting or reading the
+  // error.
+  useEffect(() => {
+    // Both branches below only ever call setControlsVisible from a
+    // deferred callback (setTimeout(..., 0), a real event listener), not
+    // synchronously from the effect body itself - react-hooks/
+    // set-state-in-effect flags the latter as a cascading-render smell,
+    // same reasoning as SetDetail.tsx's own setTimeout(..., 0) around
+    // setHighlightedCardID.
+    if (loading || error) {
+      const showTimer = setTimeout(() => setControlsVisible(true), 0);
+      return () => clearTimeout(showTimer);
+    }
+
+    let hideTimer: ReturnType<typeof setTimeout>;
+    const resetHideTimer = () => {
+      setControlsVisible(true);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(
+        () => setControlsVisible(false),
+        CONTROLS_HIDE_DELAY_MS,
+      );
+    };
+
+    const initialTimer = setTimeout(resetHideTimer, 0);
+
+    // pointerdown, not click - fires uniformly for touch/mouse/pen, and
+    // fires immediately on press rather than waiting for a full
+    // click-cycle, matching how quickly the controls should reappear.
+    const stage = stageRef.current;
+    stage?.addEventListener('pointerdown', resetHideTimer);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearTimeout(hideTimer);
+      stage?.removeEventListener('pointerdown', resetHideTimer);
+    };
+  }, [loading, error]);
+
   return (
-    <div className={styles.stage}>
+    <div className={styles.stage} ref={stageRef}>
       {/* Real browser back, not a fixed /models link: this route is
           reachable both from the model picker (/models) and directly
           from a linked card in the collection tracker (CardModelLink,
           SetDetail.tsx) - going back should return to wherever the user
-          actually came from, not always the picker. */}
+          actually came from, not always the picker. Bottom, not top-left:
+          top corners are the hardest part of a phone screen to reach
+          one-handed, exactly where this sat before - see
+          CONTROLS_HIDE_DELAY_MS above for why it also isn't permanently
+          on-screen once it's actually reachable. */}
       <button
         type="button"
         onClick={() => navigate(-1)}
-        className={styles.back}
+        className={[styles.back, controlsVisible ? '' : styles.backHidden]
+          .filter(Boolean)
+          .join(' ')}
       >
         ← Back
       </button>
