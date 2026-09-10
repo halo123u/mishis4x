@@ -200,13 +200,13 @@ const ModelViewer = () => {
   // flip toggle at all. On a rig where the phone itself ends up mounted
   // rotated 180° relative to the operator (the same mounting that makes
   // the reflection work in the first place), the controls - normally
-  // bottom-of-screen, right-side-up - land upside-down and at the wrong
-  // physical edge for them. Pepper Mode counter-rotates the whole
-  // .controls cluster 180° and repositions it to the top of the DOM so
-  // that, once physically flipped, it both reads correctly and ends up
-  // at the edge that's actually "the bottom" from the operator's real
-  // vantage point. Same dual-source persistence as flipMode: ?pepper=1
-  // for the initial setup workflow, localStorage
+  // bottom-of-screen, right-side-up - land upside-down for them. Pepper
+  // Mode counter-rotates the whole .controls cluster 180° in place (see
+  // .controlsPepperMode's own doc comment for why this doesn't also
+  // reposition it - confirmed against the real rig that the anchor
+  // point should stay put) so the labels read correctly again despite
+  // the phone's own physical rotation. Same dual-source persistence as
+  // flipMode: ?pepper=1 for the initial setup workflow, localStorage
   // (PEPPER_MODE_STORAGE_KEY) for the on-screen toggle to stick across
   // characters without needing the URL's help again.
   const [pepperMode, setPepperMode] = useState<boolean>(() => {
