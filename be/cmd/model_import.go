@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"example.com/mishis4x/logger"
@@ -14,34 +15,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// modelAssetBaseURL is jelosus2/BD2-L2D-Viewer's own GitHub Pages asset
-// path (https://github.com/jelosus2/BD2-L2D-Viewer) - a fan-made viewer
-// for Brown Dust 2's Spine character models, unofficially extracted from
-// the game client. Confirmed by inspecting the viewer's real network
-// traffic: every character's three files live at a predictable
-// {base}/{charCode}/char{charCode}.{skel,atlas,png}, no auth, no signed
-// URLs, unrelated to the anim/skin/type query params the viewer's own UI
-// takes (those only pick what its JS plays client-side from the same
-// fixed file set).
+// modelAssetBaseURL/modelAudioAssetBaseURL are the source asset host's
+// two base paths (character model files and voice-line audio,
+// respectively) - a third-party fan viewer's own GitHub Pages site that
+// happens to serve unofficially-extracted game assets, unrelated to
+// this app's own infrastructure. Read from MODEL_ASSET_BASE_URL /
+// MODEL_AUDIO_ASSET_BASE_URL rather than hardcoded, deliberately: the
+// real values (which name that third-party project) live only in the
+// gitignored infra/envs/{local,prod}/.env.local files (see
+// be/infra/envs/prod/.env.local's own header comment for the
+// source-then-run pattern), never in committed source - this is the one
+// external dependency in this codebase specific enough to a single
+// copyrighted game that it's worth keeping out of a public repo
+// entirely, not just out of the asset data itself (already handled by
+// character_models/character_model_audio only ever being populated by
+// this hand-run CLI command, never committed or auto-run).
 //
-// This is intentionally a hardcoded allowlist-driven CLI step (see this
-// command's own doc comment), not a user-facing or automatic import - the
-// assets themselves are Neowiz's copyrighted game content, not licensed
-// to the viewer or to this app.
-// A var, not a const, solely so tests can point it at a fake server (see
-// setModelAssetBaseURLForTest in model_import_test.go) - never reassigned
-// outside tests.
-var modelAssetBaseURL = "https://jelosus2.github.io/BD2-L2D-Viewer/assets/spines"
-
-// modelAudioAssetBaseURL is the same source viewer's sibling asset path
-// for voice-line clips - confirmed by reading the viewer's own SpineViewer.vue
-// (getAudioAssetRoot()) and verifying directly against the real host:
-// {base}/{charCode}/{language}/Char{charCode}_BattleReady_{1,2,3}.webm,
-// no auth, same as the spine assets. A separate var (not modelAssetBaseURL
-// with "spines" swapped for "audios" at call time) purely so tests can
-// point it at a different fake server independently of the spine one -
-// see setModelAudioAssetBaseURLForTest in model_import_test.go.
-var modelAudioAssetBaseURL = "https://jelosus2.github.io/BD2-L2D-Viewer/assets/audios"
+// Vars, not consts, both because they're read from the environment and
+// so tests can point them at a fake server (see
+// setModelAssetBaseURLForTest/setModelAudioAssetBaseURLForTest in
+// model_import_test.go) - never reassigned outside tests and the one
+// os.Getenv read below.
+var modelAssetBaseURL = os.Getenv("MODEL_ASSET_BASE_URL")
+var modelAudioAssetBaseURL = os.Getenv("MODEL_AUDIO_ASSET_BASE_URL")
 
 // audioLanguages is deliberately JP-only, not both of the source
 // viewer's two tracks (it also stores "KR" - confirmed against its own
@@ -66,7 +62,7 @@ const modelDownloadTimeout = 30 * time.Second
 func init() {
 	rootCMD.AddCommand(modelImportCMD)
 	modelImportCMD.Flags().StringArrayVarP(&modelImportChars, "char", "c", nil, "Character code to import (repeatable, e.g. -c 002406 -c 002407)")
-	modelImportCMD.Flags().StringVar(&modelImportSetName, "set-name", "", "Set the --card codes belong to (its real name, e.g. \"Brown Dust 2\" - see persist.GetSetIDByName). Required if --card is given.")
+	modelImportCMD.Flags().StringVar(&modelImportSetName, "set-name", "", "Set the --card codes belong to (its real name, exactly as stored in sets.name - see persist.GetSetIDByName). Required if --card is given.")
 	modelImportCMD.Flags().StringArrayVar(&modelImportCards, "card", nil, "Card code (e.g. BRD/W139-001S) to link the imported model to (repeatable) - the whole reason this is manual: several cards commonly share one model across rarities. Requires exactly one --char and --set-name.")
 	modelImportCMD.Flags().StringArrayVar(&modelImportCardIDs, "card-id", nil, "Card id (the UUID, not the code) to link the imported model to (repeatable) - skips the --set-name/code lookup entirely when you already have the id, e.g. copied from the collection UI's URL or a prior API response. Requires exactly one --char, same as --card.")
 	modelImportCMD.Flags().StringVarP(&env, "env", "e", "local", "Environment to connect to")
@@ -81,7 +77,8 @@ var modelImportCMD = &cobra.Command{
 	Use:   "model-import",
 	Short: "Download and store Spine character model assets for a hand-picked list of char codes",
 	Long: `Download a character's Spine model assets (skeleton, atlas, texture) from
-jelosus2's BD2-L2D-Viewer and store them in character_models.
+the configured source asset host (MODEL_ASSET_BASE_URL - see that var's own
+doc comment for why this isn't hardcoded) and store them in character_models.
 
 --char is repeatable and takes the viewer's own 6-digit internal
 character ID (visible in its URL as ?char=002406) - there's no
@@ -120,7 +117,7 @@ alongside exactly one --char - linking is refused outright with more
 than one, since there'd be no way to say which model a given --card
 should point at.
 
-  model-import --char 002406 --set-name "Brown Dust 2" \
+  model-import --char 002406 --set-name "<real set name>" \
     --card BRD/W139-001S --card BRD/W139-003S
 
 A --card code that doesn't match a real card in --set-name is logged
@@ -139,6 +136,16 @@ the more direct option when you already have it rather than the code:
 
 		if len(modelImportChars) == 0 {
 			log.Fatal().Msg("model-import requires at least one --char")
+		}
+		// Fails loudly here, at command-run time, rather than letting an
+		// empty modelAssetBaseURL silently 404 every download one at a
+		// time - both vars are only ever unset because someone hasn't
+		// sourced the right infra/envs/{local,prod}/.env.local yet (see
+		// modelAssetBaseURL's own doc comment), a setup mistake worth a
+		// clear message pointing at the fix, not a wall of per-character
+		// download errors that all say the same thing.
+		if modelAssetBaseURL == "" || modelAudioAssetBaseURL == "" {
+			log.Fatal().Msg("MODEL_ASSET_BASE_URL and MODEL_AUDIO_ASSET_BASE_URL must both be set - source the right infra/envs/{local,prod}/.env.local first")
 		}
 		if len(modelImportCards) > 0 || len(modelImportCardIDs) > 0 {
 			if len(modelImportCards) > 0 && modelImportSetName == "" {
