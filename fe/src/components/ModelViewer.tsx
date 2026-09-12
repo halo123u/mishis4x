@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useModelCanvas } from '../useModelCanvas';
 import { useSupportsHover } from '../useSupportsHover';
 import { useAutoHideControls } from '../useAutoHideControls';
-import { ModelDisplayStatus } from '../types';
+import { ModelDisplayState, ModelDisplayStatus } from '../types';
 import styles from './ModelViewer.module.css';
 
 // Maps a flip mode to the CSS transform that produces it - a plain
@@ -52,11 +52,13 @@ const OFFSET_STEP_PX = 20;
 // The lower bound stops short of 0 (which would render nothing) with
 // room to spare; the upper bound is an arbitrary "any more than this and
 // the character is unrecognizably cropped on a small phone screen"
-// judgment call, not derived from anything - easy to revisit once this
-// has actually been tried against the real rig.
+// judgment call, not derived from anything. Both bounds doubled (0.25-6,
+// from an original 0.5-3) at the real rig's own request - the original
+// range didn't let the character shrink or grow as far as actually
+// wanted against the physical acrylic.
 const ZOOM_STEP = 0.1;
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 3;
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 6;
 
 // How long a pan/zoom nudge waits with no further clicks/key-repeats
 // before actually pushing to the display - see schedulePushTransform's
@@ -171,13 +173,11 @@ const ModelViewer = () => {
   const supportsHover = useSupportsHover();
   // The display's pan/zoom correction (see ModelDisplay.tsx's own
   // offsetX/offsetY/zoom) - purely local to this controller, same as
-  // flipMode's relationship to the display's own Flip: not fetched back
-  // from the server on mount, so this always starts at "no correction"
-  // (0, 0, 1) regardless of whatever the display was last nudged to.
-  // Unlike flipMode, not persisted to localStorage/the URL either - this
-  // is a one-session, dial-it-in-live control tied to correcting the
-  // physical rig's current framing, not a setting worth remembering
-  // across visits the way flip's acrylic-mirroring correction is.
+  // flipMode's relationship to the display's own Flip. Not persisted to
+  // localStorage/the URL - this is a one-session, dial-it-in-live control
+  // tied to correcting the physical rig's current framing, not a setting
+  // worth remembering across visits the way flip's acrylic-mirroring
+  // correction is.
   //
   // Only zoom is reactive state - it's the only one of the three actually
   // read during render (the zoom +/- buttons' own disabled-at-the-limit
@@ -194,7 +194,52 @@ const ModelViewer = () => {
   // silently lost instead of accumulating. A plain ref sidesteps React's
   // render/batching timing entirely - it's always the true current value
   // regardless of how fast clicks land.
+  //
+  // Starts at (0, 0, 1) - seeded from the server's actual current value
+  // by the effect right below, not trusted as correct on its own. Before
+  // that seeding existed, this literal (0, 0, 1) default was a real,
+  // confirmed-live bug: a brand new controller session has no idea the
+  // display might already be sitting at, say, offset_x 100 from a
+  // previous session, so its very first nudge computed a delta from a
+  // wrong assumed baseline (0) instead of from where the display
+  // actually was - visibly snapping the display back toward zero/1x
+  // instead of nudging it a small step from wherever it already was.
   const transformRef = useRef({ offsetX: 0, offsetY: 0, zoom: 1 });
+
+  // Seeds transformRef/zoom from the display's actual current state once,
+  // on mount - see transformRef's own doc comment for the "first nudge
+  // snaps to the wrong place" bug this fixes. Deliberately one-shot, not
+  // an ongoing sync: a second controller (or this same one) nudging the
+  // display later would drift this copy out of date again, but re-
+  // syncing continuously would mean a change made *here* could get
+  // silently overwritten by a stale fetch landing after it - one-shot is
+  // enough to fix "the first nudge after opening this page is wrong,"
+  // which is the actual bug that was reported.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/models/display', { cache: 'no-store' })
+      .then(async (res) => {
+        if (res.status !== 200 || cancelled) {
+          return;
+        }
+        const state: ModelDisplayState = await res.json();
+        const seeded = {
+          offsetX: state.offset_x ?? 0,
+          offsetY: state.offset_y ?? 0,
+          zoom: state.zoom || 1,
+        };
+        transformRef.current = seeded;
+        setZoom(seeded.zoom);
+      })
+      .catch(() => {
+        // No harm falling back to the (0, 0, 1) default here - same
+        // tolerance as everything else in this feature; worst case is
+        // the original bug this effect fixes, not a broken page.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Steps null -> 'x' -> 'y' -> '180' -> null - persisted to
   // localStorage (survives navigating to a different character on this
