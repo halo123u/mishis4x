@@ -30,19 +30,45 @@ const FLIP_TRANSFORMS: Record<FlipMode, string> = {
 // key) since it's a physical-device quirk, not a user preference this
 // app has any other concept of.
 const FLIP_MODE_STORAGE_KEY = 'modelViewerFlipMode';
+const BROADCAST_MODE_STORAGE_KEY = 'modelViewerBroadcastMode';
 
-// How long "Sent!"/an error stays on the Set as display button before
-// it reverts to its normal label - long enough to register as
-// confirmation, short enough that it's obviously not a persistent mode
-// (see setDisplayStatus's own doc comment for why this replaced an
-// earlier always-on Broadcast toggle).
-const SET_DISPLAY_STATUS_RESET_MS = 1500;
+// How long "Sent!"/an error stays on the Trigger touch button before it
+// reverts to its normal label - long enough to register as
+// confirmation, short enough that it's obviously not a persistent mode.
+const TRIGGER_STATUS_RESET_MS = 1500;
 
 // How often to check GET /api/models/display/status while this page is
 // open - doesn't need to match ModelDisplay.tsx's own 1.5s render-
-// driving poll exactly, just often enough that the Set as display
-// button's enabled state feels current.
+// driving poll exactly, just often enough that Trigger touch/the pan-
+// zoom nudges' enabled state feels current.
 const DISPLAY_STATUS_POLL_INTERVAL_MS = 3000;
+
+// How far one arrow-button click nudges the display's pan, in real
+// screen pixels on the display's own screen (see ModelDisplay.tsx's
+// translate(), which applies this literally) - big enough to see the
+// effect on the physical rig in one tap, small enough that dialing in a
+// precise position doesn't take forever.
+const OFFSET_STEP_PX = 20;
+
+// How far one zoom +/- click moves Zoom, and the range it's clamped to.
+// The lower bound stops short of 0 (which would render nothing) with
+// room to spare; the upper bound is an arbitrary "any more than this and
+// the character is unrecognizably cropped on a small phone screen"
+// judgment call, not derived from anything - easy to revisit once this
+// has actually been tried against the real rig.
+const ZOOM_STEP = 0.1;
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+
+// How long a pan/zoom nudge waits with no further clicks before actually
+// pushing to the display - see schedulePushTransform's own doc comment
+// for the out-of-order-network-response bug this exists to avoid.
+// Comfortably longer than the gap between clicks in a deliberate rapid-
+// tap burst, comfortably shorter than feeling like a delay for one
+// isolated click - and either way, dwarfed by ModelDisplay.tsx's own
+// 1.5s poll interval, so it's not the bottleneck for how fast a nudge
+// actually becomes visible on the physical rig.
+const TRANSFORM_PUSH_DEBOUNCE_MS = 150;
 
 const ModelViewer = () => {
   const { charCode } = useParams<{ charCode: string }>();
@@ -81,45 +107,93 @@ const ModelViewer = () => {
   // rationale) no longer applies to anything. Removed rather than kept
   // around unused.
   const flipTransform = flipMode ? FLIP_TRANSFORMS[flipMode] : undefined;
-  // 'idle' | 'sending' | 'sent' | 'error' - purely local UI feedback for
-  // the Set as display button below, not a mode or a setting: an
-  // earlier version of this had an always-on "Broadcast" toggle that
-  // pushed every character/flip this browser landed on to the
-  // shared display state (see ModelDisplay.tsx) continuously - replaced
-  // because it meant remembering whether it was still on, and ordinary
-  // browsing (or someone else just looking at a character) could
-  // silently disturb a live display. This is a one-shot action instead:
-  // nothing gets sent until this specific button is clicked, sending
-  // exactly the character/flip on screen at that moment.
-  const [setDisplayStatus, setSetDisplayStatus] = useState<
-    'idle' | 'sending' | 'sent' | 'error'
-  >('idle');
-  // Same shape/reasoning as setDisplayStatus, for the separate "Trigger
-  // touch" button below - see triggerTouch's own doc comment.
+  // Turns this page into a remote control for a second, separate device
+  // (see ModelDisplay.tsx) - a phone mounted inside a physical rig with
+  // no practical way to interact with it directly. While on, every
+  // character/flip this browser lands on is also pushed to the shared
+  // display state (see the broadcast effect below). Off by default so
+  // ordinary browsing (or a second person just looking at a character)
+  // never disturbs a live display by accident. Same dual-source
+  // persistence pattern as flipMode: ?broadcast=1 for the initial setup
+  // workflow, localStorage for the on-screen toggle to stick across
+  // characters without needing the URL's help again.
+  //
+  // This replaced a one-shot "Set as display" button for a while - that
+  // meant re-clicking it after every single change instead of just
+  // dialing things in live, which turned out to be worse in practice
+  // than the "forget it's on" risk Broadcast was originally replaced
+  // over. Back to Broadcast.
+  const [broadcastMode, setBroadcastMode] = useState<boolean>(() => {
+    const fromQuery = searchParams.get('broadcast');
+    if (fromQuery !== null) {
+      return fromQuery === '1' || fromQuery === 'true';
+    }
+    return localStorage.getItem(BROADCAST_MODE_STORAGE_KEY) === '1';
+  });
+  // Same shape/reasoning as broadcastMode's transient feedback would be,
+  // for the separate "Trigger touch" button below - see triggerTouch's
+  // own doc comment.
   const [triggerStatus, setTriggerStatus] = useState<
     'idle' | 'sending' | 'sent' | 'error'
   >('idle');
   // Whether a display is currently believed to be polling (see
-  // be/handlers/model_display.go's ModelDisplay.Connected) - gates the
-  // Set as display button below so it's not offering to send to a
-  // display that's already gone.
+  // be/handlers/model_display.go's ModelDisplay.Connected) - gates
+  // Trigger touch/the pan/zoom nudges below so they're not offering to
+  // act on a display that's already gone, and (combined with
+  // broadcastMode, see the `broadcasting` derived value below) whether
+  // tapping the character redirects to the display instead of playing
+  // locally.
   const [displayConnected, setDisplayConnected] = useState(false);
+  // Broadcasting to nothing is a no-op worth treating differently from
+  // broadcasting to something: with broadcastMode on but no display
+  // actually connected, suppressing this controller's own local tap
+  // reaction/flip rendering (see below) would make tapping the character
+  // look completely dead - no local feedback and nowhere for the remote
+  // one to go either. Gating on both together means that only kicks in
+  // once there's an actual display to redirect to.
+  const broadcasting = broadcastMode && displayConnected;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
+  // The display's pan/zoom correction (see ModelDisplay.tsx's own
+  // offsetX/offsetY/zoom) - purely local to this controller, same as
+  // flipMode's relationship to the display's own Flip: not fetched back
+  // from the server on mount, so this always starts at "no correction"
+  // (0, 0, 1) regardless of whatever the display was last nudged to.
+  // Unlike flipMode, not persisted to localStorage/the URL either - this
+  // is a one-session, dial-it-in-live control tied to correcting the
+  // physical rig's current framing, not a setting worth remembering
+  // across visits the way flip's acrylic-mirroring correction is.
+  //
+  // Only zoom is reactive state - it's the only one of the three actually
+  // read during render (the zoom +/- buttons' own disabled-at-the-limit
+  // props below). offsetX/offsetY live only in transformRef, since
+  // nothing in this component's own render ever needs to display them.
+  const [zoom, setZoom] = useState(1);
+  // The live, authoritative current pan/zoom - nudgeOffset/nudgeZoom
+  // read and update this synchronously rather than closing over zoom (or
+  // a would-be offsetX/offsetY state pair) directly. Confirmed live this
+  // was a real bug, not just theoretical: several nudge clicks fired in
+  // quick succession (a physical button is exactly the kind of control
+  // someone taps rapidly) all closed over the *same* not-yet-re-rendered
+  // state value, so only the last click's write "won" and the rest were
+  // silently lost instead of accumulating. A plain ref sidesteps React's
+  // render/batching timing entirely - it's always the true current value
+  // regardless of how fast clicks land.
+  const transformRef = useRef({ offsetX: 0, offsetY: 0, zoom: 1 });
 
   // Steps null -> 'x' -> 'y' -> '180' -> null - persisted to
   // localStorage (survives navigating to a different character on this
   // same device/browser) and mirrored into the URL (survives a refresh,
   // and keeps a manually-edited ?flip= URL and the button from fighting
-  // each other over which one's "right").
-  //
-  // Also live-pushes to the shared display state when one's connected
-  // (fire-and-forget, no loading/error UI of its own - this is a
-  // continuous live-tweak, not the one-shot "Sent!"/"Could not send"
-  // action setAsDisplay below already owns) so dialing in orientation
-  // against the real acrylic is see-the-effect-immediately on whichever
-  // screen the audience is actually looking at, not "adjust here, then
-  // remember to re-click Set as display after every nudge."
+  // each other over which one's "right"). Doesn't push to the display
+  // itself - that's the broadcast effect below's job, whenever
+  // broadcastMode is on. A dedicated live-push here (from a brief
+  // one-shot-"Set as display" era of this feature) got removed along
+  // with it: with Broadcast back, having a *second*, independent
+  // "push flip if a display happens to be connected" path regardless of
+  // broadcastMode would defeat the whole point of Broadcast being the
+  // one on/off switch for "is this browser currently allowed to change
+  // what the display shows."
   const cycleFlipMode = () => {
     const next =
       flipMode === null
@@ -143,29 +217,107 @@ const ModelViewer = () => {
       },
       { replace: true },
     );
-    if (displayConnected) {
-      fetch('/api/models/display/flip', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ flip: next ?? '' }),
-      }).catch(() => {
-        // Same tolerance as the status poll below - a transient failure
-        // here just means the display keeps showing its last-known
-        // orientation until the next successful push, not worth its own
-        // error UI for a live-tweak control.
-      });
-    }
   };
 
-  // Sends exactly the character/flip on screen right now to the shared
-  // display state (see ModelDisplay.tsx, which polls the same endpoint)
-  // - a single PUT, not a persisted mode. See setDisplayStatus's own doc
-  // comment for why this replaced an always-on Broadcast toggle.
-  const setAsDisplay = () => {
-    if (!charCode) {
+  const toggleBroadcastMode = () => {
+    const next = !broadcastMode;
+    setBroadcastMode(next);
+    if (next) {
+      localStorage.setItem(BROADCAST_MODE_STORAGE_KEY, '1');
+    } else {
+      localStorage.removeItem(BROADCAST_MODE_STORAGE_KEY);
+    }
+    setSearchParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        if (next) {
+          updated.set('broadcast', '1');
+        } else {
+          updated.delete('broadcast');
+        }
+        return updated;
+      },
+      { replace: true },
+    );
+  };
+
+  // Debounces the actual network push for nudgeOffset/nudgeZoom below -
+  // confirmed live this was needed, not just theoretical caution: even
+  // after fixing transformRef's own stale-value bug (so every click
+  // computes the right accumulated numbers), firing one PUT per click
+  // still lost nudges under rapid clicking, because several independent
+  // in-flight requests aren't guaranteed to *arrive* at the server in
+  // the same order they were sent - a burst of clicks could have an
+  // earlier click's request land last and stomp a later click's already-
+  // larger value. Debouncing collapses a whole burst into a single
+  // request, sent once things go quiet, carrying transformRef's true
+  // final value - there's never more than one in flight, so there's
+  // nothing left to race.
+  const pushTransformTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const schedulePushTransform = () => {
+    if (pushTransformTimeoutRef.current) {
+      clearTimeout(pushTransformTimeoutRef.current);
+    }
+    pushTransformTimeoutRef.current = setTimeout(() => {
+      const { offsetX, offsetY, zoom } = transformRef.current;
+      fetch('/api/models/display/transform', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          offset_x: offsetX,
+          offset_y: offsetY,
+          zoom,
+        }),
+      }).catch(() => {
+        // Same tolerance as everything else here - a transient failure
+        // just means the display keeps showing last-known framing until
+        // the next successful nudge.
+      });
+    }, TRANSFORM_PUSH_DEBOUNCE_MS);
+  };
+
+  // Arrow buttons - only meaningful while a display is connected (see
+  // their own disabled prop below), so unlike flipMode this never needs
+  // a "no display, just preview locally" fallback: there's no local
+  // rendering of pan/zoom on this controller's own canvas to preview
+  // against, the whole point is correcting where the character sits on
+  // the *other* screen. Reads/writes transformRef, not React state -
+  // see its own doc comment for the stale-closure bug that caused, and
+  // for why offsetX/offsetY don't need to be state at all (nothing here
+  // ever renders them).
+  const nudgeOffset = (dx: number, dy: number) => {
+    transformRef.current = {
+      offsetX: transformRef.current.offsetX + dx,
+      offsetY: transformRef.current.offsetY + dy,
+      zoom: transformRef.current.zoom,
+    };
+    schedulePushTransform();
+  };
+
+  const nudgeZoom = (delta: number) => {
+    const nextZoom = Math.min(
+      ZOOM_MAX,
+      Math.max(
+        ZOOM_MIN,
+        Math.round((transformRef.current.zoom + delta) * 100) / 100,
+      ),
+    );
+    transformRef.current = { ...transformRef.current, zoom: nextZoom };
+    setZoom(nextZoom);
+    schedulePushTransform();
+  };
+
+  // Pushes this browser's current character/flip to the shared display
+  // state (see ModelDisplay.tsx, which polls the same endpoint) whenever
+  // either changes, but only while broadcastMode is on - see its own doc
+  // comment above for why that's opt-in. Deliberately doesn't also clear
+  // the display when broadcastMode turns off: turning this browser's
+  // remote off shouldn't blank whatever's still live, same as unplugging
+  // a TV remote doesn't turn the TV off.
+  useEffect(() => {
+    if (!broadcastMode || !charCode) {
       return;
     }
-    setSetDisplayStatus('sending');
     fetch('/api/models/display', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -173,10 +325,13 @@ const ModelViewer = () => {
         char_code: charCode,
         flip: flipMode ?? '',
       }),
-    })
-      .then((res) => setSetDisplayStatus(res.ok ? 'sent' : 'error'))
-      .catch(() => setSetDisplayStatus('error'));
-  };
+    }).catch(() => {
+      // Same tolerance as everything else here - a transient failure
+      // just means the display keeps showing whatever it last got,
+      // until the next change (or the next successful retry of this
+      // same one) gets through.
+    });
+  }, [broadcastMode, charCode, flipMode]);
 
   // Remotely fires the display's own tap-to-motion+audio reaction (see
   // ModelDisplay.tsx's canvas.click() call) - a plain POST that bumps a
@@ -189,50 +344,39 @@ const ModelViewer = () => {
       .catch(() => setTriggerStatus('error'));
   };
 
-  // localReaction: false when a display is connected - tapping the
-  // character on this page (the controller) is then remote control, not
-  // a local preview, so the reaction (motion+audio) should happen on
+  // localReaction: false while actually broadcasting (see `broadcasting`
+  // above) - tapping the character on this page is then remote control,
+  // not a local preview, so the reaction (motion+audio) should happen on
   // whichever screen the audience is actually watching, not silently
   // also/instead fire here where nobody but the operator can see or hear
-  // it. onTap fires triggerTouch every time regardless of
-  // localReaction's value, so the same tap that would have played
-  // locally with no display connected now drives the display's own
-  // reaction instead. See useModelCanvas's own onTap/localReaction doc
-  // comment.
+  // it. onTap fires triggerTouch every time regardless of localReaction's
+  // value, so the same tap that would have played locally now drives the
+  // display's own reaction instead. Gated on `broadcasting`, not plain
+  // displayConnected: with a display connected but Broadcast off, this
+  // browser isn't the one driving that display right now (someone else
+  // might be), so a tap here should just behave like ordinary local
+  // browsing. See useModelCanvas's own onTap/localReaction doc comment.
   const { loading, error } = useModelCanvas(charCode, canvasRef, {
     onTap: () => {
-      if (displayConnected) {
+      if (broadcasting) {
         triggerTouch();
       }
     },
-    localReaction: !displayConnected,
+    localReaction: !broadcasting,
   });
 
-  // Reverts the button's transient "Sent!"/"Error" label back to normal
-  // after a beat - a separate effect rather than a setTimeout inside
-  // setAsDisplay itself, so a rapid second click cleanly restarts this
-  // timer instead of an earlier one firing mid-flight and undoing the
-  // newer status.
-  useEffect(() => {
-    if (setDisplayStatus === 'idle' || setDisplayStatus === 'sending') {
-      return;
-    }
-    const timer = setTimeout(
-      () => setSetDisplayStatus('idle'),
-      SET_DISPLAY_STATUS_RESET_MS,
-    );
-    return () => clearTimeout(timer);
-  }, [setDisplayStatus]);
-
-  // Same reset-after-a-beat behavior as setDisplayStatus's own effect
-  // above, for triggerStatus/Trigger touch instead.
+  // Reverts the Trigger touch button's transient "Sent!"/"Error" label
+  // back to normal after a beat - a separate effect rather than a
+  // setTimeout inside triggerTouch itself, so a rapid second click
+  // cleanly restarts this timer instead of an earlier one firing
+  // mid-flight and undoing the newer status.
   useEffect(() => {
     if (triggerStatus === 'idle' || triggerStatus === 'sending') {
       return;
     }
     const timer = setTimeout(
       () => setTriggerStatus('idle'),
-      SET_DISPLAY_STATUS_RESET_MS,
+      TRIGGER_STATUS_RESET_MS,
     );
     return () => clearTimeout(timer);
   }, [triggerStatus]);
@@ -354,11 +498,10 @@ const ModelViewer = () => {
             a device actually mounted behind a physical acrylic/Pepper's
             Ghost reflector, where there's no address bar to type a URL
             into at all, unlike a phone/desktop browser just testing the
-            page normally. When a display is connected this also live-
-            pushes to it (see cycleFlipMode's own doc comment) - the
-            button's own label/highlight still reflects this browser's
-            local flipMode either way, since that's the value actually
-            being sent. */}
+            page normally. Doesn't push anywhere by itself - see
+            cycleFlipMode's own doc comment - it's the broadcast effect
+            (driven by the Broadcast toggle below) that actually sends
+            character/flip to the display. */}
         <button
           type="button"
           onClick={cycleFlipMode}
@@ -371,29 +514,28 @@ const ModelViewer = () => {
         >
           Flip: {flipMode ? flipMode.toUpperCase() : 'Off'}
         </button>
-        {/* See setDisplayStatus's own doc comment above - a one-shot
-            push of exactly this character/flip to the remote display
-            (see ModelDisplay.tsx), not a persistent mode. */}
+        {/* See broadcastMode's own doc comment above - turns this
+            browser into a remote control for a second device (see
+            ModelDisplay.tsx) instead of affecting anything about this
+            page's own rendering. */}
         <button
           type="button"
-          onClick={setAsDisplay}
-          disabled={setDisplayStatus === 'sending' || !displayConnected}
+          onClick={toggleBroadcastMode}
           className={
-            setDisplayStatus === 'sent'
+            broadcastMode
               ? `${styles.flipToggle} ${styles.flipToggleActive}`
               : styles.flipToggle
           }
-          aria-label="Set this character as the remote display's current character"
+          aria-label="Toggle broadcasting this character to the remote display"
         >
-          {setDisplayStatus === 'sending' && 'Sending…'}
-          {setDisplayStatus === 'sent' && 'Sent!'}
-          {setDisplayStatus === 'error' && 'Could not send'}
-          {setDisplayStatus === 'idle' &&
-            (displayConnected ? 'Set as display' : 'No display connected')}
+          Broadcast: {broadcastMode ? 'On' : 'Off'}
         </button>
         {/* See triggerTouch's own doc comment - fires the display's
-            tap-to-motion+audio reaction remotely, same connectivity
-            gate as Set as display for the same reason. */}
+            tap-to-motion+audio reaction remotely. Gated on displayConnected
+            alone, not broadcastMode/broadcasting: this is a one-shot poke
+            at whatever's currently showing, useful regardless of whether
+            this browser happens to be the one currently broadcasting a
+            character to it. */}
         <button
           type="button"
           onClick={triggerTouch}
@@ -409,6 +551,67 @@ const ModelViewer = () => {
           {triggerStatus === 'sent' && 'Sent!'}
           {triggerStatus === 'error' && 'Could not send'}
           {triggerStatus === 'idle' && 'Trigger touch'}
+        </button>
+        {/* Pan/zoom nudges - see nudgeOffset/nudgeZoom's own doc comment.
+            Disabled whenever there's no display to correct, same
+            connectivity gate as Trigger touch above and for the same
+            reason: unlike Flip, there's no local rendering of this on
+            the controller's own canvas to preview against, so a click
+            here with nothing connected would visibly do nothing at all
+            rather than just not being useful yet. */}
+        <button
+          type="button"
+          onClick={() => nudgeOffset(-OFFSET_STEP_PX, 0)}
+          disabled={!displayConnected}
+          className={styles.flipToggle}
+          aria-label="Nudge the remote display's character left"
+        >
+          ←
+        </button>
+        <button
+          type="button"
+          onClick={() => nudgeOffset(OFFSET_STEP_PX, 0)}
+          disabled={!displayConnected}
+          className={styles.flipToggle}
+          aria-label="Nudge the remote display's character right"
+        >
+          →
+        </button>
+        <button
+          type="button"
+          onClick={() => nudgeOffset(0, -OFFSET_STEP_PX)}
+          disabled={!displayConnected}
+          className={styles.flipToggle}
+          aria-label="Nudge the remote display's character up"
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          onClick={() => nudgeOffset(0, OFFSET_STEP_PX)}
+          disabled={!displayConnected}
+          className={styles.flipToggle}
+          aria-label="Nudge the remote display's character down"
+        >
+          ↓
+        </button>
+        <button
+          type="button"
+          onClick={() => nudgeZoom(-ZOOM_STEP)}
+          disabled={!displayConnected || zoom <= ZOOM_MIN}
+          className={styles.flipToggle}
+          aria-label="Zoom the remote display's character out"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={() => nudgeZoom(ZOOM_STEP)}
+          disabled={!displayConnected || zoom >= ZOOM_MAX}
+          className={styles.flipToggle}
+          aria-label="Zoom the remote display's character in"
+        >
+          +
         </button>
       </div>
       {loading && !error && <p className={styles.status}>Loading…</p>}
@@ -431,17 +634,22 @@ const ModelViewer = () => {
         key={charCode}
         ref={canvasRef}
         className={styles.canvas}
-        // Suppressed while a display is connected: flipMode here exists
-        // to correct how the character looks to whoever's watching the
-        // physical acrylic reflection, and once that's the phone's job
-        // instead of this browser's, this canvas rendering flipped too
-        // would just be wrong for an ordinary controller screen - see
-        // "external controls should do nothing on the browser when
-        // there's a display" in this feature's design notes. The toggle
-        // button above still cycles/sends flipMode regardless; only its
-        // effect on *this* canvas is held back.
+        // Suppressed while actually broadcasting (see `broadcasting`
+        // above): flipMode here exists to correct how the character
+        // looks to whoever's watching the physical acrylic reflection,
+        // and once that's the phone's job instead of this browser's,
+        // this canvas rendering flipped too would just be wrong for an
+        // ordinary controller screen - see "external controls should do
+        // nothing on the browser when there's a display" in this
+        // feature's design notes. Gated on `broadcasting`, not plain
+        // displayConnected, for the same reason as localReaction above:
+        // with Broadcast off, this browser isn't driving the display
+        // right now, so its own canvas should render like ordinary local
+        // browsing regardless of whether some display happens to be
+        // connected. The toggle button above still cycles/sends flipMode
+        // regardless; only its effect on *this* canvas is held back.
         style={
-          flipTransform && !displayConnected
+          flipTransform && !broadcasting
             ? { transform: flipTransform }
             : undefined
         }

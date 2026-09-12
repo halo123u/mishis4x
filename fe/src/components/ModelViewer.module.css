@@ -47,6 +47,14 @@
   transform: translateX(-50%);
   z-index: 1;
   display: flex;
+  flex-wrap: wrap;
+  /* Constrains wrapping to roughly this row's own cluster width instead
+     of the full viewport - without it, a narrow phone screen wraps one
+     button per line rather than a couple of tidy rows, once the pan/zoom
+     nudge buttons pushed this past the button count a single row of
+     Back/Flip/Set as display/Trigger touch fit comfortably on. */
+  max-width: min(90vw, 420px);
+  justify-content: center;
   gap: var(--space-2);
   opacity: 1;
   transition: opacity 0.25s ease;

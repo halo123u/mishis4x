@@ -23,6 +23,18 @@ type ModelDisplayState struct {
 	// single != comparison with no clock-skew or "was this already
 	// true" ambiguity to worry about.
 	Trigger int `json:"trigger"`
+	// OffsetX/OffsetY/Zoom are a screen-space pan/zoom correction applied
+	// on top of whatever the character/flip is already rendering -
+	// independent of which character is showing (see
+	// SetModelDisplayTransformInput's own doc comment for why this isn't
+	// folded into char_code/flip at all). Zero-value (0, 0, 0) is the
+	// ordinary "never touched" state for a server that's never had
+	// SetModelDisplayTransform called yet this run, same as CharCode's
+	// empty-string default - the frontend treats a zero/omitted Zoom as
+	// 1 (no zoom), not literally 0 (which would render nothing).
+	OffsetX int     `json:"offset_x,omitempty"`
+	OffsetY int     `json:"offset_y,omitempty"`
+	Zoom    float64 `json:"zoom,omitempty"`
 }
 
 // SetModelDisplayCharCodeInput is the PUT /api/models/display request
@@ -46,6 +58,22 @@ type SetModelDisplayCharCodeInput struct {
 // handlers.ModelDisplay.SetFlip's own doc comment.
 type SetModelDisplayFlipInput struct {
 	Flip string `json:"flip,omitempty"`
+}
+
+// SetModelDisplayTransformInput is the PUT /api/models/display/transform
+// request body - a controller's pan/zoom nudge buttons, correcting where
+// the character sits in frame on the physical rig. Its own endpoint, own
+// writer (handlers.ModelDisplay.SetTransform), and deliberately not part
+// of SetModelDisplayCharCodeInput at all (unlike Flip, which is both an
+// initial value on "Set as display" and its own live-tweak endpoint):
+// this pan/zoom correction is calibrating the physical mounting itself,
+// not something that means anything different per character, so it has
+// no business resetting - or being resent - just because a different
+// character got picked.
+type SetModelDisplayTransformInput struct {
+	OffsetX int     `json:"offset_x,omitempty"`
+	OffsetY int     `json:"offset_y,omitempty"`
+	Zoom    float64 `json:"zoom,omitempty"`
 }
 
 // ModelDisplayStatus is the GET /api/models/display/status response - a
