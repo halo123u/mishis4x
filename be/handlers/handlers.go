@@ -45,6 +45,17 @@ const (
 	// gets a longer budget than dbQueryTimeout.
 	refreshPriceTimeout = 20 * time.Second
 
+	// modelAssetQueryTimeout bounds the DB call behind
+	// serveCharacterModelAsset/GetCharacterModelAudio - these pull a
+	// potentially multi-MB LONGBLOB column (skeleton/atlas/texture/audio),
+	// a fundamentally heavier read than the small-row lookups
+	// dbQueryTimeout is tuned for. Hit in practice against prod: a real
+	// "context deadline exceeded" on a texture fetch under dbQueryTimeout's
+	// 5s budget, once the model-viewer's remote-display feature started
+	// exercising these routes from a second, independent device polling
+	// concurrently with a controller already viewing the same character.
+	modelAssetQueryTimeout = 20 * time.Second
+
 	// maxRequestBodyBytes bounds how much of a request body we'll ever read.
 	// Generous for this app's JSON API (every body is a handful of short
 	// fields) - the point is capping it at all, not the exact number.
@@ -310,6 +321,7 @@ func (d *Data) NewRouter() *mux.Router {
 	models.HandleFunc("/{charCode}/audio/{language}/{clipIndex}", d.GetCharacterModelAudio).Methods("GET")
 	models.HandleFunc("/display", d.GetModelDisplay).Methods("GET")
 	models.HandleFunc("/display", d.SetModelDisplay).Methods("PUT")
+	models.HandleFunc("/display/status", d.GetModelDisplayStatus).Methods("GET")
 	models.HandleFunc("/cards/{cardID}", d.SetCardCharacterModel).Methods("PUT")
 
 	// healthcheck

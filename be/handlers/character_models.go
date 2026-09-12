@@ -79,7 +79,9 @@ func (d *Data) GetCharacterModelAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	// modelAssetQueryTimeout, not dbQueryTimeout - see that constant's
+	// own doc comment.
+	ctx, cancel := context.WithTimeout(r.Context(), modelAssetQueryTimeout)
 	defer cancel()
 
 	clip, err := d.P.GetCharacterModelAudioClip(ctx, charCode, language, clipIndex)
@@ -147,7 +149,10 @@ func (d *Data) SetCardCharacterModel(w http.ResponseWriter, r *http.Request) {
 func serveCharacterModelAsset(w http.ResponseWriter, r *http.Request, p persist.Persist, pick func(persist.CharacterModel) ([]byte, string)) {
 	charCode := mux.Vars(r)["charCode"]
 
-	ctx, cancel := context.WithTimeout(r.Context(), dbQueryTimeout)
+	// modelAssetQueryTimeout, not dbQueryTimeout - see that constant's
+	// own doc comment (this is the exact call site that first hit it in
+	// practice).
+	ctx, cancel := context.WithTimeout(r.Context(), modelAssetQueryTimeout)
 	defer cancel()
 
 	model, err := p.GetCharacterModel(ctx, charCode)

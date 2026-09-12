@@ -86,3 +86,6 @@ export interface ModelDisplayState {
   flip?: string;
   pepper: boolean;
 }
+export interface ModelDisplayStatus {
+  connected: boolean;
+}

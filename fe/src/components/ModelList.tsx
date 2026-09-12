@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Button from './ui/Button.tsx';
 import styles from './ModelList.module.css';
 
 // Lists every char_code the model-import CLI command has stored (see
@@ -11,6 +12,8 @@ import styles from './ModelList.module.css';
 const ModelList = () => {
   const [codes, setCodes] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [clearMessage, setClearMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/models')
@@ -28,6 +31,33 @@ const ModelList = () => {
       .catch(() => setError('Could not reach the server. Please try again.'));
   }, []);
 
+  // Resets the remote display (see ModelDisplay.tsx) back to its
+  // "nothing selected" state - an empty char_code is a real, deliberate
+  // value the backend accepts (see SetModelDisplay's own doc comment),
+  // not something a controller could otherwise reach: Broadcast only
+  // ever sends the character currently loaded in *this* browser, and
+  // turning Broadcast off deliberately leaves the display showing
+  // whatever it last had (same as unplugging a remote doesn't turn the
+  // TV off) - there was previously no way at all to blank the display
+  // short of restarting the server (which clears this in-memory state
+  // as a side effect, not a real workflow).
+  const clearDisplay = () => {
+    setClearing(true);
+    setClearMessage(null);
+    fetch('/api/models/display', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ char_code: '', flip: '', pepper: false }),
+    })
+      .then((res) => {
+        setClearMessage(
+          res.ok ? 'Display cleared.' : 'Could not clear the display.',
+        );
+      })
+      .catch(() => setClearMessage('Could not reach the server.'))
+      .finally(() => setClearing(false));
+  };
+
   return (
     <div className="stack">
       <h1>Character models</h1>
@@ -39,9 +69,15 @@ const ModelList = () => {
           menu, gated the same GlobalData.model_viewer_enabled way this
           whole page is), so it's the one place worth putting a real link
           from - see ModelDisplay.tsx's own doc comment for what it is. */}
-      <Link to="/models/display" className={styles.remoteDisplayLink}>
-        Open remote display →
-      </Link>
+      <div className="row">
+        <Link to="/models/display" className={styles.remoteDisplayLink}>
+          Open remote display →
+        </Link>
+        <Button variant="secondary" onClick={clearDisplay} disabled={clearing}>
+          {clearing ? 'Clearing…' : 'Clear display'}
+        </Button>
+        {clearMessage && <span className="muted">{clearMessage}</span>}
+      </div>
       {error && <p className="muted">{error}</p>}
       {!error && codes === null && <p className="muted">Loading…</p>}
       {!error && codes !== null && codes.length === 0 && (

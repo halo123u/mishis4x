@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useModelCanvas } from '../useModelCanvas';
+import { ModelDisplayStatus } from '../types';
 import styles from './ModelViewer.module.css';
 
 // How long the back button stays visible with no interaction before
@@ -30,7 +31,19 @@ const FLIP_TRANSFORMS: Record<FlipMode, string> = {
 // app has any other concept of.
 const FLIP_MODE_STORAGE_KEY = 'modelViewerFlipMode';
 const PEPPER_MODE_STORAGE_KEY = 'modelViewerPepperMode';
-const BROADCAST_MODE_STORAGE_KEY = 'modelViewerBroadcastMode';
+
+// How long "Sent!"/an error stays on the Set as display button before
+// it reverts to its normal label - long enough to register as
+// confirmation, short enough that it's obviously not a persistent mode
+// (see setDisplayStatus's own doc comment for why this replaced an
+// earlier always-on Broadcast toggle).
+const SET_DISPLAY_STATUS_RESET_MS = 1500;
+
+// How often to check GET /api/models/display/status while this page is
+// open - doesn't need to match ModelDisplay.tsx's own 1.5s render-
+// driving poll exactly, just often enough that the Set as display
+// button's enabled state feels current.
+const DISPLAY_STATUS_POLL_INTERVAL_MS = 3000;
 
 const ModelViewer = () => {
   const { charCode } = useParams<{ charCode: string }>();
@@ -83,24 +96,24 @@ const ModelViewer = () => {
     }
     return localStorage.getItem(PEPPER_MODE_STORAGE_KEY) === '1';
   });
-  // Broadcast is a third, independent concern again - flipMode/pepperMode
-  // are both about *this* browser's own rendering/controls; this is
-  // about turning this same page into a remote control for a second,
-  // separate device (see ModelDisplay.tsx) - a phone mounted inside a
-  // physical rig with no practical way to interact with it directly, the
-  // same reasoning ?flip=/?pepper= exist for at all. When on, every
-  // character/flip/pepper combination this browser lands on is also
-  // pushed to the shared display state (see the broadcast effect below)
-  // - off by default so ordinary browsing (or a second person just
-  // looking at a character) never disturbs a live display by accident.
-  // Same dual-source persistence pattern as the other two.
-  const [broadcastMode, setBroadcastMode] = useState<boolean>(() => {
-    const fromQuery = searchParams.get('broadcast');
-    if (fromQuery !== null) {
-      return fromQuery === '1' || fromQuery === 'true';
-    }
-    return localStorage.getItem(BROADCAST_MODE_STORAGE_KEY) === '1';
-  });
+  // 'idle' | 'sending' | 'sent' | 'error' - purely local UI feedback for
+  // the Set as display button below, not a mode or a setting: an
+  // earlier version of this had an always-on "Broadcast" toggle that
+  // pushed every character/flip/pepper this browser landed on to the
+  // shared display state (see ModelDisplay.tsx) continuously - replaced
+  // because it meant remembering whether it was still on, and ordinary
+  // browsing (or someone else just looking at a character) could
+  // silently disturb a live display. This is a one-shot action instead:
+  // nothing gets sent until this specific button is clicked, sending
+  // exactly the character/flip/pepper on screen at that moment.
+  const [setDisplayStatus, setSetDisplayStatus] = useState<
+    'idle' | 'sending' | 'sent' | 'error'
+  >('idle');
+  // Whether a display is currently believed to be polling (see
+  // be/handlers/model_display.go's ModelDisplay.Connected) - gates the
+  // Set as display button below so it's not offering to send to a
+  // display that's already gone.
+  const [displayConnected, setDisplayConnected] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { loading, error } = useModelCanvas(charCode, canvasRef);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -157,40 +170,17 @@ const ModelViewer = () => {
     );
   };
 
-  const toggleBroadcastMode = () => {
-    const next = !broadcastMode;
-    setBroadcastMode(next);
-    if (next) {
-      localStorage.setItem(BROADCAST_MODE_STORAGE_KEY, '1');
-    } else {
-      localStorage.removeItem(BROADCAST_MODE_STORAGE_KEY);
-    }
-    setSearchParams(
-      (prev) => {
-        const updated = new URLSearchParams(prev);
-        if (next) {
-          updated.set('broadcast', '1');
-        } else {
-          updated.delete('broadcast');
-        }
-        return updated;
-      },
-      { replace: true },
-    );
-  };
-
-  // Pushes this browser's current character/flip/pepper to the shared
-  // display state (see ModelDisplay.tsx, which polls the same endpoint)
-  // whenever any of them change, but only while broadcastMode is on -
-  // see its own doc comment above for why that's opt-in. Deliberately
-  // doesn't also clear the display when broadcastMode turns off: turning
-  // this browser's remote off shouldn't blank whatever's still live,
-  // same as unplugging a TV remote doesn't turn the TV off.
-  useEffect(() => {
-    if (!broadcastMode || !charCode) {
+  // Sends exactly the character/flip/pepper on screen right now to the
+  // shared display state (see ModelDisplay.tsx, which polls the same
+  // endpoint) - a single PUT, not a persisted mode. See
+  // setDisplayStatus's own doc comment for why this replaced an
+  // always-on Broadcast toggle.
+  const setAsDisplay = () => {
+    if (!charCode) {
       return;
     }
-    void fetch('/api/models/display', {
+    setSetDisplayStatus('sending');
+    fetch('/api/models/display', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -198,8 +188,62 @@ const ModelViewer = () => {
         flip: flipMode ?? '',
         pepper: pepperMode,
       }),
-    });
-  }, [broadcastMode, charCode, flipMode, pepperMode]);
+    })
+      .then((res) => setSetDisplayStatus(res.ok ? 'sent' : 'error'))
+      .catch(() => setSetDisplayStatus('error'));
+  };
+
+  // Reverts the button's transient "Sent!"/"Error" label back to normal
+  // after a beat - a separate effect rather than a setTimeout inside
+  // setAsDisplay itself, so a rapid second click cleanly restarts this
+  // timer instead of an earlier one firing mid-flight and undoing the
+  // newer status.
+  useEffect(() => {
+    if (setDisplayStatus === 'idle' || setDisplayStatus === 'sending') {
+      return;
+    }
+    const timer = setTimeout(
+      () => setSetDisplayStatus('idle'),
+      SET_DISPLAY_STATUS_RESET_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [setDisplayStatus]);
+
+  // Keeps displayConnected current for as long as this page is open -
+  // GET .../display/status, not GET .../display itself, so this check
+  // never counts as proof the display is alive (see
+  // ModelDisplay.Connected's own doc comment on the backend).
+  // cache: 'no-store' - this must reflect this exact moment's real
+  // connectivity every poll, confirmed directly that a default fetch()
+  // can otherwise get served a stale cached response instead of
+  // actually hitting the network again.
+  useEffect(() => {
+    let cancelled = false;
+
+    const poll = () => {
+      fetch('/api/models/display/status', { cache: 'no-store' })
+        .then(async (res) => {
+          if (res.status !== 200 || cancelled) {
+            return;
+          }
+          const status: ModelDisplayStatus = await res.json();
+          setDisplayConnected(status.connected);
+        })
+        .catch(() => {
+          // A transient network hiccup shouldn't flip the button off -
+          // just try again next tick, same tolerance as ModelDisplay.tsx's
+          // own poll loop.
+        });
+    };
+
+    poll();
+    const interval = setInterval(poll, DISPLAY_STATUS_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Auto-hides the back button after a stretch of no interaction, and
   // brings it back on any tap/click anywhere in the stage (including one
@@ -312,26 +356,45 @@ const ModelViewer = () => {
         >
           Pepper: {pepperMode ? 'On' : 'Off'}
         </button>
-        {/* See broadcastMode's own doc comment above - turns this
-            browser into a remote control for a second device (see
-            ModelDisplay.tsx) instead of affecting anything about this
-            page's own display. */}
+        {/* See setDisplayStatus's own doc comment above - a one-shot
+            push of exactly this character/flip/pepper to the remote
+            display (see ModelDisplay.tsx), not a persistent mode. */}
         <button
           type="button"
-          onClick={toggleBroadcastMode}
+          onClick={setAsDisplay}
+          disabled={setDisplayStatus === 'sending' || !displayConnected}
           className={
-            broadcastMode
+            setDisplayStatus === 'sent'
               ? `${styles.flipToggle} ${styles.flipToggleActive}`
               : styles.flipToggle
           }
-          aria-label="Toggle broadcasting this character to the remote display"
+          aria-label="Set this character as the remote display's current character"
         >
-          Broadcast: {broadcastMode ? 'On' : 'Off'}
+          {setDisplayStatus === 'sending' && 'Sending…'}
+          {setDisplayStatus === 'sent' && 'Sent!'}
+          {setDisplayStatus === 'error' && 'Could not send'}
+          {setDisplayStatus === 'idle' &&
+            (displayConnected ? 'Set as display' : 'No display connected')}
         </button>
       </div>
       {loading && !error && <p className={styles.status}>Loading…</p>}
       {error && <p className={styles.status}>{error}</p>}
+      {/* key={charCode}: forces a brand-new <canvas> DOM node per
+          character rather than reusing one across a charCode change -
+          see useModelCanvas's own cleanup, which explicitly calls
+          WEBGL_lose_context's loseContext() to free GPU memory when
+          leaving a model. Once a context is lost that way, the same
+          canvas element can't just get a fresh working one back later
+          (it stays lost until the browser explicitly restores it, which
+          nothing here ever triggers) - reusing the element across a
+          charCode change would render into a permanently dead context,
+          a blank canvas. This route normally gets a full page remount
+          on navigation anyway (so this rarely mattered before), but
+          ModelDisplay.tsx's poll-driven charCode changes stay mounted
+          continuously - confirmed live that a blank screen on every
+          broadcast after the first was exactly this. */}
       <canvas
+        key={charCode}
         ref={canvasRef}
         className={styles.canvas}
         style={flipTransform ? { transform: flipTransform } : undefined}

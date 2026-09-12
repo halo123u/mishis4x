@@ -55,6 +55,29 @@ func TestUpsertCharacterModel_StoreAndUpdate(t *testing.T) {
 	require.Equal(t, "image/webp", model.TextureContentType)
 }
 
+func TestCharacterModelExists_NotImported(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+
+	exists, err := p.CharacterModelExists(t.Context(), testCharCode(t))
+	require.NoError(t, err)
+	require.False(t, exists)
+}
+
+func TestCharacterModelExists_Imported(t *testing.T) {
+	db := testDB(t)
+	p := &Persist{DB: db}
+	charCode := testCharCode(t)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM character_models WHERE char_code = ?", charCode)
+	})
+	require.NoError(t, p.UpsertCharacterModel(t.Context(), charCode, []byte("s"), []byte("a"), []byte("t"), "image/png"))
+
+	exists, err := p.CharacterModelExists(t.Context(), charCode)
+	require.NoError(t, err)
+	require.True(t, exists)
+}
+
 func TestListCharacterModels_ReturnsSortedCodes(t *testing.T) {
 	db := testDB(t)
 	p := &Persist{DB: db}
