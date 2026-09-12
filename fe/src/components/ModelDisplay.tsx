@@ -5,14 +5,16 @@ import { useAutoHideControls } from '../useAutoHideControls';
 import { ModelDisplayState } from '../types';
 import styles from './ModelDisplay.module.css';
 
-// How often to poll GET /api/models/display for a change - see this
-// component's own doc comment for why polling rather than a
-// websocket/SSE push. Character switching in a physical art piece isn't
-// a twitch-reflex control; a second or so of latency between a
-// controller's tap and the display updating is a non-issue, and this
-// keeps the whole feature to a plain fetch loop instead of new realtime
-// infrastructure this app doesn't have anywhere else yet.
-const POLL_INTERVAL_MS = 1500;
+// How long to wait before retrying the WebSocket connection after it
+// closes for any reason (the server restarting, a network hiccup, a
+// phone backgrounding and killing the socket) - short enough that a
+// reconnect feels instant on a physical rig nobody's actively watching
+// for a dropped connection, not so short that a server that's genuinely
+// down gets hammered with reconnect attempts. A fixed delay, not
+// exponential backoff: this is one device reconnecting to a single-
+// instance personal server, not a fleet of clients that could pile on
+// load - there's no real backoff problem to solve here.
+const RECONNECT_DELAY_MS = 1000;
 
 // The gap between the character's feet and the bottom edge of the
 // screen on the real physical rig - see useModelCanvas's own
@@ -34,9 +36,16 @@ const FLIP_TRANSFORMS: Record<string, string> = {
 // The passive half of the model viewer's remote-control feature - a
 // phone stuck inside a physical Pepper's Ghost/acrylic rig, with no
 // practical way to interact with it directly, loads this page once and
-// leaves it open. It just polls the shared display state and renders
-// whatever character/flip/pan/zoom combination is currently set, using
-// the exact same Spine rendering logic as ModelViewer via useModelCanvas.
+// leaves it open. It holds one WebSocket connection open to the server
+// for as long as the page is loaded, gets pushed the shared display
+// state the instant a controller changes anything (see be/handlers/
+// model_display.go's ServeModelDisplayWS), and renders whatever
+// character/flip/pan/zoom combination that is, using the exact same
+// Spine rendering logic as ModelViewer via useModelCanvas. Used to poll
+// GET /api/models/display every 1.5s instead - replaced because that
+// meant up to a full poll interval of visible lag on every pan/zoom
+// nudge, confirmed live as the single biggest source of felt lag
+// adjusting the physical rig.
 //
 // The only control this page has of its own is the single "Exit display
 // mode" button below - deliberately the *only* one: everything else
@@ -92,50 +101,65 @@ const ModelDisplay = () => {
 
   useEffect(() => {
     let cancelled = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const poll = () => {
-      // cache: 'no-store' - this must reflect the real current state
-      // every poll (that's the entire point of a display that stays
-      // mounted and re-polls), confirmed directly that a default
-      // fetch() can otherwise get served a stale cached response
-      // instead of actually hitting the network again.
-      fetch('/api/models/display', { cache: 'no-store' })
-        .then(async (res) => {
-          if (res.status !== 200 || cancelled) {
-            return;
-          }
-          const state: ModelDisplayState = await res.json();
-          setCharCode(state.char_code || null);
-          setFlip(state.flip ?? '');
-          setOffsetX(state.offset_x ?? 0);
-          setOffsetY(state.offset_y ?? 0);
-          setZoom(state.zoom || 1);
+    const applyState = (state: ModelDisplayState) => {
+      setCharCode(state.char_code || null);
+      setFlip(state.flip ?? '');
+      setOffsetX(state.offset_x ?? 0);
+      setOffsetY(state.offset_y ?? 0);
+      setZoom(state.zoom || 1);
 
-          // canvas.click() - a real DOM method, not a synthetic input
-          // event - fires the exact same 'click' listener
-          // useModelCanvas's own tap-to-motion+audio reaction is
-          // already attached to, so a remote "Trigger touch" behaves
-          // identically to someone actually touching this screen.
-          if (lastTriggerRef.current === null) {
-            lastTriggerRef.current = state.trigger;
-          } else if (state.trigger !== lastTriggerRef.current) {
-            lastTriggerRef.current = state.trigger;
-            canvasRef.current?.click();
-          }
-        })
-        .catch(() => {
-          // A transient network hiccup shouldn't blank whatever's
-          // already showing - just try again next tick, same as any
-          // other tolerant polling loop in this app.
-        });
+      // canvas.click() - a real DOM method, not a synthetic input event
+      // - fires the exact same 'click' listener useModelCanvas's own
+      // tap-to-motion+audio reaction is already attached to, so a
+      // remote "Trigger touch" behaves identically to someone actually
+      // touching this screen.
+      if (lastTriggerRef.current === null) {
+        lastTriggerRef.current = state.trigger;
+      } else if (state.trigger !== lastTriggerRef.current) {
+        lastTriggerRef.current = state.trigger;
+        canvasRef.current?.click();
+      }
     };
 
-    poll();
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
+    // wss:// once this is ever served over https - same origin/host as
+    // the page itself either way, there's no separate API host to point
+    // at (see CLAUDE.md's "ships as one binary" architecture).
+    const wsURL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/models/display/ws`;
+
+    const connect = () => {
+      if (cancelled) {
+        return;
+      }
+      socket = new WebSocket(wsURL);
+
+      socket.onmessage = (event) => {
+        // The server always sends a well-formed ModelDisplayState - no
+        // envelope/message-type wrapper needed, this connection only
+        // ever carries one kind of message.
+        applyState(JSON.parse(event.data as string) as ModelDisplayState);
+      };
+
+      // Both error and close funnel into the same reconnect - error is
+      // always followed by close for a WebSocket (per spec), so there's
+      // nothing extra to do here beyond letting the connection actually
+      // finish closing before reconnecting.
+      socket.onclose = () => {
+        if (cancelled) {
+          return;
+        }
+        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+      };
+    };
+
+    connect();
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      clearTimeout(reconnectTimer);
+      socket?.close();
     };
   }, []);
 

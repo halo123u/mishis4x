@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useModelCanvas } from '../useModelCanvas';
 import { useSupportsHover } from '../useSupportsHover';
@@ -32,9 +32,13 @@ const BROADCAST_MODE_STORAGE_KEY = 'modelViewerBroadcastMode';
 const TRIGGER_STATUS_RESET_MS = 1500;
 
 // How often to check GET /api/models/display/status while this page is
-// open - doesn't need to match ModelDisplay.tsx's own 1.5s render-
-// driving poll exactly, just often enough that Trigger touch/the pan-
-// zoom nudges' enabled state feels current.
+// open, to drive Trigger touch/the pan-zoom nudges' enabled state -
+// separate from (and much coarser than) ModelDisplay.tsx's own real-time
+// WebSocket connection, which is what actually carries every state
+// change instantly. This is just "is a display currently connected at
+// all," a much less latency-sensitive question - a few seconds of
+// staleness on that is unnoticeable, unlike waiting on a poll to see a
+// pan/zoom nudge actually land.
 const DISPLAY_STATUS_POLL_INTERVAL_MS = 3000;
 
 // How far one arrow-button click nudges the display's pan, in real
@@ -54,14 +58,15 @@ const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
 
-// How long a pan/zoom nudge waits with no further clicks before actually
-// pushing to the display - see schedulePushTransform's own doc comment
-// for the out-of-order-network-response bug this exists to avoid.
-// Comfortably longer than the gap between clicks in a deliberate rapid-
-// tap burst, comfortably shorter than feeling like a delay for one
-// isolated click - and either way, dwarfed by ModelDisplay.tsx's own
-// 1.5s poll interval, so it's not the bottleneck for how fast a nudge
-// actually becomes visible on the physical rig.
+// How long a pan/zoom nudge waits with no further clicks/key-repeats
+// before actually pushing to the display - see schedulePushTransform's
+// own doc comment for the out-of-order-network-response bug this exists
+// to avoid. Comfortably longer than the gap between events in a
+// deliberate rapid-tap burst or a held-down arrow key's repeat rate,
+// comfortably shorter than feeling like a delay for one isolated nudge -
+// and now that ModelDisplay.tsx holds a real-time WebSocket connection
+// instead of polling, this debounce is the only latency left in the
+// whole path from "press the key" to "see it move."
 const TRANSFORM_PUSH_DEBOUNCE_MS = 150;
 
 const ModelViewer = () => {
@@ -101,6 +106,18 @@ const ModelViewer = () => {
   // rationale) no longer applies to anything. Removed rather than kept
   // around unused.
   const flipTransform = flipMode ? FLIP_TRANSFORMS[flipMode] : undefined;
+  // While the display is horizontally mirrored (flipMode 'x'), left/
+  // right nudges invert - confirmed against the real rig that "right"
+  // meaning screen-right (translate() is applied outside the flip
+  // transform precisely so a pan is always a fixed number of real screen
+  // pixels regardless of flip - see ModelDisplay.tsx's own doc comment)
+  // felt backwards once you're actually looking at the mirrored result:
+  // pushing "right" visibly moved the character toward what reads as its
+  // own left in the reflection. Scoped to 'x' only, not '180' or 'y' -
+  // '180' rotates rather than mirrors (so nothing about left/right
+  // "flips" on its own, both axes invert together), and 'y' only mirrors
+  // vertically, which doesn't touch left/right at all.
+  const horizontalNudgeDirection = flipMode === 'x' ? -1 : 1;
   // Turns this page into a remote control for a second, separate device
   // (see ModelDisplay.tsx) - a phone mounted inside a physical rig with
   // no practical way to interact with it directly. While on, every
@@ -252,7 +269,12 @@ const ModelViewer = () => {
   // final value - there's never more than one in flight, so there's
   // nothing left to race.
   const pushTransformTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const schedulePushTransform = () => {
+  // useCallback with an empty dependency array - this (and nudgeOffset/
+  // nudgeZoom below) only ever touch refs/constants, never anything
+  // reactive, so a stable identity is both correct and what lets the
+  // keydown effect further down list them as dependencies without that
+  // effect re-subscribing on every render.
+  const schedulePushTransform = useCallback(() => {
     if (pushTransformTimeoutRef.current) {
       clearTimeout(pushTransformTimeoutRef.current);
     }
@@ -272,7 +294,7 @@ const ModelViewer = () => {
         // the next successful nudge.
       });
     }, TRANSFORM_PUSH_DEBOUNCE_MS);
-  };
+  }, []);
 
   // Arrow buttons - only meaningful while a display is connected (see
   // their own disabled prop below), so unlike flipMode this never needs
@@ -283,31 +305,99 @@ const ModelViewer = () => {
   // see its own doc comment for the stale-closure bug that caused, and
   // for why offsetX/offsetY don't need to be state at all (nothing here
   // ever renders them).
-  const nudgeOffset = (dx: number, dy: number) => {
-    transformRef.current = {
-      offsetX: transformRef.current.offsetX + dx,
-      offsetY: transformRef.current.offsetY + dy,
-      zoom: transformRef.current.zoom,
-    };
-    schedulePushTransform();
-  };
+  const nudgeOffset = useCallback(
+    (dx: number, dy: number) => {
+      transformRef.current = {
+        offsetX: transformRef.current.offsetX + dx,
+        offsetY: transformRef.current.offsetY + dy,
+        zoom: transformRef.current.zoom,
+      };
+      schedulePushTransform();
+    },
+    [schedulePushTransform],
+  );
 
-  const nudgeZoom = (delta: number) => {
-    const nextZoom = Math.min(
-      ZOOM_MAX,
-      Math.max(
-        ZOOM_MIN,
-        Math.round((transformRef.current.zoom + delta) * 100) / 100,
-      ),
-    );
-    transformRef.current = { ...transformRef.current, zoom: nextZoom };
-    setZoom(nextZoom);
-    schedulePushTransform();
-  };
+  const nudgeZoom = useCallback(
+    (delta: number) => {
+      const nextZoom = Math.min(
+        ZOOM_MAX,
+        Math.max(
+          ZOOM_MIN,
+          Math.round((transformRef.current.zoom + delta) * 100) / 100,
+        ),
+      );
+      transformRef.current = { ...transformRef.current, zoom: nextZoom };
+      setZoom(nextZoom);
+      schedulePushTransform();
+    },
+    [schedulePushTransform],
+  );
+
+  // Arrow keys/+-/= as keyboard shortcuts for the exact same nudges the
+  // buttons below do - only worth having now that ModelDisplay.tsx holds
+  // a real-time WebSocket connection instead of polling: dialing in
+  // position by holding a key (the browser's own native key-repeat
+  // fires nudgeOffset/nudgeZoom over and over, same as mashing the
+  // button) only feels good once each press is visible on the physical
+  // rig immediately, not up to a poll interval later. Both '+'/'=' and
+  // '-'/'_' are handled for zoom - '=' and '-' are the unshifted keys on
+  // a standard US layout, so this works whether or not the browser
+  // reports the shifted glyph.
+  //
+  // Gated on displayConnected, not broadcasting - same reasoning as the
+  // buttons' own disabled prop below: pan/zoom is about correcting
+  // whatever's currently showing, independent of whether this browser
+  // happens to be the one actively broadcasting a character right now.
+  // window-level, not scoped to the stage element - there's nothing else
+  // on this page that would ever want focus instead (no text inputs),
+  // so there's no reason to require clicking into a specific element
+  // first for the keys to register. Left/right also flow through
+  // horizontalNudgeDirection - see its own doc comment.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!displayConnected) {
+        return;
+      }
+      switch (event.key) {
+        case 'ArrowLeft':
+          event.preventDefault();
+          nudgeOffset(-OFFSET_STEP_PX * horizontalNudgeDirection, 0);
+          break;
+        case 'ArrowRight':
+          event.preventDefault();
+          nudgeOffset(OFFSET_STEP_PX * horizontalNudgeDirection, 0);
+          break;
+        case 'ArrowUp':
+          event.preventDefault();
+          nudgeOffset(0, -OFFSET_STEP_PX);
+          break;
+        case 'ArrowDown':
+          event.preventDefault();
+          nudgeOffset(0, OFFSET_STEP_PX);
+          break;
+        case '+':
+        case '=':
+          event.preventDefault();
+          nudgeZoom(ZOOM_STEP);
+          break;
+        case '-':
+        case '_':
+          event.preventDefault();
+          nudgeZoom(-ZOOM_STEP);
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [displayConnected, nudgeOffset, nudgeZoom, horizontalNudgeDirection]);
 
   // Pushes this browser's current character/flip to the shared display
-  // state (see ModelDisplay.tsx, which polls the same endpoint) whenever
-  // either changes, but only while broadcastMode is on - see its own doc
+  // state (see ModelDisplay.tsx, which now holds this open over a real-
+  // time WebSocket rather than polling it) whenever either changes, but
+  // only while broadcastMode is on - see its own doc
   // comment above for why that's opt-in. Deliberately doesn't also clear
   // the display when broadcastMode turns off: turning this browser's
   // remote off shouldn't blank whatever's still live, same as unplugging
@@ -521,10 +611,16 @@ const ModelViewer = () => {
             reason: unlike Flip, there's no local rendering of this on
             the controller's own canvas to preview against, so a click
             here with nothing connected would visibly do nothing at all
-            rather than just not being useful yet. */}
+            rather than just not being useful yet. ← and → always mean
+            "left"/"right" as seen in the actual mirrored result, not raw
+            screen-right - see horizontalNudgeDirection's own doc
+            comment for why that's the same signed delta the button
+            sends flips along with flipMode. */}
         <button
           type="button"
-          onClick={() => nudgeOffset(-OFFSET_STEP_PX, 0)}
+          onClick={() =>
+            nudgeOffset(-OFFSET_STEP_PX * horizontalNudgeDirection, 0)
+          }
           disabled={!displayConnected}
           className={styles.flipToggle}
           aria-label="Nudge the remote display's character left"
@@ -533,7 +629,9 @@ const ModelViewer = () => {
         </button>
         <button
           type="button"
-          onClick={() => nudgeOffset(OFFSET_STEP_PX, 0)}
+          onClick={() =>
+            nudgeOffset(OFFSET_STEP_PX * horizontalNudgeDirection, 0)
+          }
           disabled={!displayConnected}
           className={styles.flipToggle}
           aria-label="Nudge the remote display's character right"
