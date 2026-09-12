@@ -31,13 +31,16 @@
 
 /* Bottom-center, same placement/fade convention as ModelViewer.module.css's
    own .controls - see ModelDisplay.tsx's doc comment for why this page
-   only ever has the one button inside it. */
+   only ever has Exit/Enable audio inside it, nothing that controls
+   anything remotely. */
 .controls {
   position: absolute;
   bottom: var(--space-4);
   left: 50%;
   transform: translateX(-50%);
   z-index: 1;
+  display: flex;
+  gap: var(--space-2);
   opacity: 1;
   transition: opacity 0.25s ease;
 }
@@ -69,4 +72,12 @@
 .exitButton:hover,
 .exitButton:focus-visible {
   border-color: var(--teal);
+}
+
+/* Same teal-for-active convention as ModelViewer.module.css's own
+   .flipToggleActive - distinguishes "audio is on" from the default
+   outline at a glance, without needing to read the label. */
+.audioEnabled {
+  border-color: var(--teal);
+  color: var(--teal);
 }

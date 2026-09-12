@@ -47,16 +47,20 @@ const FLIP_TRANSFORMS: Record<string, string> = {
 // nudge, confirmed live as the single biggest source of felt lag
 // adjusting the physical rig.
 //
-// The only control this page has of its own is the single "Exit display
-// mode" button below - deliberately the *only* one: everything else
-// (picking a character, Flip, Broadcast, Trigger touch, the pan/zoom
-// nudges) belongs to ModelViewer.tsx, the interactive/controller side,
-// precisely so this page stays a passive slate with nothing else to
-// accidentally tap. Auto-hidden the same way as ModelViewer's own
-// controls (see useAutoHideControls) - a persistent button sitting in
-// the middle of a physical Pepper's Ghost reflection would be a constant
-// reminder this is a screen, undermining the whole illusion the rig
-// exists for.
+// This page's own controls are deliberately minimal - "Exit display
+// mode" and "Enable audio" below, nothing that controls anything
+// remotely: picking a character, Flip, Broadcast, Trigger touch, the
+// pan/zoom nudges all belong to ModelViewer.tsx, the interactive/
+// controller side, precisely so this page stays a passive slate with
+// nothing else to accidentally tap. Enable audio isn't an exception to
+// that - it can't be, by design (see useModelCanvas's own
+// attemptAudioUnlock doc comment: only a real local tap on this exact
+// device can ever unlock its own audio playback, no remote action can
+// do it for it) - it's a required local housekeeping affordance, not a
+// remote control. Both fade the same way as ModelViewer's own controls
+// (see useAutoHideControls) - a persistent button sitting in the middle
+// of a physical Pepper's Ghost reflection would be a constant reminder
+// this is a screen, undermining the whole illusion the rig exists for.
 //
 // Deliberately still tap-reactive (useModelCanvas's own tap-to-motion+
 // audio isn't disabled here) - someone reaching directly into the rig
@@ -80,10 +84,14 @@ const ModelDisplay = () => {
   const [offsetY, setOffsetY] = useState(0);
   const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { loading, error } = useModelCanvas(charCode ?? undefined, canvasRef, {
-    verticalAlign: 'bottom',
-    bottomMarginPx: BOTTOM_MARGIN_PX,
-  });
+  const { loading, error, audioUnlocked, enableAudio } = useModelCanvas(
+    charCode ?? undefined,
+    canvasRef,
+    {
+      verticalAlign: 'bottom',
+      bottomMarginPx: BOTTOM_MARGIN_PX,
+    },
+  );
   // Not auto-hidden while loading/errored, same reasoning as
   // ModelViewer's own controls - someone setting this display up needs a
   // reliably-reachable way out if a character fails to load, not one
@@ -201,9 +209,15 @@ const ModelDisplay = () => {
         className={styles.canvas}
         style={canvasTransform ? { transform: canvasTransform } : undefined}
       />
-      {/* The one and only control this page has - see this component's
-          own doc comment for why display mode deliberately has nothing
-          else to tap. */}
+      {/* Exit display mode - see this component's own doc comment for why
+          display mode deliberately has nothing else to tap that would
+          control anything remotely. "Enable audio" alongside it is a
+          different category entirely, not a remote-control action - a
+          real local tap on *this* device is the one thing that can ever
+          unlock its own audio (see useModelCanvas's own attemptAudioUnlock
+          doc comment), so this is a required local housekeeping
+          affordance, and one worth being able to see rather than an
+          invisible background listener with no feedback either way. */}
       <div
         className={[
           styles.controls,
@@ -219,6 +233,22 @@ const ModelDisplay = () => {
           aria-label="Exit display mode and return to the character picker"
         >
           Exit display mode
+        </button>
+        <button
+          type="button"
+          onClick={enableAudio}
+          className={
+            audioUnlocked
+              ? `${styles.exitButton} ${styles.audioEnabled}`
+              : styles.exitButton
+          }
+          aria-label={
+            audioUnlocked
+              ? 'Audio is enabled for remote-triggered playback'
+              : 'Tap to enable audio for remote-triggered playback'
+          }
+        >
+          {audioUnlocked ? 'Audio: On' : 'Enable audio'}
         </button>
       </div>
     </div>

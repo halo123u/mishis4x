@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import {
   AnimationState,
   AnimationStateData,
@@ -113,6 +119,105 @@ class TolerantAttachmentLoader extends AtlasAttachmentLoader {
   }
 }
 
+// Module-level, not per-hook-call: unlocking browser autoplay policy for
+// remote-triggered audio (see ensureAudioUnlockListener below) is a
+// property of the browser tab/document, not of any one character or
+// mount. Confirmed live this was a real bug, not just a design nicety:
+// useModelCanvas's main effect already tears down and rebuilds on every
+// charCode change (key={charCode} on the <canvas> forces this - a fresh
+// WebGL context per character, see that key's own doc comment on both
+// components) - an audioElement/unlock listener created fresh *inside*
+// that effect got thrown away and recreated brand new on every single
+// character switch, discarding whatever real-gesture unlock had already
+// happened and silently requiring a fresh tap after every change (a
+// controller broadcasting a new character to ModelDisplay.tsx, or simply
+// navigating between characters, both count). A single shared element/
+// unlock flag, created once and reused for the whole tab's lifetime
+// regardless of how many times a character switches underneath it,
+// fixes this: once it's genuinely been unlocked, it stays unlocked until
+// the tab itself closes or reloads.
+let sharedAudioElement: HTMLAudioElement | null = null;
+function getSharedAudioElement(): HTMLAudioElement {
+  if (!sharedAudioElement) {
+    sharedAudioElement = new Audio();
+  }
+  return sharedAudioElement;
+}
+
+// sharedAudioUnlocked/audioUnlockListeners back useModelCanvas's own
+// audioUnlocked/enableAudio return values - a tiny module-level pub/sub
+// (not React context/state) for the same reason sharedAudioElement above
+// is module-level: an "Enable audio" indicator on ModelDisplay.tsx needs
+// to reflect real unlock status across every character-switch remount,
+// not just the mount that happened to be live when it last changed.
+// Every currently-mounted useModelCanvas call registers its own
+// setAudioUnlocked here on mount and unregisters on unmount; whichever
+// one actually achieves the unlock (the automatic first-tap-anywhere
+// listener, or someone explicitly pressing "Enable audio") notifies all
+// of them at once via markAudioUnlocked.
+let sharedAudioUnlocked = false;
+const audioUnlockListeners = new Set<(unlocked: boolean) => void>();
+
+function markAudioUnlocked() {
+  if (sharedAudioUnlocked) {
+    return;
+  }
+  sharedAudioUnlocked = true;
+  audioUnlockListeners.forEach((listener) => listener(true));
+}
+
+// attemptAudioUnlock is the one real implementation behind both the
+// automatic pointerdown-anywhere listener and the manual "Enable audio"
+// button - playing (then immediately pausing) sampleSrc on the shared
+// element is what actually spends a real user gesture unlocking it, for
+// remote-triggered plays as much as this specific clip.
+//
+// NotAllowedError specifically means the browser's autoplay policy
+// itself blocked this attempt - genuinely still locked. Any other
+// rejection (no audio imported for this character, a decode error, a
+// 404, ...) means the policy check itself passed and playback merely
+// failed for an unrelated reason - which still proves the unlock
+// succeeded, so a character with no imported audio doesn't leave
+// "Enable audio" stuck reporting failure forever.
+function attemptAudioUnlock(sampleSrc: string) {
+  const el = getSharedAudioElement();
+  el.src = sampleSrc;
+  void el.play().then(
+    () => {
+      el.pause();
+      markAudioUnlocked();
+    },
+    (err: unknown) => {
+      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        return;
+      }
+      markAudioUnlocked();
+    },
+  );
+}
+
+// ensureAudioUnlockListener registers, at most once ever for this tab, a
+// one-shot listener for the first real interaction anywhere on the page
+// - not scoped to any specific mount's cleanup, since the whole point is
+// surviving remounts. sampleSrc only matters the first time this is ever
+// called (a real, playable URL is what turns the unlock attempt into a
+// genuine play() the browser can actually grant, rather than an
+// immediate no-source rejection of uncertain effect on the real unlock
+// state) - every later mount passing a different character's URL here
+// is a no-op, since audioUnlockRequested is already true by then.
+let audioUnlockRequested = false;
+function ensureAudioUnlockListener(sampleSrc: string) {
+  if (audioUnlockRequested) {
+    return;
+  }
+  audioUnlockRequested = true;
+  document.addEventListener(
+    'pointerdown',
+    () => attemptAudioUnlock(sampleSrc),
+    { once: true },
+  );
+}
+
 // Loads and renders one imported character model (see
 // be/cmd/model_import.go) into canvasRef's <canvas>, using the official
 // Spine WebGL runtime, pinned to the exact Spine version (4.1.11) the
@@ -178,9 +283,45 @@ export function useModelCanvas(
   charCode: string | undefined,
   canvasRef: RefObject<HTMLCanvasElement | null>,
   options?: UseModelCanvasOptions,
-): { loading: boolean; error: string | null } {
+): {
+  loading: boolean;
+  error: string | null;
+  // Whether remote-triggered (or any programmatic) audio playback is
+  // currently unlocked for this tab - see attemptAudioUnlock's own doc
+  // comment. Only ModelDisplay.tsx's "Enable audio" button actually
+  // reads this; ModelViewer ignores it, since its own audio only ever
+  // plays from a real direct tap, which never needed unlocking in the
+  // first place.
+  audioUnlocked: boolean;
+  // Manually attempts the same unlock the automatic first-tap-anywhere
+  // listener does, using the current character's own clip as the sample
+  // - what "Enable audio" calls on click, so someone setting up the
+  // physical rig has an explicit, visible affordance instead of an
+  // invisible background listener with no feedback either way.
+  enableAudio: () => void;
+} {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [audioUnlocked, setAudioUnlocked] = useState(() => sharedAudioUnlocked);
+  // Registers this mount's own setAudioUnlocked with the shared pub/sub
+  // (see audioUnlockListeners's own doc comment) so it re-renders
+  // whenever ANY mount - this one, a previous one before a character
+  // switch remounted everything, or a future one - actually achieves the
+  // unlock. Deliberately its own effect with an empty dependency array,
+  // separate from the main per-charCode effect below: this registration
+  // must survive every character switch, not tear down and reattach
+  // alongside it.
+  useEffect(() => {
+    audioUnlockListeners.add(setAudioUnlocked);
+    return () => {
+      audioUnlockListeners.delete(setAudioUnlocked);
+    };
+  }, []);
+  const enableAudio = useCallback(() => {
+    if (charCode) {
+      attemptAudioUnlock(`/api/models/${charCode}/audio/JP/1`);
+    }
+  }, [charCode]);
   // Read from inside the tap handler via .current, not closed over
   // directly - most callers pass a fresh inline options object every
   // render, and the main effect below must not re-run (tearing down
@@ -209,40 +350,19 @@ export function useModelCanvas(
     // can still reach it to remove the listener regardless of how far
     // load() got before this effect unmounts.
     let onTap: (() => void) | null = null;
-    // One persistent element, reused for every clip (see playNextAudioClip
-    // below) rather than a fresh `new Audio()` per play - see unlockAudio
-    // just below for why that reuse is the whole point, not just tidiness.
-    const audioElement = new Audio();
-    // Chrome/Safari only allow <audio>.play() to succeed *outside* a real
-    // user gesture (like ModelDisplay.tsx's remote-trigger poll loop
-    // calling canvas.click() from inside a fetch().then()) once this
-    // exact element has already been played from *inside* one first -
+    // Shared across every mount/character switch, not created fresh here
+    // - see sharedAudioElement's own doc comment above for the real bug
+    // this fixes (a fresh, never-unlocked Audio() per character switch
+    // meant losing the unlock on every single change). Chrome/Safari
+    // only allow <audio>.play() to succeed *outside* a real user gesture
+    // (like ModelDisplay.tsx's remote-trigger WebSocket push calling
+    // canvas.click() from inside its onmessage handler) once this exact
+    // element has already been played from *inside* one first -
     // confirmed live against a real Safari display that a physical tap
-    // plays audio fine, but a remote-triggered one never did, because
-    // playNextAudioClip used to construct a brand-new, never-unlocked
-    // Audio() every single play - constructing fresh each time meant
-    // every play needed its own real gesture, and a poll-driven
-    // canvas.click() never has one. A single real tap/click anywhere on
-    // the page (not necessarily the character - whatever happens first)
-    // plays-then-immediately-pauses this one shared element, "spending"
-    // that real gesture to unlock it for every later play - remote-
-    // triggered or not - for the rest of this page's life. document-
-    // level, not canvas-level: the point is to catch literally the first
-    // real interaction with the page at all (a button tap on ModelViewer
-    // counts just as well as tapping the character), not to require it
-    // land on any specific element.
-    const unlockAudio = () => {
-      audioElement.src = `/api/models/${charCode}/audio/JP/1`;
-      void audioElement.play().then(
-        () => audioElement.pause(),
-        () => {
-          // No audio for this character, or some other reason this
-          // particular attempt failed - either way, nothing left for
-          // this one-shot listener to do.
-        },
-      );
-    };
-    document.addEventListener('pointerdown', unlockAudio, { once: true });
+    // plays audio fine, but a remote-triggered one never did before this
+    // element was reused rather than constructed fresh per play.
+    const audioElement = getSharedAudioElement();
+    ensureAudioUnlockListener(`/api/models/${charCode}/audio/JP/1`);
 
     const context = new ManagedWebGLRenderingContext(canvas, { alpha: true });
     const renderer = new SceneRenderer(canvas, context);
@@ -495,10 +615,13 @@ export function useModelCanvas(
       if (onTap) {
         canvas.removeEventListener('click', onTap);
       }
-      // Harmless if unlockAudio already fired and self-removed (the
-      // {once: true} above) - removing an already-removed listener is a
-      // no-op, not an error.
-      document.removeEventListener('pointerdown', unlockAudio);
+      // No unlock listener to remove here - it's module-level (see
+      // ensureAudioUnlockListener), deliberately not tied to this
+      // mount's own lifetime, so there's nothing local left to clean up.
+      // audioElement itself is the shared element too - pausing it on
+      // unmount still matters (don't let audio keep playing after
+      // navigating away or switching characters), it just isn't this
+      // mount's own object to dispose of, only to stop.
       audioElement.pause();
       if (rafHandle) {
         cancelAnimationFrame(rafHandle);
@@ -522,5 +645,5 @@ export function useModelCanvas(
     };
   }, [charCode, canvasRef]);
 
-  return { loading, error };
+  return { loading, error, audioUnlocked, enableAudio };
 }
