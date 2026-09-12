@@ -81,3 +81,8 @@ export interface AdminInviteRequest {
 export interface SetCardCharacterModelInput {
   char_code?: string;
 }
+export interface ModelDisplayState {
+  char_code: string;
+  flip?: string;
+  pepper: boolean;
+}
