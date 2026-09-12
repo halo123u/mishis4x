@@ -17,10 +17,29 @@
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+/* transition: transform - a pan/zoom/flip pushed from the controller
+   used to snap the canvas straight to its new transform with no
+   interpolation at all, confirmed live that this read as jarring even
+   over the real-time WebSocket connection (PR #141) - especially since
+   a held-down arrow key's nudges are debounced into a single network
+   update (see ModelViewer.tsx's schedulePushTransform), so a whole
+   burst of small steps arrives as one value and would otherwise jump
+   there in a single frame. Animating the CSS transform itself, entirely
+   client-side, gets a smooth glide between whatever it already was and
+   wherever it's going without sending a single extra byte over the
+   network - the debounce still controls how often a *new destination*
+   arrives, this only controls how the display gets there. */
 .canvas {
   width: 100%;
   height: 100%;
   display: block;
+  transition: transform 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas {
+    transition: none;
+  }
 }
 
 .status {
