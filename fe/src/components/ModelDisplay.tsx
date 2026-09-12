@@ -45,6 +45,18 @@ const FLIP_TRANSFORMS: Record<string, string> = {
 const ModelDisplay = () => {
   const [charCode, setCharCode] = useState<string | null>(null);
   const [flip, setFlip] = useState<string>('');
+  // A controller's arrow/zoom nudge buttons (see ModelViewer.tsx) - a
+  // screen-space pan/zoom correction independent of character/flip, see
+  // api.ModelDisplayState.OffsetX/OffsetY/Zoom's own doc comment for why
+  // it's never part of the char_code/flip payload. offsetX/offsetY
+  // default to 0 (no correction) and zoom to 1 (no correction) - the
+  // zero value the shared state actually reports on a server that's
+  // never had SetModelDisplayTransform called is 0 for Zoom too, which
+  // would render nothing at all if applied literally, so that's treated
+  // as "1" here rather than trusted as a real scale factor.
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(0);
+  const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { loading, error } = useModelCanvas(charCode ?? undefined, canvasRef, {
     verticalAlign: 'bottom',
@@ -77,6 +89,9 @@ const ModelDisplay = () => {
           const state: ModelDisplayState = await res.json();
           setCharCode(state.char_code || null);
           setFlip(state.flip ?? '');
+          setOffsetX(state.offset_x ?? 0);
+          setOffsetY(state.offset_y ?? 0);
+          setZoom(state.zoom || 1);
 
           // canvas.click() - a real DOM method, not a synthetic input
           // event - fires the exact same 'click' listener
@@ -106,7 +121,21 @@ const ModelDisplay = () => {
     };
   }, []);
 
-  const flipTransform = flip ? FLIP_TRANSFORMS[flip] : undefined;
+  // translate() first (leftmost/outermost) so a pan is always that many
+  // real screen pixels regardless of the zoom scale or flip applied
+  // after it - scale and any of FLIP_TRANSFORMS commute with each other
+  // (both are diagonal/uniform, order between them never matters), but
+  // translate does not commute with scale, and only the outer-applied
+  // reading gives "nudge right" a fixed on-screen distance instead of
+  // one that shrinks/grows with the current zoom level.
+  const transformParts = [
+    offsetX || offsetY ? `translate(${offsetX}px, ${offsetY}px)` : null,
+    zoom !== 1 ? `scale(${zoom})` : null,
+    flip ? FLIP_TRANSFORMS[flip] : null,
+  ].filter(Boolean);
+  const canvasTransform = transformParts.length
+    ? transformParts.join(' ')
+    : undefined;
 
   return (
     <div className={styles.stage}>
@@ -128,7 +157,7 @@ const ModelDisplay = () => {
         key={charCode}
         ref={canvasRef}
         className={styles.canvas}
-        style={flipTransform ? { transform: flipTransform } : undefined}
+        style={canvasTransform ? { transform: canvasTransform } : undefined}
       />
     </div>
   );

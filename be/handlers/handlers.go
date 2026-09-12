@@ -324,6 +324,7 @@ func (d *Data) NewRouter() *mux.Router {
 	models.HandleFunc("/display/status", d.GetModelDisplayStatus).Methods("GET")
 	models.HandleFunc("/display/trigger", d.TriggerModelDisplay).Methods("POST")
 	models.HandleFunc("/display/flip", d.SetModelDisplayFlip).Methods("PUT")
+	models.HandleFunc("/display/transform", d.SetModelDisplayTransform).Methods("PUT")
 	models.HandleFunc("/cards/{cardID}", d.SetCardCharacterModel).Methods("PUT")
 
 	// healthcheck

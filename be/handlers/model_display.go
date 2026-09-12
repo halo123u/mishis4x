@@ -26,24 +26,25 @@ var displayStaleAfter = 5 * time.Second
 // ModelDisplay holds the shared "what should the physically-mounted
 // display be showing right now" state for the model viewer's remote-
 // control feature - a controller (anyone browsing /models/{charCode})
-// writes to it via Set/SetFlip/IncrementTrigger, and a display (a phone
-// stuck inside a physical Pepper's Ghost/acrylic rig, with no practical
-// way to interact with it directly) polls it via Get. Deliberately
-// unpersisted, in-memory only, same single-instance-is-fine precedent
-// as matchmaking.Lobby: this is ephemeral "what's on screen right now"
-// state, not data worth surviving a restart, and this app already only
-// ever runs as one instance.
+// writes to it via Set/SetFlip/SetTransform/IncrementTrigger, and a
+// display (a phone stuck inside a physical Pepper's Ghost/acrylic rig,
+// with no practical way to interact with it directly) polls it via Get.
+// Deliberately unpersisted, in-memory only, same single-instance-is-fine
+// precedent as matchmaking.Lobby: this is ephemeral "what's on screen
+// right now" state, not data worth surviving a restart, and this app
+// already only ever runs as one instance.
 //
 // The mutex guards the whole struct, not each field separately - a
 // display mid-poll should never see e.g. a new CharCode paired with a
 // stale Flip value left over from before a concurrent write finished.
 //
-// Three separate writers (Set/SetFlip/IncrementTrigger), not one PUT of
-// the whole struct: each covers a distinct, independently-triggered
-// controller action (pick a character, live-tweak orientation, fire a
-// touch reaction), and a caller for one was never guaranteed to know or
-// safely resend the other two's current values - see Set's own doc
-// comment for the concrete bug this already caused once with Trigger.
+// Four separate writers (Set/SetFlip/SetTransform/IncrementTrigger), not
+// one PUT of the whole struct: each covers a distinct, independently-
+// triggered controller action (pick a character, live-tweak orientation,
+// live-tweak pan/zoom, fire a touch reaction), and a caller for one was
+// never guaranteed to know or safely resend the others' current values -
+// see Set's own doc comment for the concrete bug this already caused
+// once with Trigger.
 type ModelDisplay struct {
 	mu    sync.Mutex
 	state api.ModelDisplayState
@@ -94,6 +95,21 @@ func (d *ModelDisplay) SetFlip(flip string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.state.Flip = flip
+}
+
+// SetTransform overwrites just the pan/zoom correction, leaving
+// CharCode/Flip/Trigger untouched - what a controller's arrow/zoom
+// nudge buttons live-push to an already-connected display. Its own
+// method for the same reason SetFlip is its own method rather than
+// folded into Set: a controller nudging position/zoom has no reason to
+// know or resend whichever character/flip actually happens to be live
+// right now.
+func (d *ModelDisplay) SetTransform(offsetX, offsetY int, zoom float64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.state.OffsetX = offsetX
+	d.state.OffsetY = offsetY
+	d.state.Zoom = zoom
 }
 
 // IncrementTrigger bumps the shared trigger counter - see
@@ -213,5 +229,21 @@ func (d *Data) SetModelDisplayFlip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.ModelDisplay.SetFlip(body.Flip)
+	w.WriteHeader(http.StatusOK)
+}
+
+// SetModelDisplayTransform live-adjusts just the display's pan/zoom
+// correction - see ModelDisplay.SetTransform's own doc comment for why
+// this is a separate endpoint from both SetModelDisplay and
+// SetModelDisplayFlip. No validation needed: an offset is just a screen-
+// pixel count and a zoom of 0 (the zero value, meaning "never touched")
+// is already the frontend's own signal to render at 1x - see
+// api.ModelDisplayState.Zoom's own doc comment.
+func (d *Data) SetModelDisplayTransform(w http.ResponseWriter, r *http.Request) {
+	var body api.SetModelDisplayTransformInput
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	d.ModelDisplay.SetTransform(body.OffsetX, body.OffsetY, body.Zoom)
 	w.WriteHeader(http.StatusOK)
 }

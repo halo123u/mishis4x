@@ -374,3 +374,92 @@ func TestSetModelDisplayFlip_Unauthenticated(t *testing.T) {
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
+
+// setModelDisplayTransform PUTs to /api/models/display/transform - the
+// pan/zoom live-tweak endpoint, separate from both setModelDisplay and
+// setModelDisplayFlip above - see SetModelDisplayTransform's own doc
+// comment.
+func setModelDisplayTransform(t *testing.T, client *http.Client, tsURL string, input api.SetModelDisplayTransformInput) *http.Response {
+	t.Helper()
+	body, err := json.Marshal(input)
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPut, tsURL+"/api/models/display/transform", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := client.Do(req)
+	require.NoError(t, err)
+	return res
+}
+
+func TestSetModelDisplayTransform_UpdatesOffsetAndZoomOnly(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+	charCode := testCharCode(t)
+	storeTestCharacterModel(t, db, charCode)
+
+	putRes := setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{CharCode: charCode, Flip: "x"})
+	require.Equal(t, http.StatusOK, putRes.StatusCode)
+	_ = putRes.Body.Close()
+
+	transformRes := setModelDisplayTransform(t, client, ts.URL, api.SetModelDisplayTransformInput{OffsetX: 20, OffsetY: -10, Zoom: 1.5})
+	defer func() { _ = transformRes.Body.Close() }()
+	require.Equal(t, http.StatusOK, transformRes.StatusCode)
+
+	state := getModelDisplay(t, client, ts.URL)
+	require.Equal(t, charCode, state.CharCode, "SetModelDisplayTransform must not touch CharCode")
+	require.Equal(t, "x", state.Flip, "SetModelDisplayTransform must not touch Flip")
+	require.Equal(t, 20, state.OffsetX)
+	require.Equal(t, -10, state.OffsetY)
+	require.InDelta(t, 1.5, state.Zoom, 0.0001)
+}
+
+func TestSetModelDisplayTransform_DoesNotResetTrigger(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+
+	res := triggerModelDisplay(t, client, ts.URL)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	_ = res.Body.Close()
+	require.Equal(t, 1, getModelDisplay(t, client, ts.URL).Trigger)
+
+	transformRes := setModelDisplayTransform(t, client, ts.URL, api.SetModelDisplayTransformInput{OffsetX: 5, OffsetY: 5, Zoom: 2})
+	require.Equal(t, http.StatusOK, transformRes.StatusCode)
+	_ = transformRes.Body.Close()
+
+	state := getModelDisplay(t, client, ts.URL)
+	require.Equal(t, 5, state.OffsetX)
+	require.Equal(t, 1, state.Trigger, "SetModelDisplayTransform must not reset Trigger")
+}
+
+func TestSetModelDisplayTransform_NonOwnerForbidden(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithModelViewer(t, db)
+
+	username := testUsername(t, db)
+	createTestUser(t, db, username, "correctpass123")
+	client := newClient(t)
+	loginRes := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, loginRes.StatusCode)
+
+	res := setModelDisplayTransform(t, client, ts.URL, api.SetModelDisplayTransformInput{OffsetX: 1})
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+}
+
+func TestSetModelDisplayTransform_Unauthenticated(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithModelViewer(t, db)
+
+	body, err := json.Marshal(api.SetModelDisplayTransformInput{OffsetX: 1})
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/models/display/transform", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+}

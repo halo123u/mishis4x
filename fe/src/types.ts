@@ -85,6 +85,9 @@ export interface ModelDisplayState {
   char_code: string;
   flip?: string;
   trigger: number;
+  offset_x?: number;
+  offset_y?: number;
+  zoom?: number;
 }
 export interface SetModelDisplayCharCodeInput {
   char_code: string;
@@ -92,6 +95,11 @@ export interface SetModelDisplayCharCodeInput {
 }
 export interface SetModelDisplayFlipInput {
   flip?: string;
+}
+export interface SetModelDisplayTransformInput {
+  offset_x?: number;
+  offset_y?: number;
+  zoom?: number;
 }
 export interface ModelDisplayStatus {
   connected: boolean;
