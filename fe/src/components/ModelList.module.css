@@ -26,3 +26,25 @@
 .card:focus-visible {
   border-color: var(--teal);
 }
+
+/* Secondary-button-styled link, not one of the character-grid .card
+   entries above - a real navigation (not a click handler), so a plain
+   <Link> styled to match is more correct than driving Button.tsx's own
+   <button> through navigate(). */
+.remoteDisplayLink {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.remoteDisplayLink:hover,
+.remoteDisplayLink:focus-visible {
+  border-color: var(--teal);
+}
