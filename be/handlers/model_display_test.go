@@ -4,21 +4,31 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"example.com/mishis4x/api"
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 )
 
-// setDisplayStaleAfterForTest points displayStaleAfter at a tiny
-// duration for the lifetime of one test, restoring the real value on
-// cleanup - see that var's own doc comment for why it's a var at all.
-func setDisplayStaleAfterForTest(t *testing.T, d time.Duration) {
+// dialModelDisplayWS opens an authenticated WebSocket connection to
+// /api/models/display/ws, the same way the real display does - client's
+// cookie jar carries the session, exactly like an ordinary authenticated
+// HTTP request would (the upgrade request is still a plain HTTP request
+// under the hood, gated by the same AuthMiddleware/modelOnlyMiddleware
+// chain as everything else under /api/models/...).
+func dialModelDisplayWS(t *testing.T, client *http.Client, tsURL string) *websocket.Conn {
 	t.Helper()
-	original := displayStaleAfter
-	displayStaleAfter = d
-	t.Cleanup(func() { displayStaleAfter = original })
+	wsURL := "ws" + strings.TrimPrefix(tsURL, "http") + "/api/models/display/ws"
+	conn, res, err := (&websocket.Dialer{Jar: client.Jar}).Dial(wsURL, nil)
+	require.NoError(t, err)
+	if res != nil {
+		_ = res.Body.Close()
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
 }
 
 func TestGetModelDisplay_DefaultsToEmptyState(t *testing.T) {
@@ -137,69 +147,69 @@ func getModelDisplayStatus(t *testing.T, client *http.Client, tsURL string) api.
 	return status
 }
 
-func TestGetModelDisplayStatus_NeverPolledIsDisconnected(t *testing.T) {
+func TestGetModelDisplayStatus_NoDisplayIsDisconnected(t *testing.T) {
 	db := testDB(t)
 	ts, client := newTestServerWithModelViewer(t, db)
 
 	status := getModelDisplayStatus(t, client, ts.URL)
-	require.False(t, status.Connected, "a server that's never had GET /api/models/display called must report disconnected, not an error")
+	require.False(t, status.Connected, "a server with no display WebSocket connected must report disconnected, not an error")
 }
 
-func TestGetModelDisplayStatus_RecentlyPolledIsConnected(t *testing.T) {
+func TestGetModelDisplayStatus_ConnectedWhileWebSocketOpen(t *testing.T) {
 	db := testDB(t)
 	ts, client := newTestServerWithModelViewer(t, db)
 
-	// Simulates the display's own poll - this is the call that's
-	// supposed to count as a heartbeat, unlike the status check itself.
-	res, err := client.Get(ts.URL + "/api/models/display")
-	require.NoError(t, err)
-	_ = res.Body.Close()
+	dialModelDisplayWS(t, client, ts.URL)
 
-	status := getModelDisplayStatus(t, client, ts.URL)
-	require.True(t, status.Connected)
+	// Eventually, not an immediate assertion: the client's Dial() call
+	// returns as soon as the 101 Switching Protocols response comes
+	// back, which can land a moment before ServeModelDisplayWS's own
+	// subsequent subscribe() call actually runs server-side - a real,
+	// if narrow, race rather than a flaky test artifact.
+	require.Eventually(t, func() bool {
+		return getModelDisplayStatus(t, client, ts.URL).Connected
+	}, time.Second, 10*time.Millisecond, "must report connected once a display's WebSocket handshake completes")
 }
 
-func TestGetModelDisplayStatus_CheckingStatusIsNotItselfAHeartbeat(t *testing.T) {
+func TestGetModelDisplayStatus_DisconnectsAfterWebSocketCloses(t *testing.T) {
 	db := testDB(t)
 	ts, client := newTestServerWithModelViewer(t, db)
-	setDisplayStaleAfterForTest(t, 10*time.Millisecond)
 
-	// One real poll, then only status checks from here - if a status
-	// check itself counted as proof of life, this would stay "connected"
-	// forever regardless of the shrunk threshold, defeating the whole
-	// point of Connected being a separate, non-mutating read.
-	res, err := client.Get(ts.URL + "/api/models/display")
-	require.NoError(t, err)
-	_ = res.Body.Close()
+	conn := dialModelDisplayWS(t, client, ts.URL)
+	require.Eventually(t, func() bool {
+		return getModelDisplayStatus(t, client, ts.URL).Connected
+	}, time.Second, 10*time.Millisecond)
 
-	time.Sleep(20 * time.Millisecond)
+	require.NoError(t, conn.Close())
 
-	status := getModelDisplayStatus(t, client, ts.URL)
-	require.False(t, status.Connected, "checking status repeatedly must not itself keep the display looking alive")
+	// Eventually: the server only notices a closed connection once its
+	// own blocked ReadMessage call returns an error, which happens
+	// promptly but not synchronously with this test's own conn.Close().
+	require.Eventually(t, func() bool {
+		return !getModelDisplayStatus(t, client, ts.URL).Connected
+	}, time.Second, 10*time.Millisecond, "must report disconnected once the display's WebSocket actually closes")
 }
 
-func TestGetModelDisplayStatus_StaleClearsStoredState(t *testing.T) {
+func TestModelDisplayWS_DisconnectClearsStoredState(t *testing.T) {
 	db := testDB(t)
 	ts, client := newTestServerWithModelViewer(t, db)
 	charCode := testCharCode(t)
 	storeTestCharacterModel(t, db, charCode)
-	setDisplayStaleAfterForTest(t, 10*time.Millisecond)
 
-	pollRes, err := client.Get(ts.URL + "/api/models/display")
-	require.NoError(t, err)
-	_ = pollRes.Body.Close()
+	conn := dialModelDisplayWS(t, client, ts.URL)
+	require.Eventually(t, func() bool {
+		return getModelDisplayStatus(t, client, ts.URL).Connected
+	}, time.Second, 10*time.Millisecond)
 
 	putRes := setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{CharCode: charCode})
 	require.Equal(t, http.StatusOK, putRes.StatusCode)
 	_ = putRes.Body.Close()
 
-	time.Sleep(20 * time.Millisecond)
+	require.NoError(t, conn.Close())
 
-	status := getModelDisplayStatus(t, client, ts.URL)
-	require.False(t, status.Connected)
-
-	state := getModelDisplay(t, client, ts.URL)
-	require.Equal(t, api.ModelDisplayState{}, state, "a stale display's stored character must actually be cleared, not just reported disconnected")
+	require.Eventually(t, func() bool {
+		return getModelDisplay(t, client, ts.URL) == (api.ModelDisplayState{})
+	}, time.Second, 10*time.Millisecond, "a disconnected display's stored character must actually be cleared, not just reported disconnected")
 }
 
 func getModelDisplay(t *testing.T, client *http.Client, tsURL string) api.ModelDisplayState {
@@ -460,6 +470,83 @@ func TestSetModelDisplayTransform_Unauthenticated(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+}
+
+func TestServeModelDisplayWS_PushesCurrentStateOnConnect(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+	charCode := testCharCode(t)
+	storeTestCharacterModel(t, db, charCode)
+
+	putRes := setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{CharCode: charCode, Flip: "x"})
+	require.Equal(t, http.StatusOK, putRes.StatusCode)
+	_ = putRes.Body.Close()
+
+	// Connecting after the state already exists - a display that joins
+	// mid-show must see what's already live immediately, not wait for
+	// the next change to happen after it connects.
+	conn := dialModelDisplayWS(t, client, ts.URL)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(2*time.Second)))
+
+	var state api.ModelDisplayState
+	require.NoError(t, conn.ReadJSON(&state))
+	require.Equal(t, charCode, state.CharCode)
+	require.Equal(t, "x", state.Flip)
+}
+
+func TestServeModelDisplayWS_PushesUpdatesLive(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+
+	conn := dialModelDisplayWS(t, client, ts.URL)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(2*time.Second)))
+
+	// Drains the initial state push (see PushesCurrentStateOnConnect
+	// above) before triggering the real change this test cares about.
+	var initial api.ModelDisplayState
+	require.NoError(t, conn.ReadJSON(&initial))
+
+	res := triggerModelDisplay(t, client, ts.URL)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	_ = res.Body.Close()
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(2*time.Second)))
+	var updated api.ModelDisplayState
+	require.NoError(t, conn.ReadJSON(&updated), "a change must be pushed to an already-connected display immediately - there's no poll to wait for anymore")
+	require.Equal(t, 1, updated.Trigger)
+}
+
+func TestServeModelDisplayWS_NonOwnerForbidden(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithModelViewer(t, db)
+
+	username := testUsername(t, db)
+	createTestUser(t, db, username, "correctpass123")
+	client := newClient(t)
+	loginRes := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, loginRes.StatusCode)
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/api/models/display/ws"
+	_, res, err := (&websocket.Dialer{Jar: client.Jar}).Dial(wsURL, nil)
+	require.Error(t, err, "the WebSocket handshake itself must fail for a non-owner, same as any other /api/models/... route")
+	require.NotNil(t, res)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+}
+
+func TestServeModelDisplayWS_Unauthenticated(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithModelViewer(t, db)
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/api/models/display/ws"
+	_, res, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	require.Error(t, err)
+	require.NotNil(t, res)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
