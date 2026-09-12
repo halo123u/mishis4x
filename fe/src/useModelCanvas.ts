@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import {
   AnimationState,
   AnimationStateData,
@@ -141,12 +141,57 @@ class TolerantAttachmentLoader extends AtlasAttachmentLoader {
 // buttons of its own, driven by polling instead of a URL param - can
 // render the exact same way without copying ~200 lines of WebGL/Spine
 // setup.
+export type UseModelCanvasOptions = {
+  // Called on every real tap on the canvas, regardless of
+  // localReaction below - lets a caller (ModelViewer) redirect a tap
+  // somewhere else (a remote trigger, see ModelDisplay.tsx) instead of,
+  // or alongside, the local reaction.
+  onTap?: () => void;
+  // Whether a tap actually plays the local motion+audio reaction -
+  // defaults to true, the original single-device behavior (see
+  // ModelDisplay.tsx, which never overrides this: the display always
+  // wants its own reaction, whether from a remote trigger's
+  // canvas.click() or someone physically touching it). ModelViewer sets
+  // this false while a remote display is connected, so tapping the
+  // character on the controller redirects to the display via onTap
+  // above instead of also reacting right there on the controller.
+  localReaction?: boolean;
+  // Anchors the character's feet a fixed margin above the bottom of the
+  // canvas instead of vertically centering it (the default) - for a
+  // physical rig where the mounting/acrylic angle leaves less real
+  // headroom below the character than centering assumes, requiring an
+  // uncomfortable posture to compensate otherwise. 'center' (or
+  // omitting this) keeps the original behavior. Only ModelDisplay.tsx
+  // sets this - ModelViewer's own local preview has no physical rig
+  // constraint to correct for.
+  verticalAlign?: 'center' | 'bottom';
+  // CSS-pixel margin between the character's feet and the canvas's
+  // bottom edge when verticalAlign is 'bottom' - a real CSS pixel
+  // count, not a raw Spine world unit (those don't correspond to
+  // screen pixels 1:1; the conversion is computed fresh every frame
+  // from the renderer's actual current scale, so this stays correct
+  // through a canvas resize). Ignored when verticalAlign is 'center'.
+  bottomMarginPx?: number;
+};
+
 export function useModelCanvas(
   charCode: string | undefined,
   canvasRef: RefObject<HTMLCanvasElement | null>,
+  options?: UseModelCanvasOptions,
 ): { loading: boolean; error: string | null } {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Read from inside the tap handler via .current, not closed over
+  // directly - most callers pass a fresh inline options object every
+  // render, and the main effect below must not re-run (tearing down
+  // and rebuilding the whole WebGL context) just because e.g.
+  // displayConnected flipped elsewhere in the calling component. This
+  // separate, cheap effect is the only thing that needs to notice
+  // options actually changing.
+  const optionsRef = useRef(options);
+  useEffect(() => {
+    optionsRef.current = options;
+  });
 
   useEffect(() => {
     if (!charCode || !canvasRef.current) {
@@ -298,6 +343,10 @@ export function useModelCanvas(
       };
 
       onTap = () => {
+        optionsRef.current?.onTap?.();
+        if (optionsRef.current?.localReaction === false) {
+          return;
+        }
         if (!hasMotionClip || motionPlaying) {
           return;
         }
@@ -355,6 +404,28 @@ export function useModelCanvas(
         skeleton.updateWorldTransform();
 
         renderer.resize(ResizeMode.Fit);
+
+        // verticalAlign 'bottom' - see this option's own doc comment.
+        // ResizeMode.Fit above just recomputed camera.viewportWidth/
+        // viewportHeight (and already called camera.update() once) to
+        // the actual effective scale for the canvas's current pixel
+        // size - viewportHeight divided by the canvas's *CSS* pixel
+        // height (not canvas.height, which is devicePixelRatio-scaled)
+        // is exactly how many Spine world units correspond to one real
+        // CSS pixel on screen right now, however big or small the
+        // canvas actually is. That's what turns a plain "15" into an
+        // actual, resize-safe 15 CSS pixels rather than 15 of whatever
+        // arbitrary unit the source art happens to use.
+        if (optionsRef.current?.verticalAlign === 'bottom') {
+          const worldUnitsPerCSSPixel =
+            renderer.camera.viewportHeight / canvas.clientHeight;
+          const marginWorld =
+            (optionsRef.current.bottomMarginPx ?? 0) * worldUnitsPerCSSPixel;
+          renderer.camera.position.y =
+            offset.y - marginWorld + renderer.camera.viewportHeight / 2;
+          renderer.camera.update();
+        }
+
         context.gl.clearColor(0, 0, 0, 0);
         context.gl.clear(context.gl.COLOR_BUFFER_BIT);
         renderer.begin();

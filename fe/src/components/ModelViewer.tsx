@@ -30,7 +30,6 @@ const FLIP_TRANSFORMS: Record<FlipMode, string> = {
 // key) since it's a physical-device quirk, not a user preference this
 // app has any other concept of.
 const FLIP_MODE_STORAGE_KEY = 'modelViewerFlipMode';
-const PEPPER_MODE_STORAGE_KEY = 'modelViewerPepperMode';
 
 // How long "Sent!"/an error stays on the Set as display button before
 // it reverts to its normal label - long enough to register as
@@ -72,41 +71,32 @@ const ModelViewer = () => {
       ? (stored as FlipMode)
       : null;
   });
+  // Pepper's Ghost rigs used to also need a "Pepper Mode" here that
+  // counter-rotated this page's own on-screen controls 180° for whoever
+  // was physically holding the trapped phone, reading them upside-down.
+  // Now that ModelDisplay.tsx is a pure passive display with no buttons
+  // of its own - every control lives here, on the controller - nothing
+  // ever needs to read/tap this page's controls while mounted rotated
+  // behind the acrylic, so that mode (and its whole rotate-in-place
+  // rationale) no longer applies to anything. Removed rather than kept
+  // around unused.
   const flipTransform = flipMode ? FLIP_TRANSFORMS[flipMode] : undefined;
-  // Pepper Mode is a second, independent concern from flipMode above -
-  // flipMode is about the character looking right to the *audience*
-  // seeing it through the acrylic's reflection; this is about whoever's
-  // physically operating the device being able to read/tap Back and the
-  // flip toggle at all. On a rig where the phone itself ends up mounted
-  // rotated 180° relative to the operator (the same mounting that makes
-  // the reflection work in the first place), the controls - normally
-  // bottom-of-screen, right-side-up - land upside-down for them. Pepper
-  // Mode counter-rotates the whole .controls cluster 180° in place (see
-  // .controlsPepperMode's own doc comment for why this doesn't also
-  // reposition it - confirmed against the real rig that the anchor
-  // point should stay put) so the labels read correctly again despite
-  // the phone's own physical rotation. Same dual-source persistence as
-  // flipMode: ?pepper=1 for the initial setup workflow, localStorage
-  // (PEPPER_MODE_STORAGE_KEY) for the on-screen toggle to stick across
-  // characters without needing the URL's help again.
-  const [pepperMode, setPepperMode] = useState<boolean>(() => {
-    const fromQuery = searchParams.get('pepper');
-    if (fromQuery !== null) {
-      return fromQuery === '1' || fromQuery === 'true';
-    }
-    return localStorage.getItem(PEPPER_MODE_STORAGE_KEY) === '1';
-  });
   // 'idle' | 'sending' | 'sent' | 'error' - purely local UI feedback for
   // the Set as display button below, not a mode or a setting: an
   // earlier version of this had an always-on "Broadcast" toggle that
-  // pushed every character/flip/pepper this browser landed on to the
+  // pushed every character/flip this browser landed on to the
   // shared display state (see ModelDisplay.tsx) continuously - replaced
   // because it meant remembering whether it was still on, and ordinary
   // browsing (or someone else just looking at a character) could
   // silently disturb a live display. This is a one-shot action instead:
   // nothing gets sent until this specific button is clicked, sending
-  // exactly the character/flip/pepper on screen at that moment.
+  // exactly the character/flip on screen at that moment.
   const [setDisplayStatus, setSetDisplayStatus] = useState<
+    'idle' | 'sending' | 'sent' | 'error'
+  >('idle');
+  // Same shape/reasoning as setDisplayStatus, for the separate "Trigger
+  // touch" button below - see triggerTouch's own doc comment.
+  const [triggerStatus, setTriggerStatus] = useState<
     'idle' | 'sending' | 'sent' | 'error'
   >('idle');
   // Whether a display is currently believed to be polling (see
@@ -115,7 +105,6 @@ const ModelViewer = () => {
   // display that's already gone.
   const [displayConnected, setDisplayConnected] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { loading, error } = useModelCanvas(charCode, canvasRef);
   const [controlsVisible, setControlsVisible] = useState(true);
 
   // Steps null -> 'x' -> 'y' -> '180' -> null - persisted to
@@ -123,6 +112,14 @@ const ModelViewer = () => {
   // same device/browser) and mirrored into the URL (survives a refresh,
   // and keeps a manually-edited ?flip= URL and the button from fighting
   // each other over which one's "right").
+  //
+  // Also live-pushes to the shared display state when one's connected
+  // (fire-and-forget, no loading/error UI of its own - this is a
+  // continuous live-tweak, not the one-shot "Sent!"/"Could not send"
+  // action setAsDisplay below already owns) so dialing in orientation
+  // against the real acrylic is see-the-effect-immediately on whichever
+  // screen the audience is actually looking at, not "adjust here, then
+  // remember to re-click Set as display after every nudge."
   const cycleFlipMode = () => {
     const next =
       flipMode === null
@@ -146,35 +143,24 @@ const ModelViewer = () => {
       },
       { replace: true },
     );
-  };
-
-  const togglePepperMode = () => {
-    const next = !pepperMode;
-    setPepperMode(next);
-    if (next) {
-      localStorage.setItem(PEPPER_MODE_STORAGE_KEY, '1');
-    } else {
-      localStorage.removeItem(PEPPER_MODE_STORAGE_KEY);
+    if (displayConnected) {
+      fetch('/api/models/display/flip', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flip: next ?? '' }),
+      }).catch(() => {
+        // Same tolerance as the status poll below - a transient failure
+        // here just means the display keeps showing its last-known
+        // orientation until the next successful push, not worth its own
+        // error UI for a live-tweak control.
+      });
     }
-    setSearchParams(
-      (prev) => {
-        const updated = new URLSearchParams(prev);
-        if (next) {
-          updated.set('pepper', '1');
-        } else {
-          updated.delete('pepper');
-        }
-        return updated;
-      },
-      { replace: true },
-    );
   };
 
-  // Sends exactly the character/flip/pepper on screen right now to the
-  // shared display state (see ModelDisplay.tsx, which polls the same
-  // endpoint) - a single PUT, not a persisted mode. See
-  // setDisplayStatus's own doc comment for why this replaced an
-  // always-on Broadcast toggle.
+  // Sends exactly the character/flip on screen right now to the shared
+  // display state (see ModelDisplay.tsx, which polls the same endpoint)
+  // - a single PUT, not a persisted mode. See setDisplayStatus's own doc
+  // comment for why this replaced an always-on Broadcast toggle.
   const setAsDisplay = () => {
     if (!charCode) {
       return;
@@ -186,12 +172,41 @@ const ModelViewer = () => {
       body: JSON.stringify({
         char_code: charCode,
         flip: flipMode ?? '',
-        pepper: pepperMode,
       }),
     })
       .then((res) => setSetDisplayStatus(res.ok ? 'sent' : 'error'))
       .catch(() => setSetDisplayStatus('error'));
   };
+
+  // Remotely fires the display's own tap-to-motion+audio reaction (see
+  // ModelDisplay.tsx's canvas.click() call) - a plain POST that bumps a
+  // counter server-side (api.ModelDisplayState.Trigger), nothing about
+  // this browser's own character/flip involved at all.
+  const triggerTouch = () => {
+    setTriggerStatus('sending');
+    fetch('/api/models/display/trigger', { method: 'POST' })
+      .then((res) => setTriggerStatus(res.ok ? 'sent' : 'error'))
+      .catch(() => setTriggerStatus('error'));
+  };
+
+  // localReaction: false when a display is connected - tapping the
+  // character on this page (the controller) is then remote control, not
+  // a local preview, so the reaction (motion+audio) should happen on
+  // whichever screen the audience is actually watching, not silently
+  // also/instead fire here where nobody but the operator can see or hear
+  // it. onTap fires triggerTouch every time regardless of
+  // localReaction's value, so the same tap that would have played
+  // locally with no display connected now drives the display's own
+  // reaction instead. See useModelCanvas's own onTap/localReaction doc
+  // comment.
+  const { loading, error } = useModelCanvas(charCode, canvasRef, {
+    onTap: () => {
+      if (displayConnected) {
+        triggerTouch();
+      }
+    },
+    localReaction: !displayConnected,
+  });
 
   // Reverts the button's transient "Sent!"/"Error" label back to normal
   // after a beat - a separate effect rather than a setTimeout inside
@@ -208,6 +223,19 @@ const ModelViewer = () => {
     );
     return () => clearTimeout(timer);
   }, [setDisplayStatus]);
+
+  // Same reset-after-a-beat behavior as setDisplayStatus's own effect
+  // above, for triggerStatus/Trigger touch instead.
+  useEffect(() => {
+    if (triggerStatus === 'idle' || triggerStatus === 'sending') {
+      return;
+    }
+    const timer = setTimeout(
+      () => setTriggerStatus('idle'),
+      SET_DISPLAY_STATUS_RESET_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [triggerStatus]);
 
   // Keeps displayConnected current for as long as this page is open -
   // GET .../display/status, not GET .../display itself, so this check
@@ -301,7 +329,6 @@ const ModelViewer = () => {
         className={[
           styles.controls,
           controlsVisible ? '' : styles.controlsHidden,
-          pepperMode ? styles.controlsPepperMode : '',
         ]
           .filter(Boolean)
           .join(' ')}
@@ -327,7 +354,11 @@ const ModelViewer = () => {
             a device actually mounted behind a physical acrylic/Pepper's
             Ghost reflector, where there's no address bar to type a URL
             into at all, unlike a phone/desktop browser just testing the
-            page normally. */}
+            page normally. When a display is connected this also live-
+            pushes to it (see cycleFlipMode's own doc comment) - the
+            button's own label/highlight still reflects this browser's
+            local flipMode either way, since that's the value actually
+            being sent. */}
         <button
           type="button"
           onClick={cycleFlipMode}
@@ -340,25 +371,9 @@ const ModelViewer = () => {
         >
           Flip: {flipMode ? flipMode.toUpperCase() : 'Off'}
         </button>
-        {/* See pepperMode's own doc comment above - this rotates/
-            repositions this whole button row (itself included), not
-            just the character, so toggling it back off is still
-            readable/reachable the same way toggling it on was. */}
-        <button
-          type="button"
-          onClick={togglePepperMode}
-          className={
-            pepperMode
-              ? `${styles.flipToggle} ${styles.flipToggleActive}`
-              : styles.flipToggle
-          }
-          aria-label="Toggle Pepper Mode - rotates and repositions these controls for reading/tapping them on a device physically mounted upside-down for a Pepper's Ghost rig"
-        >
-          Pepper: {pepperMode ? 'On' : 'Off'}
-        </button>
         {/* See setDisplayStatus's own doc comment above - a one-shot
-            push of exactly this character/flip/pepper to the remote
-            display (see ModelDisplay.tsx), not a persistent mode. */}
+            push of exactly this character/flip to the remote display
+            (see ModelDisplay.tsx), not a persistent mode. */}
         <button
           type="button"
           onClick={setAsDisplay}
@@ -375,6 +390,25 @@ const ModelViewer = () => {
           {setDisplayStatus === 'error' && 'Could not send'}
           {setDisplayStatus === 'idle' &&
             (displayConnected ? 'Set as display' : 'No display connected')}
+        </button>
+        {/* See triggerTouch's own doc comment - fires the display's
+            tap-to-motion+audio reaction remotely, same connectivity
+            gate as Set as display for the same reason. */}
+        <button
+          type="button"
+          onClick={triggerTouch}
+          disabled={triggerStatus === 'sending' || !displayConnected}
+          className={
+            triggerStatus === 'sent'
+              ? `${styles.flipToggle} ${styles.flipToggleActive}`
+              : styles.flipToggle
+          }
+          aria-label="Trigger the remote display's tap-to-react motion and voice line"
+        >
+          {triggerStatus === 'sending' && 'Sending…'}
+          {triggerStatus === 'sent' && 'Sent!'}
+          {triggerStatus === 'error' && 'Could not send'}
+          {triggerStatus === 'idle' && 'Trigger touch'}
         </button>
       </div>
       {loading && !error && <p className={styles.status}>Loading…</p>}
@@ -397,7 +431,20 @@ const ModelViewer = () => {
         key={charCode}
         ref={canvasRef}
         className={styles.canvas}
-        style={flipTransform ? { transform: flipTransform } : undefined}
+        // Suppressed while a display is connected: flipMode here exists
+        // to correct how the character looks to whoever's watching the
+        // physical acrylic reflection, and once that's the phone's job
+        // instead of this browser's, this canvas rendering flipped too
+        // would just be wrong for an ordinary controller screen - see
+        // "external controls should do nothing on the browser when
+        // there's a display" in this feature's design notes. The toggle
+        // button above still cycles/sends flipMode regardless; only its
+        // effect on *this* canvas is held back.
+        style={
+          flipTransform && !displayConnected
+            ? { transform: flipTransform }
+            : undefined
+        }
       />
     </div>
   );

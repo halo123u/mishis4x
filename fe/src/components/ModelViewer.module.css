@@ -67,24 +67,6 @@
   }
 }
 
-/* Pepper Mode (see ModelViewer.tsx's pepperMode doc comment): the phone
-   itself ends up physically mounted rotated 180° relative to whoever's
-   operating it directly, on a rig built for someone else to view the
-   character's own reflection correctly - this rotates the controls the
-   same 180° so their labels read right-side-up despite that. Rotated in
-   place, not repositioned: an earlier version of this also moved the
-   cluster from bottom to top, reasoning that the physical rotation
-   would put it back where it started - confirmed against the real rig
-   that this was overthinking it, the anchor point (bottom of the CSS
-   layout) should just stay put regardless of pepper mode, only the
-   buttons within it rotate. rotate(180deg), not scaleY(-1): a scale
-   mirrors button text into an unreadable, backwards shape, where a
-   rotation keeps it as ordinary upside-down text - legible the same way
-   turning a printed page upside-down still is. */
-.controlsPepperMode {
-  transform: translateX(-50%) rotate(180deg);
-}
-
 .back,
 .flipToggle {
   color: var(--ink);
@@ -98,9 +80,9 @@
 }
 
 /* Only flipToggle ever actually gets disabled (Set as display, while no
-   display is polling, or mid-send) - back/the flip/pepper toggles are
-   always clickable, same convention as this app's other disabled
-   controls (see Button.module.css's own .btn:disabled). */
+   display is polling, or mid-send) - back/the flip toggle are always
+   clickable, same convention as this app's other disabled controls (see
+   Button.module.css's own .btn:disabled). */
 .flipToggle:disabled {
   opacity: 0.5;
   cursor: not-allowed;

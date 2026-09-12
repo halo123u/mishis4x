@@ -12,6 +12,17 @@ import styles from './ModelDisplay.module.css';
 // infrastructure this app doesn't have anywhere else yet.
 const POLL_INTERVAL_MS = 1500;
 
+// The gap between the character's feet and the bottom edge of the
+// screen on the real physical rig - see useModelCanvas's own
+// verticalAlign/bottomMarginPx doc comment for why this exists at all.
+// Confirmed against the real device: centering the character (this
+// component's original behavior) left it sitting noticeably too high
+// for the mounting angle/available headroom, forcing an awkward
+// posture to compensate. A plain constant, not configurable from
+// anywhere - this corrects one specific physical rig, not a general
+// user-facing setting.
+const BOTTOM_MARGIN_PX = 15;
+
 const FLIP_TRANSFORMS: Record<string, string> = {
   x: 'scaleX(-1)',
   y: 'scaleY(-1)',
@@ -21,11 +32,11 @@ const FLIP_TRANSFORMS: Record<string, string> = {
 // The passive half of the model viewer's remote-control feature - a
 // phone stuck inside a physical Pepper's Ghost/acrylic rig, with no
 // practical way to interact with it directly, loads this page once and
-// leaves it open. It has no buttons of its own (Back/Flip/Pepper all
-// belong to ModelViewer.tsx, the interactive/controller side) - it just
-// polls the shared display state and renders whatever character/flip
-// combination is currently set, using the exact same Spine rendering
-// logic as ModelViewer via useModelCanvas.
+// leaves it open. It has no buttons of its own (Back/Flip/Trigger touch
+// all belong to ModelViewer.tsx, the interactive/controller side) - it
+// just polls the shared display state and renders whatever character/
+// flip combination is currently set, using the exact same Spine
+// rendering logic as ModelViewer via useModelCanvas.
 //
 // Deliberately still tap-reactive (useModelCanvas's own tap-to-motion+
 // audio isn't disabled here) - someone reaching directly into the rig
@@ -35,7 +46,19 @@ const ModelDisplay = () => {
   const [charCode, setCharCode] = useState<string | null>(null);
   const [flip, setFlip] = useState<string>('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { loading, error } = useModelCanvas(charCode ?? undefined, canvasRef);
+  const { loading, error } = useModelCanvas(charCode ?? undefined, canvasRef, {
+    verticalAlign: 'bottom',
+    bottomMarginPx: BOTTOM_MARGIN_PX,
+  });
+  // null means "haven't seen a real poll response yet" - the first
+  // successful poll just establishes this baseline rather than firing a
+  // reaction, so a Trigger value left over from before this page loaded
+  // (e.g. someone tapped the controller, then this display reconnected
+  // later) doesn't replay as a phantom touch the moment it connects.
+  // Independent of charCode: Trigger lives on the same shared state but
+  // means something unrelated to which character is showing, so a
+  // character change never resets this.
+  const lastTriggerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +77,18 @@ const ModelDisplay = () => {
           const state: ModelDisplayState = await res.json();
           setCharCode(state.char_code || null);
           setFlip(state.flip ?? '');
+
+          // canvas.click() - a real DOM method, not a synthetic input
+          // event - fires the exact same 'click' listener
+          // useModelCanvas's own tap-to-motion+audio reaction is
+          // already attached to, so a remote "Trigger touch" behaves
+          // identically to someone actually touching this screen.
+          if (lastTriggerRef.current === null) {
+            lastTriggerRef.current = state.trigger;
+          } else if (state.trigger !== lastTriggerRef.current) {
+            lastTriggerRef.current = state.trigger;
+            canvasRef.current?.click();
+          }
         })
         .catch(() => {
           // A transient network hiccup shouldn't blank whatever's

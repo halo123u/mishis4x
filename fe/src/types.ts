@@ -84,7 +84,14 @@ export interface SetCardCharacterModelInput {
 export interface ModelDisplayState {
   char_code: string;
   flip?: string;
-  pepper: boolean;
+  trigger: number;
+}
+export interface SetModelDisplayCharCodeInput {
+  char_code: string;
+  flip?: string;
+}
+export interface SetModelDisplayFlipInput {
+  flip?: string;
 }
 export interface ModelDisplayStatus {
   connected: boolean;
