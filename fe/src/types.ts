@@ -85,6 +85,7 @@ export interface ModelDisplayState {
   char_code: string;
   flip?: string;
   pepper: boolean;
+  trigger: number;
 }
 export interface ModelDisplayStatus {
   connected: boolean;

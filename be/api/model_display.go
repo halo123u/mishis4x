@@ -15,6 +15,17 @@ type ModelDisplayState struct {
 	CharCode string `json:"char_code"`
 	Flip     string `json:"flip,omitempty"`
 	Pepper   bool   `json:"pepper"`
+	// Trigger is a plain incrementing counter, not a meaningful value on
+	// its own - a controller's "Trigger touch" button bumps it (POST
+	// /api/models/display/trigger, separate from this struct's own PUT
+	// endpoint so triggering a touch never has to also resend
+	// char_code/flip/pepper), and the display fires its own tap-to-
+	// motion+audio reaction whenever it notices this changed since its
+	// last poll. A counter rather than a boolean/timestamp: strictly
+	// increasing means "did this change since I last looked" is a
+	// single != comparison with no clock-skew or "was this already
+	// true" ambiguity to worry about.
+	Trigger int `json:"trigger"`
 }
 
 // ModelDisplayStatus is the GET /api/models/display/status response - a

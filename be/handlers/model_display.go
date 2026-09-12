@@ -59,10 +59,28 @@ func (d *ModelDisplay) Get() api.ModelDisplayState {
 	return d.state
 }
 
+// Set overwrites CharCode/Flip/Pepper - deliberately not the whole
+// struct, so a controller sending "Set as display" (which only ever
+// knows/sends those three fields) can never reset Trigger back to
+// whatever zero value happened to be in that request body, which would
+// otherwise register as a real change and fire a spurious touch
+// reaction on the display's very next poll. Trigger only ever moves via
+// IncrementTrigger below.
 func (d *ModelDisplay) Set(state api.ModelDisplayState) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.state = state
+	d.state.CharCode = state.CharCode
+	d.state.Flip = state.Flip
+	d.state.Pepper = state.Pepper
+}
+
+// IncrementTrigger bumps the shared trigger counter - see
+// api.ModelDisplayState.Trigger's own doc comment for why a plain
+// increment rather than a boolean/timestamp.
+func (d *ModelDisplay) IncrementTrigger() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.state.Trigger++
 }
 
 // Connected reports whether a real display has polled Get within
@@ -108,6 +126,17 @@ func (d *Data) GetModelDisplay(w http.ResponseWriter, r *http.Request) {
 // alive".
 func (d *Data) GetModelDisplayStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.ModelDisplayStatus{Connected: d.ModelDisplay.Connected()})
+}
+
+// TriggerModelDisplay bumps the shared display's trigger counter (see
+// api.ModelDisplayState.Trigger) - a separate endpoint from
+// SetModelDisplay's PUT so triggering a touch reaction never has to
+// also resend the current char_code/flip/pepper, and see
+// ModelDisplay.Set's own doc comment for why doing so wouldn't have
+// been safe anyway.
+func (d *Data) TriggerModelDisplay(w http.ResponseWriter, r *http.Request) {
+	d.ModelDisplay.IncrementTrigger()
+	w.WriteHeader(http.StatusOK)
 }
 
 // SetModelDisplay overwrites the shared display state wholesale (PUT

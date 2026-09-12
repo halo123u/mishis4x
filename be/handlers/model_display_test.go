@@ -226,3 +226,97 @@ func TestGetModelDisplayStatus_StaleClearsStoredState(t *testing.T) {
 	require.NoError(t, json.NewDecoder(getRes.Body).Decode(&state))
 	require.Equal(t, api.ModelDisplayState{}, state, "a stale display's stored character must actually be cleared, not just reported disconnected")
 }
+
+func getModelDisplay(t *testing.T, client *http.Client, tsURL string) api.ModelDisplayState {
+	t.Helper()
+	res, err := client.Get(tsURL + "/api/models/display")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	var state api.ModelDisplayState
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&state))
+	return state
+}
+
+func triggerModelDisplay(t *testing.T, client *http.Client, tsURL string) *http.Response {
+	t.Helper()
+	res, err := client.Post(tsURL+"/api/models/display/trigger", "", nil)
+	require.NoError(t, err)
+	return res
+}
+
+func TestTriggerModelDisplay_IncrementsCounter(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+
+	require.Equal(t, 0, getModelDisplay(t, client, ts.URL).Trigger)
+
+	res := triggerModelDisplay(t, client, ts.URL)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	_ = res.Body.Close()
+	require.Equal(t, 1, getModelDisplay(t, client, ts.URL).Trigger)
+
+	res = triggerModelDisplay(t, client, ts.URL)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	_ = res.Body.Close()
+	require.Equal(t, 2, getModelDisplay(t, client, ts.URL).Trigger)
+}
+
+func TestSetModelDisplay_DoesNotResetTrigger(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+	charCode := testCharCode(t)
+	storeTestCharacterModel(t, db, charCode)
+
+	res := triggerModelDisplay(t, client, ts.URL)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	_ = res.Body.Close()
+	require.Equal(t, 1, getModelDisplay(t, client, ts.URL).Trigger)
+
+	// "Set as display" only ever sends char_code/flip/pepper - it must
+	// not silently reset Trigger back to its zero value, which would
+	// otherwise register as a real change and fire a spurious touch
+	// reaction on the display's very next poll.
+	body, err := json.Marshal(api.ModelDisplayState{CharCode: charCode})
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/models/display", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	putRes, err := client.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, putRes.StatusCode)
+	_ = putRes.Body.Close()
+
+	state := getModelDisplay(t, client, ts.URL)
+	require.Equal(t, charCode, state.CharCode)
+	require.Equal(t, 1, state.Trigger, "SetModelDisplay must not reset Trigger")
+}
+
+func TestTriggerModelDisplay_NonOwnerForbidden(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithModelViewer(t, db)
+
+	username := testUsername(t, db)
+	createTestUser(t, db, username, "correctpass123")
+	client := newClient(t)
+	loginRes := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, loginRes.StatusCode)
+
+	res := triggerModelDisplay(t, client, ts.URL)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+}
+
+func TestTriggerModelDisplay_Unauthenticated(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithModelViewer(t, db)
+
+	res, err := http.Post(ts.URL+"/api/models/display/trigger", "", nil)
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+}

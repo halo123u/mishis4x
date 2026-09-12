@@ -36,6 +36,15 @@ const ModelDisplay = () => {
   const [flip, setFlip] = useState<string>('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { loading, error } = useModelCanvas(charCode ?? undefined, canvasRef);
+  // null means "haven't seen a real poll response yet" - the first
+  // successful poll just establishes this baseline rather than firing a
+  // reaction, so a Trigger value left over from before this page loaded
+  // (e.g. someone tapped the controller, then this display reconnected
+  // later) doesn't replay as a phantom touch the moment it connects.
+  // Independent of charCode: Trigger lives on the same shared state but
+  // means something unrelated to which character is showing, so a
+  // character change never resets this.
+  const lastTriggerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +63,18 @@ const ModelDisplay = () => {
           const state: ModelDisplayState = await res.json();
           setCharCode(state.char_code || null);
           setFlip(state.flip ?? '');
+
+          // canvas.click() - a real DOM method, not a synthetic input
+          // event - fires the exact same 'click' listener
+          // useModelCanvas's own tap-to-motion+audio reaction is
+          // already attached to, so a remote "Trigger touch" behaves
+          // identically to someone actually touching this screen.
+          if (lastTriggerRef.current === null) {
+            lastTriggerRef.current = state.trigger;
+          } else if (state.trigger !== lastTriggerRef.current) {
+            lastTriggerRef.current = state.trigger;
+            canvasRef.current?.click();
+          }
         })
         .catch(() => {
           // A transient network hiccup shouldn't blank whatever's

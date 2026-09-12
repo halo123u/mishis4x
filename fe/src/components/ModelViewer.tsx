@@ -109,6 +109,11 @@ const ModelViewer = () => {
   const [setDisplayStatus, setSetDisplayStatus] = useState<
     'idle' | 'sending' | 'sent' | 'error'
   >('idle');
+  // Same shape/reasoning as setDisplayStatus, for the separate "Trigger
+  // touch" button below - see triggerTouch's own doc comment.
+  const [triggerStatus, setTriggerStatus] = useState<
+    'idle' | 'sending' | 'sent' | 'error'
+  >('idle');
   // Whether a display is currently believed to be polling (see
   // be/handlers/model_display.go's ModelDisplay.Connected) - gates the
   // Set as display button below so it's not offering to send to a
@@ -193,6 +198,17 @@ const ModelViewer = () => {
       .catch(() => setSetDisplayStatus('error'));
   };
 
+  // Remotely fires the display's own tap-to-motion+audio reaction (see
+  // ModelDisplay.tsx's canvas.click() call) - a plain POST that bumps a
+  // counter server-side (api.ModelDisplayState.Trigger), nothing about
+  // this browser's own character/flip/pepper involved at all.
+  const triggerTouch = () => {
+    setTriggerStatus('sending');
+    fetch('/api/models/display/trigger', { method: 'POST' })
+      .then((res) => setTriggerStatus(res.ok ? 'sent' : 'error'))
+      .catch(() => setTriggerStatus('error'));
+  };
+
   // Reverts the button's transient "Sent!"/"Error" label back to normal
   // after a beat - a separate effect rather than a setTimeout inside
   // setAsDisplay itself, so a rapid second click cleanly restarts this
@@ -208,6 +224,19 @@ const ModelViewer = () => {
     );
     return () => clearTimeout(timer);
   }, [setDisplayStatus]);
+
+  // Same reset-after-a-beat behavior as setDisplayStatus's own effect
+  // above, for triggerStatus/Trigger touch instead.
+  useEffect(() => {
+    if (triggerStatus === 'idle' || triggerStatus === 'sending') {
+      return;
+    }
+    const timer = setTimeout(
+      () => setTriggerStatus('idle'),
+      SET_DISPLAY_STATUS_RESET_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [triggerStatus]);
 
   // Keeps displayConnected current for as long as this page is open -
   // GET .../display/status, not GET .../display itself, so this check
@@ -375,6 +404,25 @@ const ModelViewer = () => {
           {setDisplayStatus === 'error' && 'Could not send'}
           {setDisplayStatus === 'idle' &&
             (displayConnected ? 'Set as display' : 'No display connected')}
+        </button>
+        {/* See triggerTouch's own doc comment - fires the display's
+            tap-to-motion+audio reaction remotely, same connectivity
+            gate as Set as display for the same reason. */}
+        <button
+          type="button"
+          onClick={triggerTouch}
+          disabled={triggerStatus === 'sending' || !displayConnected}
+          className={
+            triggerStatus === 'sent'
+              ? `${styles.flipToggle} ${styles.flipToggleActive}`
+              : styles.flipToggle
+          }
+          aria-label="Trigger the remote display's tap-to-react motion and voice line"
+        >
+          {triggerStatus === 'sending' && 'Sending…'}
+          {triggerStatus === 'sent' && 'Sent!'}
+          {triggerStatus === 'error' && 'Could not send'}
+          {triggerStatus === 'idle' && 'Trigger touch'}
         </button>
       </div>
       {loading && !error && <p className={styles.status}>Loading…</p>}
