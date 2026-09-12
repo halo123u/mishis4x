@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useModelCanvas } from '../useModelCanvas';
+import { useSupportsHover } from '../useSupportsHover';
+import { useAutoHideControls } from '../useAutoHideControls';
 import { ModelDisplayStatus } from '../types';
 import styles from './ModelViewer.module.css';
-
-// How long the back button stays visible with no interaction before
-// fading out - long enough to read/react to a fresh screen, short
-// enough that it's actually out of the way for someone just watching
-// the model. Matches the general "video player controls" convention
-// (tap to bring the chrome back, it fades again on its own) rather than
-// requiring a deliberate dismiss.
-const CONTROLS_HIDE_DELAY_MS = 3000;
 
 // Maps a flip mode to the CSS transform that produces it - a plain
 // lookup rather than building the transform string directly, so an
@@ -153,7 +147,11 @@ const ModelViewer = () => {
   // once there's an actual display to redirect to.
   const broadcasting = broadcastMode && displayConnected;
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [controlsVisible, setControlsVisible] = useState(true);
+  // Gates the auto-hide-after-a-stretch-of-no-interaction behavior below
+  // (see useAutoHideControls's own doc comment for why it exists at all
+  // on mobile) - see useSupportsHover's own doc comment for what this
+  // actually detects.
+  const supportsHover = useSupportsHover();
   // The display's pan/zoom correction (see ModelDisplay.tsx's own
   // offsetX/offsetY/zoom) - purely local to this controller, same as
   // flipMode's relationship to the display's own Flip: not fetched back
@@ -365,6 +363,21 @@ const ModelViewer = () => {
     localReaction: !broadcasting,
   });
 
+  // Auto-hides Back/Flip/Broadcast/etc. after a stretch of no
+  // interaction, and brings them back on any tap/click anywhere in the
+  // stage (including one that also triggers the character's own tap-to-
+  // react motion+audio - there's no need to distinguish "tapped the
+  // character" from "tapped to bring controls back", both are true at
+  // once). Deliberately not auto-hidden while loading or errored -
+  // someone stuck on a slow load or a failure needs an obvious,
+  // persistent way out, not one that fades away while they're waiting or
+  // reading the error. See useAutoHideControls's own doc comment for the
+  // desktop (supportsHover) half of this skip condition.
+  const controlsVisible = useAutoHideControls(
+    stageRef,
+    loading || !!error || supportsHover,
+  );
+
   // Reverts the Trigger touch button's transient "Sent!"/"Error" label
   // back to normal after a beat - a separate effect rather than a
   // setTimeout inside triggerTouch itself, so a rapid second click
@@ -416,56 +429,6 @@ const ModelViewer = () => {
       clearInterval(interval);
     };
   }, []);
-
-  // Auto-hides the back button after a stretch of no interaction, and
-  // brings it back on any tap/click anywhere in the stage (including one
-  // that also triggers the character's own tap-to-react motion+audio -
-  // there's no need to distinguish "tapped the character" from "tapped
-  // to bring controls back", both are true at once). A separate effect
-  // from the Spine setup (see useModelCanvas): this is pure UI chrome
-  // state, unrelated to loading/rendering the model itself, and touching
-  // it doesn't need to re-run any of that expensive setup.
-  //
-  // Deliberately not auto-hidden while loading or errored - someone
-  // stuck on a slow load or a failure needs an obvious, persistent way
-  // out, not one that fades away while they're waiting or reading the
-  // error.
-  useEffect(() => {
-    // Both branches below only ever call setControlsVisible from a
-    // deferred callback (setTimeout(..., 0), a real event listener), not
-    // synchronously from the effect body itself - react-hooks/
-    // set-state-in-effect flags the latter as a cascading-render smell,
-    // same reasoning as SetDetail.tsx's own setTimeout(..., 0) around
-    // setHighlightedCardID.
-    if (loading || error) {
-      const showTimer = setTimeout(() => setControlsVisible(true), 0);
-      return () => clearTimeout(showTimer);
-    }
-
-    let hideTimer: ReturnType<typeof setTimeout>;
-    const resetHideTimer = () => {
-      setControlsVisible(true);
-      clearTimeout(hideTimer);
-      hideTimer = setTimeout(
-        () => setControlsVisible(false),
-        CONTROLS_HIDE_DELAY_MS,
-      );
-    };
-
-    const initialTimer = setTimeout(resetHideTimer, 0);
-
-    // pointerdown, not click - fires uniformly for touch/mouse/pen, and
-    // fires immediately on press rather than waiting for a full
-    // click-cycle, matching how quickly the controls should reappear.
-    const stage = stageRef.current;
-    stage?.addEventListener('pointerdown', resetHideTimer);
-
-    return () => {
-      clearTimeout(initialTimer);
-      clearTimeout(hideTimer);
-      stage?.removeEventListener('pointerdown', resetHideTimer);
-    };
-  }, [loading, error]);
 
   return (
     <div className={styles.stage} ref={stageRef}>

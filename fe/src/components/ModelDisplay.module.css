@@ -1,10 +1,10 @@
 /* Same fixed-fullscreen shape as ModelViewer.module.css's .stage - a
    device left running this page has nothing else on screen to share
-   space with. No safe-area padding here: unlike ModelViewer, this isn't
-   meant to be launched standalone on someone's own iPhone (see
-   index.html's apple-mobile-web-app-capable), it's whatever device ends
-   up mounted inside the physical rig - no controls to protect from a
-   notch either. */
+   space with. Same safe-area padding as ModelViewer too, now that this
+   page has one real control (.exitButton below) worth protecting from a
+   notch/home-indicator - the device mounted inside the physical rig
+   could just as well be launched standalone from a Home Screen icon
+   (see index.html's apple-mobile-web-app-capable) as any other. */
 .stage {
   position: fixed;
   inset: 0;
@@ -13,6 +13,8 @@
   align-items: center;
   justify-content: center;
   background: var(--paper);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .canvas {
@@ -25,4 +27,46 @@
   position: absolute;
   color: var(--ash);
   font-family: var(--font-mono);
+}
+
+/* Bottom-center, same placement/fade convention as ModelViewer.module.css's
+   own .controls - see ModelDisplay.tsx's doc comment for why this page
+   only ever has the one button inside it. */
+.controls {
+  position: absolute;
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
+
+/* pointer-events: none while faded out - see ModelViewer.module.css's
+   identical .controlsHidden for why: an invisible button sitting over
+   the character would otherwise eat the tap meant to bring it back. */
+.controlsHidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .controls {
+    transition: none;
+  }
+}
+
+.exitButton {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.exitButton:hover,
+.exitButton:focus-visible {
+  border-color: var(--teal);
 }

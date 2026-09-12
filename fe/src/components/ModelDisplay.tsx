@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useModelCanvas } from '../useModelCanvas';
+import { useAutoHideControls } from '../useAutoHideControls';
 import { ModelDisplayState } from '../types';
 import styles from './ModelDisplay.module.css';
 
@@ -32,17 +34,28 @@ const FLIP_TRANSFORMS: Record<string, string> = {
 // The passive half of the model viewer's remote-control feature - a
 // phone stuck inside a physical Pepper's Ghost/acrylic rig, with no
 // practical way to interact with it directly, loads this page once and
-// leaves it open. It has no buttons of its own (Back/Flip/Trigger touch
-// all belong to ModelViewer.tsx, the interactive/controller side) - it
-// just polls the shared display state and renders whatever character/
-// flip combination is currently set, using the exact same Spine
-// rendering logic as ModelViewer via useModelCanvas.
+// leaves it open. It just polls the shared display state and renders
+// whatever character/flip/pan/zoom combination is currently set, using
+// the exact same Spine rendering logic as ModelViewer via useModelCanvas.
+//
+// The only control this page has of its own is the single "Exit display
+// mode" button below - deliberately the *only* one: everything else
+// (picking a character, Flip, Broadcast, Trigger touch, the pan/zoom
+// nudges) belongs to ModelViewer.tsx, the interactive/controller side,
+// precisely so this page stays a passive slate with nothing else to
+// accidentally tap. Auto-hidden the same way as ModelViewer's own
+// controls (see useAutoHideControls) - a persistent button sitting in
+// the middle of a physical Pepper's Ghost reflection would be a constant
+// reminder this is a screen, undermining the whole illusion the rig
+// exists for.
 //
 // Deliberately still tap-reactive (useModelCanvas's own tap-to-motion+
 // audio isn't disabled here) - someone reaching directly into the rig
 // to tap the character themselves is a harmless bonus, not something
 // worth extra code to prevent.
 const ModelDisplay = () => {
+  const navigate = useNavigate();
+  const stageRef = useRef<HTMLDivElement>(null);
   const [charCode, setCharCode] = useState<string | null>(null);
   const [flip, setFlip] = useState<string>('');
   // A controller's arrow/zoom nudge buttons (see ModelViewer.tsx) - a
@@ -62,6 +75,11 @@ const ModelDisplay = () => {
     verticalAlign: 'bottom',
     bottomMarginPx: BOTTOM_MARGIN_PX,
   });
+  // Not auto-hidden while loading/errored, same reasoning as
+  // ModelViewer's own controls - someone setting this display up needs a
+  // reliably-reachable way out if a character fails to load, not one
+  // that fades away while they're stuck reading the error.
+  const controlsVisible = useAutoHideControls(stageRef, loading || !!error);
   // null means "haven't seen a real poll response yet" - the first
   // successful poll just establishes this baseline rather than firing a
   // reaction, so a Trigger value left over from before this page loaded
@@ -138,7 +156,7 @@ const ModelDisplay = () => {
     : undefined;
 
   return (
-    <div className={styles.stage}>
+    <div className={styles.stage} ref={stageRef}>
       {!charCode && !error && (
         <p className={styles.status}>Waiting for a character…</p>
       )}
@@ -159,6 +177,26 @@ const ModelDisplay = () => {
         className={styles.canvas}
         style={canvasTransform ? { transform: canvasTransform } : undefined}
       />
+      {/* The one and only control this page has - see this component's
+          own doc comment for why display mode deliberately has nothing
+          else to tap. */}
+      <div
+        className={[
+          styles.controls,
+          controlsVisible ? '' : styles.controlsHidden,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <button
+          type="button"
+          onClick={() => navigate('/models')}
+          className={styles.exitButton}
+          aria-label="Exit display mode and return to the character picker"
+        >
+          Exit display mode
+        </button>
+      </div>
     </div>
   );
 };
