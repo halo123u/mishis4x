@@ -209,10 +209,40 @@ export function useModelCanvas(
     // can still reach it to remove the listener regardless of how far
     // load() got before this effect unmounts.
     let onTap: (() => void) | null = null;
-    // Same reasoning as onTap just above - declared out here so cleanup
-    // can pause whatever voice clip is mid-playback on unmount, instead
-    // of letting it keep playing after navigating away from the model.
-    let currentAudio: HTMLAudioElement | null = null;
+    // One persistent element, reused for every clip (see playNextAudioClip
+    // below) rather than a fresh `new Audio()` per play - see unlockAudio
+    // just below for why that reuse is the whole point, not just tidiness.
+    const audioElement = new Audio();
+    // Chrome/Safari only allow <audio>.play() to succeed *outside* a real
+    // user gesture (like ModelDisplay.tsx's remote-trigger poll loop
+    // calling canvas.click() from inside a fetch().then()) once this
+    // exact element has already been played from *inside* one first -
+    // confirmed live against a real Safari display that a physical tap
+    // plays audio fine, but a remote-triggered one never did, because
+    // playNextAudioClip used to construct a brand-new, never-unlocked
+    // Audio() every single play - constructing fresh each time meant
+    // every play needed its own real gesture, and a poll-driven
+    // canvas.click() never has one. A single real tap/click anywhere on
+    // the page (not necessarily the character - whatever happens first)
+    // plays-then-immediately-pauses this one shared element, "spending"
+    // that real gesture to unlock it for every later play - remote-
+    // triggered or not - for the rest of this page's life. document-
+    // level, not canvas-level: the point is to catch literally the first
+    // real interaction with the page at all (a button tap on ModelViewer
+    // counts just as well as tapping the character), not to require it
+    // land on any specific element.
+    const unlockAudio = () => {
+      audioElement.src = `/api/models/${charCode}/audio/JP/1`;
+      void audioElement.play().then(
+        () => audioElement.pause(),
+        () => {
+          // No audio for this character, or some other reason this
+          // particular attempt failed - either way, nothing left for
+          // this one-shot listener to do.
+        },
+      );
+    };
+    document.addEventListener('pointerdown', unlockAudio, { once: true });
 
     const context = new ManagedWebGLRenderingContext(canvas, { alpha: true });
     const renderer = new SceneRenderer(canvas, context);
@@ -329,15 +359,17 @@ export function useModelCanvas(
       // backend one.
       let nextAudioClipIndex = 1;
       const playNextAudioClip = () => {
-        currentAudio?.pause();
-        const audio = new Audio(
-          `/api/models/${charCode}/audio/JP/${nextAudioClipIndex}`,
-        );
-        currentAudio = audio;
+        // Reuses audioElement (see its own doc comment above) rather
+        // than constructing a new Audio() here - pause+reassign .src
+        // first, same as swapping a <video>'s source, so a rapid second
+        // tap cleanly interrupts whatever's still playing instead of two
+        // elements overlapping.
+        audioElement.pause();
+        audioElement.src = `/api/models/${charCode}/audio/JP/${nextAudioClipIndex}`;
         // A missing clip (character has none, or fewer than 3) rejects
         // this promise - caught and ignored rather than logged, same
         // tolerance as everything else optional about this feature.
-        void audio.play().catch(() => {});
+        void audioElement.play().catch(() => {});
         nextAudioClipIndex =
           (nextAudioClipIndex % AUDIO_CLIPS_PER_LANGUAGE) + 1;
       };
@@ -463,7 +495,11 @@ export function useModelCanvas(
       if (onTap) {
         canvas.removeEventListener('click', onTap);
       }
-      currentAudio?.pause();
+      // Harmless if unlockAudio already fired and self-removed (the
+      // {once: true} above) - removing an already-removed listener is a
+      // no-op, not an error.
+      document.removeEventListener('pointerdown', unlockAudio);
+      audioElement.pause();
       if (rafHandle) {
         cancelAnimationFrame(rafHandle);
       }
