@@ -31,6 +31,17 @@ const ModelList = () => {
   return (
     <div className="stack">
       <h1>Character models</h1>
+      {/* /models/display has no link to it anywhere else, and no way to
+          type its URL directly on a device launched standalone from a
+          Home Screen icon (see index.html's apple-mobile-web-app-capable -
+          that mode removes Safari's address bar entirely). This page is
+          already reachable through normal in-app navigation (the nav
+          menu, gated the same GlobalData.model_viewer_enabled way this
+          whole page is), so it's the one place worth putting a real link
+          from - see ModelDisplay.tsx's own doc comment for what it is. */}
+      <Link to="/models/display" className={styles.remoteDisplayLink}>
+        Open remote display →
+      </Link>
       {error && <p className="muted">{error}</p>}
       {!error && codes === null && <p className="muted">Loading…</p>}
       {!error && codes !== null && codes.length === 0 && (
