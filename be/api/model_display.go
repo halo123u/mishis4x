@@ -16,3 +16,12 @@ type ModelDisplayState struct {
 	Flip     string `json:"flip,omitempty"`
 	Pepper   bool   `json:"pepper"`
 }
+
+// ModelDisplayStatus is the GET /api/models/display/status response - a
+// controller polls this (not ModelDisplayState's own GET endpoint) to
+// drive its "Set as display" button's enabled state without itself
+// counting as proof the display is alive (see
+// handlers.ModelDisplay.Connected's own doc comment).
+type ModelDisplayStatus struct {
+	Connected bool `json:"connected"`
+}

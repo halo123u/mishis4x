@@ -97,10 +97,19 @@
   background: var(--surface);
 }
 
+/* Only flipToggle ever actually gets disabled (Set as display, while no
+   display is polling, or mid-send) - back/the flip/pepper toggles are
+   always clickable, same convention as this app's other disabled
+   controls (see Button.module.css's own .btn:disabled). */
+.flipToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .back:hover,
 .back:focus-visible,
-.flipToggle:hover,
-.flipToggle:focus-visible {
+.flipToggle:hover:not(:disabled),
+.flipToggle:focus-visible:not(:disabled) {
   border-color: var(--teal);
 }
 

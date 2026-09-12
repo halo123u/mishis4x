@@ -64,6 +64,28 @@ func (p *Persist) GetCharacterModel(ctx context.Context, charCode string) (Chara
 	return m, nil
 }
 
+// CharacterModelExists reports whether charCode has been imported,
+// without pulling any of its (potentially multi-MB) skeleton/atlas/
+// texture blobs over the wire the way GetCharacterModel would - for a
+// caller (SetModelDisplay) that only needs to validate the code, not
+// actually serve the model.
+func (p *Persist) CharacterModelExists(ctx context.Context, charCode string) (bool, error) {
+	var exists int
+	err := sq.Select("1").
+		From("character_models").
+		Where(sq.Eq{"char_code": charCode}).
+		RunWith(p.DB).
+		QueryRowContext(ctx).
+		Scan(&exists)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // ListCharacterModels returns every imported char_code, sorted, for the
 // model picker (GetGlobalData/an admin-only listing endpoint) - just the
 // keys, never the blobs themselves, since a picker only needs to know

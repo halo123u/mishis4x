@@ -5,10 +5,21 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"example.com/mishis4x/api"
 	"github.com/stretchr/testify/require"
 )
+
+// setDisplayStaleAfterForTest points displayStaleAfter at a tiny
+// duration for the lifetime of one test, restoring the real value on
+// cleanup - see that var's own doc comment for why it's a var at all.
+func setDisplayStaleAfterForTest(t *testing.T, d time.Duration) {
+	t.Helper()
+	original := displayStaleAfter
+	displayStaleAfter = d
+	t.Cleanup(func() { displayStaleAfter = original })
+}
 
 func TestGetModelDisplay_DefaultsToEmptyState(t *testing.T) {
 	db := testDB(t)
@@ -127,4 +138,91 @@ func TestGetModelDisplay_Unauthenticated(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+}
+
+func getModelDisplayStatus(t *testing.T, client *http.Client, tsURL string) api.ModelDisplayStatus {
+	t.Helper()
+	res, err := client.Get(tsURL + "/api/models/display/status")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	var status api.ModelDisplayStatus
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&status))
+	return status
+}
+
+func TestGetModelDisplayStatus_NeverPolledIsDisconnected(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+
+	status := getModelDisplayStatus(t, client, ts.URL)
+	require.False(t, status.Connected, "a server that's never had GET /api/models/display called must report disconnected, not an error")
+}
+
+func TestGetModelDisplayStatus_RecentlyPolledIsConnected(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+
+	// Simulates the display's own poll - this is the call that's
+	// supposed to count as a heartbeat, unlike the status check itself.
+	res, err := client.Get(ts.URL + "/api/models/display")
+	require.NoError(t, err)
+	_ = res.Body.Close()
+
+	status := getModelDisplayStatus(t, client, ts.URL)
+	require.True(t, status.Connected)
+}
+
+func TestGetModelDisplayStatus_CheckingStatusIsNotItselfAHeartbeat(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+	setDisplayStaleAfterForTest(t, 10*time.Millisecond)
+
+	// One real poll, then only status checks from here - if a status
+	// check itself counted as proof of life, this would stay "connected"
+	// forever regardless of the shrunk threshold, defeating the whole
+	// point of Connected being a separate, non-mutating read.
+	res, err := client.Get(ts.URL + "/api/models/display")
+	require.NoError(t, err)
+	_ = res.Body.Close()
+
+	time.Sleep(20 * time.Millisecond)
+
+	status := getModelDisplayStatus(t, client, ts.URL)
+	require.False(t, status.Connected, "checking status repeatedly must not itself keep the display looking alive")
+}
+
+func TestGetModelDisplayStatus_StaleClearsStoredState(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+	charCode := testCharCode(t)
+	storeTestCharacterModel(t, db, charCode)
+	setDisplayStaleAfterForTest(t, 10*time.Millisecond)
+
+	pollRes, err := client.Get(ts.URL + "/api/models/display")
+	require.NoError(t, err)
+	_ = pollRes.Body.Close()
+
+	body, err := json.Marshal(api.ModelDisplayState{CharCode: charCode})
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/models/display", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	putRes, err := client.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, putRes.StatusCode)
+	_ = putRes.Body.Close()
+
+	time.Sleep(20 * time.Millisecond)
+
+	status := getModelDisplayStatus(t, client, ts.URL)
+	require.False(t, status.Connected)
+
+	getRes, err := client.Get(ts.URL + "/api/models/display")
+	require.NoError(t, err)
+	defer func() { _ = getRes.Body.Close() }()
+	var state api.ModelDisplayState
+	require.NoError(t, json.NewDecoder(getRes.Body).Decode(&state))
+	require.Equal(t, api.ModelDisplayState{}, state, "a stale display's stored character must actually be cleared, not just reported disconnected")
 }

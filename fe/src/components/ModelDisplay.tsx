@@ -41,7 +41,12 @@ const ModelDisplay = () => {
     let cancelled = false;
 
     const poll = () => {
-      fetch('/api/models/display')
+      // cache: 'no-store' - this must reflect the real current state
+      // every poll (that's the entire point of a display that stays
+      // mounted and re-polls), confirmed directly that a default
+      // fetch() can otherwise get served a stale cached response
+      // instead of actually hitting the network again.
+      fetch('/api/models/display', { cache: 'no-store' })
         .then(async (res) => {
           if (res.status !== 200 || cancelled) {
             return;
@@ -77,7 +82,15 @@ const ModelDisplay = () => {
         <p className={styles.status}>Loading…</p>
       )}
       {error && <p className={styles.status}>{error}</p>}
+      {/* key={charCode} - see ModelViewer.tsx's identical comment on its
+          own <canvas>: without this, switching characters here (this
+          page's whole reason to exist - it stays mounted continuously,
+          polling for a new charCode) renders into a canvas whose WebGL
+          context useModelCanvas's own cleanup already explicitly killed
+          for the *previous* character, producing a blank screen on
+          every broadcast after the first. */}
       <canvas
+        key={charCode}
         ref={canvasRef}
         className={styles.canvas}
         style={flipTransform ? { transform: flipTransform } : undefined}
