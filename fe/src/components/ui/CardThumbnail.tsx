@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { isLandscapeCard } from '../../cardOrientation';
+import { useSupportsHover } from '../../useSupportsHover';
 import styles from './CardThumbnail.module.css';
 
 // Must match .preview's CSS - used here purely to keep the preview
@@ -11,38 +12,6 @@ const PREVIEW_WIDTH = 260;
 const PREVIEW_HEIGHT = (PREVIEW_WIDTH * 88) / 63;
 const PREVIEW_HEIGHT_LANDSCAPE = (PREVIEW_WIDTH * 63) / 88;
 const GAP = 12;
-
-// (hover: hover) is the standard way to ask "does this input mechanism
-// support hovering at all" rather than guessing from viewport width, which
-// conflates screen size with input type (a touch laptop at desktop width
-// still has no real hover, and resizing a desktop window never changes
-// this - a narrow window still has a real mouse).
-const HOVER_QUERY = '(hover: hover) and (pointer: fine)';
-
-// Reactive rather than a one-time check at module load - a hybrid 2-in-1
-// device (or a mouse plugged into/unplugged from an otherwise touch-only
-// one) can change hover capability mid-session, and which interaction mode
-// applies (floating hover-preview vs. tap-to-fullscreen) should follow
-// that without needing a page reload. matchMedia's own change event is
-// what actually fires when this specific capability flips - deliberately
-// not a resize listener, which would fire for reasons unrelated to hover/
-// pointer capability entirely.
-const useSupportsHover = () => {
-  const [supportsHover, setSupportsHover] = useState(
-    () =>
-      typeof window !== 'undefined' && window.matchMedia(HOVER_QUERY).matches,
-  );
-
-  useEffect(() => {
-    const mql = window.matchMedia(HOVER_QUERY);
-    const onChange = (event: MediaQueryListEvent) =>
-      setSupportsHover(event.matches);
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
-  }, []);
-
-  return supportsHover;
-};
 
 type CardThumbnailProps = {
   cardId: string;
