@@ -35,28 +35,35 @@ func TestGetModelDisplay_DefaultsToEmptyState(t *testing.T) {
 	require.Equal(t, api.ModelDisplayState{}, state, "a server that's never had SetModelDisplay called must report the zero value, not an error")
 }
 
+// setModelDisplay PUTs a char_code/flip pair to /api/models/display -
+// the shape SetModelDisplay actually accepts (api.
+// SetModelDisplayCharCodeInput), not the full ModelDisplayState GET
+// returns - see SetModelDisplay's own doc comment for why those are two
+// different types.
+func setModelDisplay(t *testing.T, client *http.Client, tsURL string, input api.SetModelDisplayCharCodeInput) *http.Response {
+	t.Helper()
+	body, err := json.Marshal(input)
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPut, tsURL+"/api/models/display", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := client.Do(req)
+	require.NoError(t, err)
+	return res
+}
+
 func TestSetModelDisplay_StoresAndGetReflectsIt(t *testing.T) {
 	db := testDB(t)
 	ts, client := newTestServerWithModelViewer(t, db)
 	charCode := testCharCode(t)
 	storeTestCharacterModel(t, db, charCode)
 
-	body, err := json.Marshal(api.ModelDisplayState{CharCode: charCode, Flip: "x", Pepper: true})
-	require.NoError(t, err)
-	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/models/display", bytes.NewReader(body))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-	putRes, err := client.Do(req)
-	require.NoError(t, err)
+	putRes := setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{CharCode: charCode, Flip: "x"})
 	defer func() { _ = putRes.Body.Close() }()
 	require.Equal(t, http.StatusOK, putRes.StatusCode)
 
-	getRes, err := client.Get(ts.URL + "/api/models/display")
-	require.NoError(t, err)
-	defer func() { _ = getRes.Body.Close() }()
-	var state api.ModelDisplayState
-	require.NoError(t, json.NewDecoder(getRes.Body).Decode(&state))
-	require.Equal(t, api.ModelDisplayState{CharCode: charCode, Flip: "x", Pepper: true}, state)
+	state := getModelDisplay(t, client, ts.URL)
+	require.Equal(t, api.ModelDisplayState{CharCode: charCode, Flip: "x"}, state)
 }
 
 func TestSetModelDisplay_EmptyCharCodeClearsDisplay(t *testing.T) {
@@ -68,31 +75,15 @@ func TestSetModelDisplay_EmptyCharCodeClearsDisplay(t *testing.T) {
 	// Set a real character first, then clear it - an empty CharCode is a
 	// deliberate "nothing selected" state, not an error, same as clearing
 	// a card's character-model link via SetCardCharacterModel(nil).
-	setDisplay := func(t *testing.T, state api.ModelDisplayState) *http.Response {
-		t.Helper()
-		body, err := json.Marshal(state)
-		require.NoError(t, err)
-		req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/models/display", bytes.NewReader(body))
-		require.NoError(t, err)
-		req.Header.Set("Content-Type", "application/json")
-		res, err := client.Do(req)
-		require.NoError(t, err)
-		return res
-	}
-
-	res := setDisplay(t, api.ModelDisplayState{CharCode: charCode})
+	res := setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{CharCode: charCode})
 	require.Equal(t, http.StatusOK, res.StatusCode)
 	_ = res.Body.Close()
 
-	res = setDisplay(t, api.ModelDisplayState{})
+	res = setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{})
 	require.Equal(t, http.StatusOK, res.StatusCode)
 	_ = res.Body.Close()
 
-	getRes, err := client.Get(ts.URL + "/api/models/display")
-	require.NoError(t, err)
-	defer func() { _ = getRes.Body.Close() }()
-	var state api.ModelDisplayState
-	require.NoError(t, json.NewDecoder(getRes.Body).Decode(&state))
+	state := getModelDisplay(t, client, ts.URL)
 	require.Equal(t, api.ModelDisplayState{}, state, "clearing must actually clear, not leave the old char_code in place")
 }
 
@@ -100,13 +91,7 @@ func TestSetModelDisplay_UnknownCharCodeNotFound(t *testing.T) {
 	db := testDB(t)
 	ts, client := newTestServerWithModelViewer(t, db)
 
-	body, err := json.Marshal(api.ModelDisplayState{CharCode: "does-not-exist"})
-	require.NoError(t, err)
-	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/models/display", bytes.NewReader(body))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-	res, err := client.Do(req)
-	require.NoError(t, err)
+	res := setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{CharCode: "does-not-exist"})
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusNotFound, res.StatusCode)
 }
@@ -204,13 +189,7 @@ func TestGetModelDisplayStatus_StaleClearsStoredState(t *testing.T) {
 	require.NoError(t, err)
 	_ = pollRes.Body.Close()
 
-	body, err := json.Marshal(api.ModelDisplayState{CharCode: charCode})
-	require.NoError(t, err)
-	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/models/display", bytes.NewReader(body))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-	putRes, err := client.Do(req)
-	require.NoError(t, err)
+	putRes := setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{CharCode: charCode})
 	require.Equal(t, http.StatusOK, putRes.StatusCode)
 	_ = putRes.Body.Close()
 
@@ -219,11 +198,7 @@ func TestGetModelDisplayStatus_StaleClearsStoredState(t *testing.T) {
 	status := getModelDisplayStatus(t, client, ts.URL)
 	require.False(t, status.Connected)
 
-	getRes, err := client.Get(ts.URL + "/api/models/display")
-	require.NoError(t, err)
-	defer func() { _ = getRes.Body.Close() }()
-	var state api.ModelDisplayState
-	require.NoError(t, json.NewDecoder(getRes.Body).Decode(&state))
+	state := getModelDisplay(t, client, ts.URL)
 	require.Equal(t, api.ModelDisplayState{}, state, "a stale display's stored character must actually be cleared, not just reported disconnected")
 }
 
@@ -274,17 +249,11 @@ func TestSetModelDisplay_DoesNotResetTrigger(t *testing.T) {
 	_ = res.Body.Close()
 	require.Equal(t, 1, getModelDisplay(t, client, ts.URL).Trigger)
 
-	// "Set as display" only ever sends char_code/flip/pepper - it must
-	// not silently reset Trigger back to its zero value, which would
+	// "Set as display" only ever sends char_code/flip - it must not
+	// silently reset Trigger back to its zero value, which would
 	// otherwise register as a real change and fire a spurious touch
 	// reaction on the display's very next poll.
-	body, err := json.Marshal(api.ModelDisplayState{CharCode: charCode})
-	require.NoError(t, err)
-	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/models/display", bytes.NewReader(body))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-	putRes, err := client.Do(req)
-	require.NoError(t, err)
+	putRes := setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{CharCode: charCode})
 	require.Equal(t, http.StatusOK, putRes.StatusCode)
 	_ = putRes.Body.Close()
 
@@ -316,6 +285,91 @@ func TestTriggerModelDisplay_Unauthenticated(t *testing.T) {
 	ts, _ := newTestServerWithModelViewer(t, db)
 
 	res, err := http.Post(ts.URL+"/api/models/display/trigger", "", nil)
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+}
+
+// setModelDisplayFlip PUTs to /api/models/display/flip - the live-tweak
+// endpoint that touches only Flip, separate from setModelDisplay above -
+// see SetModelDisplayFlip's own doc comment.
+func setModelDisplayFlip(t *testing.T, client *http.Client, tsURL string, flip string) *http.Response {
+	t.Helper()
+	body, err := json.Marshal(api.SetModelDisplayFlipInput{Flip: flip})
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPut, tsURL+"/api/models/display/flip", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := client.Do(req)
+	require.NoError(t, err)
+	return res
+}
+
+func TestSetModelDisplayFlip_UpdatesFlipOnly(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+	charCode := testCharCode(t)
+	storeTestCharacterModel(t, db, charCode)
+
+	putRes := setModelDisplay(t, client, ts.URL, api.SetModelDisplayCharCodeInput{CharCode: charCode, Flip: "x"})
+	require.Equal(t, http.StatusOK, putRes.StatusCode)
+	_ = putRes.Body.Close()
+
+	flipRes := setModelDisplayFlip(t, client, ts.URL, "y")
+	defer func() { _ = flipRes.Body.Close() }()
+	require.Equal(t, http.StatusOK, flipRes.StatusCode)
+
+	state := getModelDisplay(t, client, ts.URL)
+	require.Equal(t, charCode, state.CharCode, "SetModelDisplayFlip must not touch CharCode")
+	require.Equal(t, "y", state.Flip)
+}
+
+func TestSetModelDisplayFlip_DoesNotResetTrigger(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithModelViewer(t, db)
+
+	res := triggerModelDisplay(t, client, ts.URL)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	_ = res.Body.Close()
+	require.Equal(t, 1, getModelDisplay(t, client, ts.URL).Trigger)
+
+	flipRes := setModelDisplayFlip(t, client, ts.URL, "180")
+	require.Equal(t, http.StatusOK, flipRes.StatusCode)
+	_ = flipRes.Body.Close()
+
+	state := getModelDisplay(t, client, ts.URL)
+	require.Equal(t, "180", state.Flip)
+	require.Equal(t, 1, state.Trigger, "SetModelDisplayFlip must not reset Trigger")
+}
+
+func TestSetModelDisplayFlip_NonOwnerForbidden(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithModelViewer(t, db)
+
+	username := testUsername(t, db)
+	createTestUser(t, db, username, "correctpass123")
+	client := newClient(t)
+	loginRes := postJSON(t, client, ts.URL+"/api/user/login", map[string]string{
+		"username": username,
+		"password": "correctpass123",
+	})
+	require.Equal(t, http.StatusOK, loginRes.StatusCode)
+
+	res := setModelDisplayFlip(t, client, ts.URL, "x")
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+}
+
+func TestSetModelDisplayFlip_Unauthenticated(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithModelViewer(t, db)
+
+	body, err := json.Marshal(api.SetModelDisplayFlipInput{Flip: "x"})
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/models/display/flip", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)

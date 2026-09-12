@@ -26,18 +26,24 @@ var displayStaleAfter = 5 * time.Second
 // ModelDisplay holds the shared "what should the physically-mounted
 // display be showing right now" state for the model viewer's remote-
 // control feature - a controller (anyone browsing /models/{charCode})
-// writes to it via Set, and a display (a phone stuck inside a physical
-// Pepper's Ghost/acrylic rig, with no practical way to interact with it
-// directly - see ModelViewer.tsx's own ?flip=/?pepper= for the same
-// reasoning) polls it via Get. Deliberately unpersisted, in-memory only,
-// same single-instance-is-fine precedent as matchmaking.Lobby: this is
-// ephemeral "what's on screen right now" state, not data worth
-// surviving a restart, and this app already only ever runs as one
-// instance.
+// writes to it via Set/SetFlip/IncrementTrigger, and a display (a phone
+// stuck inside a physical Pepper's Ghost/acrylic rig, with no practical
+// way to interact with it directly) polls it via Get. Deliberately
+// unpersisted, in-memory only, same single-instance-is-fine precedent
+// as matchmaking.Lobby: this is ephemeral "what's on screen right now"
+// state, not data worth surviving a restart, and this app already only
+// ever runs as one instance.
 //
 // The mutex guards the whole struct, not each field separately - a
 // display mid-poll should never see e.g. a new CharCode paired with a
-// stale Pepper value left over from before a concurrent write finished.
+// stale Flip value left over from before a concurrent write finished.
+//
+// Three separate writers (Set/SetFlip/IncrementTrigger), not one PUT of
+// the whole struct: each covers a distinct, independently-triggered
+// controller action (pick a character, live-tweak orientation, fire a
+// touch reaction), and a caller for one was never guaranteed to know or
+// safely resend the other two's current values - see Set's own doc
+// comment for the concrete bug this already caused once with Trigger.
 type ModelDisplay struct {
 	mu    sync.Mutex
 	state api.ModelDisplayState
@@ -59,19 +65,35 @@ func (d *ModelDisplay) Get() api.ModelDisplayState {
 	return d.state
 }
 
-// Set overwrites CharCode/Flip/Pepper - deliberately not the whole
-// struct, so a controller sending "Set as display" (which only ever
-// knows/sends those three fields) can never reset Trigger back to
-// whatever zero value happened to be in that request body, which would
-// otherwise register as a real change and fire a spurious touch
-// reaction on the display's very next poll. Trigger only ever moves via
-// IncrementTrigger below.
-func (d *ModelDisplay) Set(state api.ModelDisplayState) {
+// Set overwrites CharCode and Flip together - "Set as display" picking
+// a new character and its starting orientation in one action.
+// Deliberately not Trigger too: a caller here only ever knows/sends
+// char_code+flip, and once Trigger existed, this same method
+// overwriting the whole struct would have reset it back to zero on
+// every single "Set as display" click - which the display would read
+// as a real change and fire a spurious touch reaction. Trigger only
+// ever moves via IncrementTrigger, Flip-only live-tweaks only ever
+// move via SetFlip - each field has exactly one writer that owns it.
+func (d *ModelDisplay) Set(charCode, flip string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.state.CharCode = state.CharCode
-	d.state.Flip = state.Flip
-	d.state.Pepper = state.Pepper
+	d.state.CharCode = charCode
+	d.state.Flip = flip
+}
+
+// SetFlip overwrites just Flip, leaving CharCode/Trigger untouched -
+// what a controller's Flip toggle live-pushes to an already-connected
+// display. Its own method (not routed through Set) specifically so
+// live-tweaking orientation never has to know or resend whichever
+// character actually happens to be live on the display right now - a
+// controller that's navigated to a different character locally, without
+// yet clicking "Set as display" again, must not silently push that
+// character to the display just because someone touched the flip
+// toggle.
+func (d *ModelDisplay) SetFlip(flip string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.state.Flip = flip
 }
 
 // IncrementTrigger bumps the shared trigger counter - see
@@ -84,12 +106,12 @@ func (d *ModelDisplay) IncrementTrigger() {
 }
 
 // Connected reports whether a real display has polled Get within
-// displayStaleAfter - what a controller's "Set as display" button is
-// enabled/disabled by, so it doesn't send to a display that's been
-// closed/gone for a while. Deliberately doesn't call Get or otherwise
-// touch lastPolledAt itself: if this bumped the same timestamp Get
-// does, a controller repeatedly checking status would look identical to
-// a live display, defeating the whole point.
+// displayStaleAfter - what a controller's "Set as display"/Flip/Trigger
+// controls are enabled/disabled by, so they don't offer to act on a
+// display that's been closed/gone for a while. Deliberately doesn't
+// call Get or otherwise touch lastPolledAt itself: if this bumped the
+// same timestamp Get does, a controller repeatedly checking status
+// would look identical to a live display, defeating the whole point.
 //
 // Also where the actual clearing happens, not a separate background
 // job: if the display's gone, nothing else will ever notice on its own
@@ -130,25 +152,24 @@ func (d *Data) GetModelDisplayStatus(w http.ResponseWriter, r *http.Request) {
 
 // TriggerModelDisplay bumps the shared display's trigger counter (see
 // api.ModelDisplayState.Trigger) - a separate endpoint from
-// SetModelDisplay's PUT so triggering a touch reaction never has to
-// also resend the current char_code/flip/pepper, and see
-// ModelDisplay.Set's own doc comment for why doing so wouldn't have
-// been safe anyway.
+// SetModelDisplay/SetModelDisplayFlip so triggering a touch reaction
+// never has to also resend the current char_code/flip.
 func (d *Data) TriggerModelDisplay(w http.ResponseWriter, r *http.Request) {
 	d.ModelDisplay.IncrementTrigger()
 	w.WriteHeader(http.StatusOK)
 }
 
-// SetModelDisplay overwrites the shared display state wholesale (PUT
-// semantics, same as SetCardCharacterModel) - a controller always sends
-// its full current {char_code, flip, pepper}, not a partial patch. An
-// empty CharCode is accepted as a real, deliberate "nothing selected"
-// state (e.g. clearing the display before a show starts), not an error -
-// only a non-empty CharCode gets checked against character_models, so a
-// typo'd code fails loudly here rather than the display silently
-// getting stuck trying to load something that was never imported.
+// SetModelDisplay picks which character the display shows, and its
+// starting orientation in the same action ("Set as display") - see
+// ModelDisplay.Set's own doc comment for why this only ever touches
+// those two fields. An empty CharCode is accepted as a real, deliberate
+// "nothing selected" state (e.g. clearing the display before a show
+// starts), not an error - only a non-empty CharCode gets checked
+// against character_models, so a typo'd code fails loudly here rather
+// than the display silently getting stuck trying to load something that
+// was never imported.
 func (d *Data) SetModelDisplay(w http.ResponseWriter, r *http.Request) {
-	var body api.ModelDisplayState
+	var body api.SetModelDisplayCharCodeInput
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
@@ -175,6 +196,22 @@ func (d *Data) SetModelDisplay(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	d.ModelDisplay.Set(body)
+	d.ModelDisplay.Set(body.CharCode, body.Flip)
+	w.WriteHeader(http.StatusOK)
+}
+
+// SetModelDisplayFlip live-adjusts just the display's current
+// orientation - see ModelDisplay.SetFlip's own doc comment for why this
+// is a separate endpoint from SetModelDisplay's character-picking PUT.
+// No validation needed: unlike a char_code, an unrecognized flip value
+// isn't a lookup into anything - ModelDisplay.tsx/ModelViewer.tsx's own
+// FLIP_TRANSFORMS lookup already tolerates one by falling back to no
+// transform, the same tolerance this endpoint just passes through.
+func (d *Data) SetModelDisplayFlip(w http.ResponseWriter, r *http.Request) {
+	var body api.SetModelDisplayFlipInput
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	d.ModelDisplay.SetFlip(body.Flip)
 	w.WriteHeader(http.StatusOK)
 }
