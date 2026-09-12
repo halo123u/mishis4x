@@ -16,6 +16,7 @@ import SetDetail from './components/SetDetail.tsx';
 import DeckInsights from './components/DeckInsights.tsx';
 import ModelList from './components/ModelList.tsx';
 import ModelViewer from './components/ModelViewer.tsx';
+import ModelDisplay from './components/ModelDisplay.tsx';
 
 function App() {
   return (
@@ -43,6 +44,12 @@ function App() {
             />
             <Route path="/collection/:setID" element={<SetDetail />} />
             <Route path="/models" element={<ModelList />} />
+            {/* Registered before the /models/:charCode wildcard below -
+                react-router v6 ranks a static segment higher regardless
+                of declaration order, but this reads more obviously
+                correct listed first. See ModelDisplay.tsx's own doc
+                comment for what this route actually is. */}
+            <Route path="/models/display" element={<ModelDisplay />} />
             <Route path="/models/:charCode" element={<ModelViewer />} />
           </Route>
         </Routes>

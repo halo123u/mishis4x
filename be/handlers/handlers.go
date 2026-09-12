@@ -197,6 +197,11 @@ type Data struct {
 	// app has any license to show a public/anonymous audience. See
 	// canAccessModels/modelOnlyMiddleware.
 	ModelViewerUserID int
+	// ModelDisplay backs the model viewer's remote-control feature - see
+	// its own doc comment (model_display.go) for the full reasoning.
+	// Always non-nil (constructed in NewData, same as LoginLimiter etc. -
+	// no external config needed to build one).
+	ModelDisplay *ModelDisplay
 }
 
 // NewData builds a Data ready to serve requests, wiring up anything with
@@ -220,6 +225,7 @@ func NewData(p persist.Persist, lobby *matchmaking.Lobby, sessions SessionCookie
 		AppBaseURL:              appBaseURL,
 		AdminNotificationEmail:  adminNotificationEmail,
 		ModelViewerUserID:       modelViewerUserID,
+		ModelDisplay:            &ModelDisplay{},
 	}
 }
 
@@ -302,6 +308,8 @@ func (d *Data) NewRouter() *mux.Router {
 	models.HandleFunc("/{charCode}/atlas", d.GetCharacterModelAtlas).Methods("GET")
 	models.HandleFunc("/{charCode}/texture", d.GetCharacterModelTexture).Methods("GET")
 	models.HandleFunc("/{charCode}/audio/{language}/{clipIndex}", d.GetCharacterModelAudio).Methods("GET")
+	models.HandleFunc("/display", d.GetModelDisplay).Methods("GET")
+	models.HandleFunc("/display", d.SetModelDisplay).Methods("PUT")
 	models.HandleFunc("/cards/{cardID}", d.SetCardCharacterModel).Methods("PUT")
 
 	// healthcheck
