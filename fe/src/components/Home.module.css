@@ -1,0 +1,14 @@
+/* flex-wrap - CollectionWidget/PriceMoversWidget are both max-width
+   tiles meant to sit side by side on a wide viewport, but need to stack
+   instead of overflowing on a narrow one. Not in the shared
+   utilities.css .row (align-items: center, no wrap) - that one's
+   established convention is a tight inline row of same-height items,
+   not a wrapping tile grid, and this is the only place that's needed so
+   far. */
+.widgets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+}

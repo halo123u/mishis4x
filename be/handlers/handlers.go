@@ -299,6 +299,12 @@ func (d *Data) NewRouter() *mux.Router {
 	ownedSets.HandleFunc("/{setID}/cards", d.ListOwnedCardsForSet).Methods("GET")
 	ownedSets.HandleFunc("/{setID}/cards", d.SetOwnedCardsForSet).Methods("POST")
 
+	// Cross-set - unlike everything under /owned-sets above, this isn't
+	// scoped to one set (the Home page's "today's biggest movers" widget
+	// spans the caller's whole owned collection) - its own top-level
+	// route rather than shoehorned under /owned-sets/{setID}/....
+	api.HandleFunc("/owned-cards/price-movers", d.GetOwnedCardPriceMovers).Methods("GET")
+
 	// Admin routes: gated by adminOnlyMiddleware on top of the api
 	// subrouter's own AuthMiddleware - see AdminUserID's doc comment for
 	// why this is its own gate, not a reuse of ownerOnlyMiddleware.

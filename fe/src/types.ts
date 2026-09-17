@@ -73,6 +73,17 @@ export interface CardPriceTrend {
   change_cents: number;
   change_percent: number;
 }
+export interface CardPriceMover {
+  card_id: string;
+  set_id: string;
+  name: string;
+  previous_date: string;
+  previous_cents: number;
+  latest_date: string;
+  latest_cents: number;
+  change_cents: number;
+  change_percent: number;
+}
 export interface AdminInviteRequest {
   id: number;
   email_address: string;

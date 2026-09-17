@@ -92,3 +92,83 @@ func TestGetPriceTrends_Unauthenticated(t *testing.T) {
 	defer func() { _ = res.Body.Close() }()
 	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
+
+func TestGetOwnedCardPriceMovers_Success(t *testing.T) {
+	db := testDB(t)
+	ts, client := newTestServerWithPriceTrends(t, db)
+	userID := createAndLoginTestUser(t, db, client, ts.URL)
+
+	p := &persist.Persist{DB: db}
+	setID, err := p.CreateSet(t.Context(), "Price Movers Handler Test Set", 1, nil, "pending")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM owned_card_copies WHERE user_id = ?", userID)
+		_, _ = db.Exec("DELETE FROM card_price_history WHERE card_id IN (SELECT id FROM cards WHERE set_id = ?)", setID)
+		_, _ = db.Exec("DELETE FROM cards WHERE set_id = ?", setID)
+		_, _ = db.Exec("DELETE FROM sets WHERE id = ?", setID)
+	})
+
+	cardID, err := p.CreateCard(t.Context(), setID, "Mover Test Card", "TST/001", "SR")
+	require.NoError(t, err)
+	require.NoError(t, p.SetOwnedCards(t.Context(), userID, []persist.CardQuantity{
+		{CardID: cardID, Quantity: 1},
+	}))
+
+	now := time.Now()
+	dayAt := func(daysAgo, hour int) time.Time {
+		d := now.AddDate(0, 0, -daysAgo)
+		return time.Date(d.Year(), d.Month(), d.Day(), hour, 0, 0, 0, d.Location())
+	}
+	_, err = db.Exec(
+		"INSERT INTO card_price_history (card_id, source, price_cents, recorded_at) VALUES (?, 'tcg_republic', ?, ?)",
+		cardID, 1000, dayAt(2, 12),
+	)
+	require.NoError(t, err)
+	_, err = db.Exec(
+		"INSERT INTO card_price_history (card_id, source, price_cents, recorded_at) VALUES (?, 'tcg_republic', ?, ?)",
+		cardID, 1200, dayAt(1, 12),
+	)
+	require.NoError(t, err)
+
+	res, err := client.Get(ts.URL + "/api/owned-cards/price-movers")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	var movers []struct {
+		CardID        string  `json:"card_id"`
+		SetID         string  `json:"set_id"`
+		Name          string  `json:"name"`
+		ChangeCents   int     `json:"change_cents"`
+		ChangePercent float64 `json:"change_percent"`
+	}
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&movers))
+	require.Len(t, movers, 1)
+	require.Equal(t, cardID, movers[0].CardID)
+	require.Equal(t, setID, movers[0].SetID)
+	require.Equal(t, "Mover Test Card", movers[0].Name)
+	require.Equal(t, 200, movers[0].ChangeCents)
+}
+
+func TestGetOwnedCardPriceMovers_DisabledByDefault(t *testing.T) {
+	db := testDB(t)
+	// newTestServer (not newTestServerWithPriceTrends) - PriceTrendsEnabled
+	// defaults false, matching production until it's explicitly turned on.
+	ts, client := newTestServer(t, db)
+	createAndLoginTestUser(t, db, client, ts.URL)
+
+	res, err := client.Get(ts.URL + "/api/owned-cards/price-movers")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusServiceUnavailable, res.StatusCode)
+}
+
+func TestGetOwnedCardPriceMovers_Unauthenticated(t *testing.T) {
+	db := testDB(t)
+	ts, _ := newTestServerWithPriceTrends(t, db)
+
+	res, err := http.Get(ts.URL + "/api/owned-cards/price-movers")
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+}

@@ -15,3 +15,19 @@ type CardPriceTrend struct {
 	ChangeCents   int               `json:"change_cents"`
 	ChangePercent float64           `json:"change_percent"`
 }
+
+// CardPriceMover mirrors persist.CardPriceMover directly - same "nothing
+// sensitive to withhold" reasoning as CardPriceTrend above, plus Name/
+// SetID so the Home page's movers widget can render/link a result
+// without a second round trip per card.
+type CardPriceMover struct {
+	CardID        string  `json:"card_id"`
+	SetID         string  `json:"set_id"`
+	Name          string  `json:"name"`
+	PreviousDate  string  `json:"previous_date"`
+	PreviousCents int     `json:"previous_cents"`
+	LatestDate    string  `json:"latest_date"`
+	LatestCents   int     `json:"latest_cents"`
+	ChangeCents   int     `json:"change_cents"`
+	ChangePercent float64 `json:"change_percent"`
+}

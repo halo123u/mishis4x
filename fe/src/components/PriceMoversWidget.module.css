@@ -1,0 +1,110 @@
+/* Same card shape/tokens as CollectionWidget's own .widget - not a
+   <Link> like that one though, since this contains several links of its
+   own (one per mover row) rather than being one giant clickable tile. */
+.widget {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 22rem;
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+}
+
+.eyebrow {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+.status {
+  font-size: var(--text-sm);
+  color: var(--ash);
+  margin: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-decoration: none;
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+  margin: calc(var(--space-1) * -1);
+  transition: background-color 0.15s ease;
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.row:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Fixed small square, not CardThumbnail's own portrait/landscape-aware
+   sizing - a plain <img>, not that component, deliberately: CardThumbnail
+   carries its own hover-preview/tap-to-fullscreen behavior, which would
+   fight with this row already being a Link to the card's set. */
+.thumb {
+  width: 2.25rem;
+  height: 2.25rem;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  flex-shrink: 0;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Same convention as SetDetail.module.css's identical .change/.changeUp/
+   .changeDown - the exact same "biggest movers" concept, just aggregated
+   across a whole collection here instead of one card's own 7-day chart. */
+.change {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.changeUp {
+  color: var(--good);
+}
+
+.changeDown {
+  color: var(--bad);
+}
