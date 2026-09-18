@@ -18,14 +18,21 @@ const RECONNECT_DELAY_MS = 1000;
 
 // The gap between the character's feet and the bottom edge of the
 // screen on the real physical rig - see useModelCanvas's own
-// verticalAlign/bottomMarginPx doc comment for why this exists at all.
-// Confirmed against the real device: centering the character (this
-// component's original behavior) left it sitting noticeably too high
-// for the mounting angle/available headroom, forcing an awkward
-// posture to compensate. A plain constant, not configurable from
-// anywhere - this corrects one specific physical rig, not a general
-// user-facing setting.
-const BOTTOM_MARGIN_PX = 15;
+// verticalAlign/bottomMarginPx doc comment for the mechanism this
+// drives. 0, not the original 15: that value was calibrated to correct
+// centering (this component's very original behavior) sitting the
+// character noticeably too high - but a separate CSS bug (see #145/#146,
+// .stage padding shrinking .canvas along with it) turned out to be
+// silently adding a second, real gap of its own underneath that
+// calibration the whole time. With that CSS bug now actually fixed, 15
+// became overcorrection - confirmed live the feet no longer reach the
+// true bottom edge with any nonzero margin still in place. 0 is what
+// "flush with the edge" actually means, not a magic number to keep
+// re-tuning - kept as a named constant (not deleted along with
+// verticalAlign='center') only so a future rig with a different
+// mounting angle has an obvious, self-documented place to reintroduce
+// one if it's ever needed again.
+const BOTTOM_MARGIN_PX = 0;
 
 const FLIP_TRANSFORMS: Record<string, string> = {
   x: 'scaleX(-1)',
