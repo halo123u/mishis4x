@@ -1,19 +1,20 @@
 /* Same fixed-fullscreen shape as ModelViewer.module.css's .stage - a
    device left running this page has nothing else on screen to share
-   space with. Deliberately NO safe-area padding here, unlike
-   ModelViewer - confirmed live this was a real bug on a real notched
-   iPhone launched standalone (see index.html's apple-mobile-web-app-
-   capable): padding the whole .stage insets .canvas along with it, so
-   the character could never actually be panned into the bottom strip
-   the home indicator reserves - "the bottom of the screen I can't move
-   the character to." The home indicator is just an OS-drawn overlay on
-   top of whatever's already rendered there, not a real obstruction, and
-   this page's whole canvas is passive background content (unlike
-   ModelViewer's Back/Flip/etc, nothing here needs to stay reachable/
-   unobscured) - so there's no reason to reserve that space at all.
-   .controls below gets its own safe-area-aware bottom offset instead,
-   so the two real buttons stay clear of the gesture strip without
-   shrinking the canvas along with them. */
+   space with. Deliberately NO safe-area padding at all on this page
+   (unlike ModelViewer, whose real Back/Flip/etc controls do need it) -
+   confirmed live this was a real bug on a real notched iPhone launched
+   standalone (see index.html's apple-mobile-web-app-capable): padding
+   the whole .stage insets .canvas along with it, so the character could
+   never actually be panned into the bottom strip the home indicator
+   reserves - "the bottom of the screen I can't move the character to."
+   The home indicator is just an OS-drawn overlay on top of whatever's
+   already rendered there, not a real obstruction. .controls (Exit/
+   Enable audio) briefly got its own safe-area-aware bottom offset when
+   this was first fixed, reasoning the buttons still deserved to stay
+   clear of the gesture strip even though the canvas didn't need to -
+   removed again just as quickly, confirmed live against the real rig
+   that these two rarely-tapped buttons don't actually need that
+   protection in practice either. */
 .stage {
   position: fixed;
   inset: 0;
@@ -58,14 +59,17 @@
 /* Bottom-center, same placement/fade convention as ModelViewer.module.css's
    own .controls - see ModelDisplay.tsx's doc comment for why this page
    only ever has Exit/Enable audio inside it, nothing that controls
-   anything remotely. calc(...) rather than .stage's own padding (see
-   .stage's own doc comment for why that padded the canvas too, not just
-   this) - env(safe-area-inset-bottom) falls back to 0 on a non-notched
-   device/regular browser tab, so this is exactly var(--space-4) there,
-   and only grows on a real notched phone in standalone mode. */
+   anything remotely. No safe-area reservation here either (unlike an
+   earlier version of this, which added calc(... + env(safe-area-inset-
+   bottom)) right alongside .stage's own fix) - confirmed live against
+   the real rig that these two buttons don't need it: they're rarely
+   tapped, and reserving space here was solving a problem that turned
+   out not to matter in practice on the real device, the same "don't
+   keep it unless it's actually needed" call as leaving .canvas
+   full-bleed. */
 .controls {
   position: absolute;
-  bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  bottom: var(--space-4);
   left: 50%;
   transform: translateX(-50%);
   z-index: 1;
